@@ -163,4 +163,41 @@ def build_packet(state, obs, meds, notes, allergies, flags, problems=(), home_me
     p["lines"], p["precautions"], p["diet"] = [], None, None     # not carried by the reference feeds
     p["diagnoses"] = None
     p["_sources"] = sources
+    # Trends for the app's charts (not sent to the model): every vital set and every numeric lab result so far.
+    p["_trend"] = {"vitals": [{k: v for k, v in vset(t).items() if k != "src"} for t in times],
+                   "labs": _lab_series(res)}
     return p
+
+
+def _lab_series(res):
+    """Numeric lab results by name, final or corrected values only, for components that were ever abnormal."""
+    out, abnormal = {}, set()
+    for o in sorted(res, key=lambda o: o["resulted_ts"]):
+        if o.get("category") != "lab" or o.get("status") not in ("F", "C") or o.get("numeric") is None:
+            continue
+        name = o.get("name") or o.get("code")
+        out.setdefault(name, []).append({"ts": _iso(o["resulted_ts"]), "value": o["numeric"], "units": o.get("units"),
+                                         "flag": o.get("flag")})
+        if o.get("flag"):
+            abnormal.add(name)
+    return {k: v for k, v in out.items() if k in abnormal}
+
+
+def evidence(packet):
+    """Every packet item that carries a source id, keyed by that id, as the clinician sees it in the app."""
+    out = {}
+
+    def walk(v):
+        if isinstance(v, dict):
+            if isinstance(v.get("src"), str) and v["src"] not in out:
+                out[v["src"]] = {k: x for k, x in v.items() if k != "src" and x not in (None, "", [], {})}
+            for k, x in v.items():
+                if not str(k).startswith("_"):
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    walk(packet)
+    for sid, payload in packet.get("_sources", {}).items():   # anything cited but only known by its payload
+        out.setdefault(sid, payload)
+    return out

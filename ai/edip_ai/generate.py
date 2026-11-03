@@ -1,7 +1,7 @@
 """Generate handoff drafts for one encounter: packet, one model call, validation, rules, per template drafts."""
 import time
 
-from . import prompts, rules, severity, templates, validate
+from . import chart, prompts, rules, severity, templates, validate
 
 
 def _deterministic(element, packet, el_defs):
@@ -19,6 +19,11 @@ def _deterministic(element, packet, el_defs):
     return v
 
 
+def attachments(packet):
+    """What the app shows next to a draft: the time it was built for, the source records it may cite, and trends."""
+    return {"as_of": packet.get("as_of"), "evidence": chart.evidence(packet), "trend": packet.get("_trend")}
+
+
 def draft(packet, llm, template_ids=None):
     """Returns (drafts by template id, run record). The run record carries validation and usage."""
     el_defs = templates.elements()
@@ -34,6 +39,7 @@ def draft(packet, llm, template_ids=None):
         usage = {k: (usage.get(k) or 0) + (usage2.get(k) or 0) for k in ("prompt_tokens", "completion_tokens")}
     severity.apply(narrative, packet)        # the model may raise severity, never lower it below the rule floor
     drafts = {}
+    context = attachments(packet)
     for tid, t in templates.templates().items():
         if template_ids and tid not in template_ids:
             continue
@@ -53,7 +59,7 @@ def draft(packet, llm, template_ids=None):
             sections.append({"id": sec["id"], "label": sec["label"], "elements": items})
         drafts[tid] = {"template": tid, "name": t["name"], "audience": t["audience"], "sections": sections,
                        "rules": results, "completeness": rules.score(results),
-                       "severity": (narrative.get("E07") or {}).get("value")}
+                       "severity": (narrative.get("E07") or {}).get("value")} | context
     run = {"model": llm.name, "usage": usage, "validation": report, "seconds": round(time.time() - t0, 2),
            "prompt_chars": sum(len(m["content"]) for m in messages)}
     return drafts, run

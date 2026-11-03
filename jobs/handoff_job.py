@@ -49,7 +49,7 @@ def main():
     a = ap.parse_args()
     sys.path[:0] = [f"{a.code_path}/ai", f"{a.code_path}/pipelines"]
     from edip_ai import generate, llm, local, templates
-    from edip_ai.points import select_points
+    from edip_ai.points import collected_times, select_points
 
     cfg = llm.config()
     if a.model:
@@ -79,7 +79,8 @@ def main():
     clarity = {"PATIENT": rows(spark, f"SELECT * FROM {cat}.bronze.clarity_patient"),
                "PROBLEM_LIST": rows(spark, f"SELECT * FROM {cat}.silver.problem_list"),
                "ORDER_MED": rows(spark, f"SELECT * FROM {cat}.silver.home_meds")}
-    triggers = rows(spark, f"SELECT csn, action, kind, effective_ts FROM {cat}.silver.handoff_events ORDER BY effective_ts")
+    triggers = collected_times(rows(spark, f"SELECT csn, action, kind, reason, effective_ts FROM {cat}.silver.handoff_events "
+                                           "ORDER BY effective_ts"), recs["obs"])
     done = {(r["csn"], r["as_of"]) for r in rows(spark, f"SELECT DISTINCT csn, as_of FROM {cat}.gold.handoff_draft")}
     print(f"loaded silver in {time.time() - t0:.0f}s: {len(adt)} ADT, {len(recs['obs'])} observations, {len(triggers)} triggers")
 

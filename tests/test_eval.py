@@ -162,6 +162,25 @@ def test_select_points_semantics():
     assert retracted == {"C"}
 
 
+def test_after_transfer_only_ed_addenda_regenerate():
+    t0 = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+    m = lambda n: t0 + timedelta(minutes=n)  # noqa: E731
+    trig = [{"csn": "A", "action": "start", "kind": "pending_admit", "effective_ts": m(0)},
+            {"csn": "A", "action": "finalize", "kind": "transfer", "effective_ts": m(90)},
+            {"csn": "A", "action": "regenerate", "kind": "note_signed", "reason": "signed H&P", "effective_ts": m(100)},
+            {"csn": "A", "action": "regenerate", "kind": "note_signed", "reason": points.ED_NOTE, "effective_ts": m(110)},
+            {"csn": "A", "action": "regenerate", "kind": "critical_result", "effective_ts": m(115), "observed_ts": m(60)},
+            {"csn": "A", "action": "regenerate", "kind": "critical_result", "effective_ts": m(200), "observed_ts": m(150)},
+            {"csn": "A", "action": "regenerate", "kind": "class_change", "effective_ts": m(220)},
+            {"csn": "A", "action": "finalize", "kind": "transfer", "effective_ts": m(300)}]   # unit to unit
+    pts, _ = points.select_points(trig, 60)
+    assert pts == [("A", m(0), "pending_admit", "draft"), ("A", m(90), "transfer", "final"),
+                   ("A", m(110), "note_signed", "addendum"), ("A", m(115), "critical_result", "addendum")]
+    late = [{"csn": "A", "kind": "critical_result", "effective_ts": m(115)}]
+    obs = [{"csn": "A", "flag": "HH", "resulted_ts": m(115), "observed_ts": m(60)}]
+    assert points.collected_times(late, obs)[0]["observed_ts"] == m(60)
+
+
 def test_reference_severity_rule():
     base = {"critical_unaddressed": [], "critical": [], "destination": {"level_of_care": "MEDSURG"}, "vitals": None,
             "esi": 3, "pending": {"preliminary": []}}

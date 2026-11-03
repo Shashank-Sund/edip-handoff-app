@@ -78,7 +78,7 @@ def check(raw, packet, wanted):
     except (ValueError, json.JSONDecodeError) as exc:
         return {e: {"text": "", "sources": [], "confidence": 0.0} for e in wanted}, {"parse_error": str(exc)[:200]}
     sources = packet["_sources"]
-    all_numbers = _numbers(json.dumps({k: v for k, v in packet.items() if k != "_sources"}, ensure_ascii=False))
+    all_numbers = _numbers(json.dumps({k: v for k, v in packet.items() if not k.startswith("_")}, ensure_ascii=False))
     out = {}
     for e in wanted:
         d = data.get(e) or {}

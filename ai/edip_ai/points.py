@@ -25,7 +25,7 @@ def triggers(recs):
     for o in recs["obs"]:
         if o.get("flag") in ("HH", "LL") and o.get("csn") and o.get("resulted_ts"):
             rows.append({"csn": o["csn"], "action": "regenerate", "kind": "critical_result", "effective_ts": o["resulted_ts"],
-                         "reason": f"critical {o.get('name')} {o.get('value')}"})
+                         "reason": f"critical {o.get('name')} {o.get('value')}", "observed_ts": o.get("observed_ts")})
     for n in recs["note"]:
         if n.get("status") == "Signed" and n.get("csn") and n.get("signed_ts"):
             rows.append({"csn": n["csn"], "action": "regenerate", "kind": "note_signed", "effective_ts": n["signed_ts"],
@@ -39,11 +39,35 @@ def triggers(recs):
     return out
 
 
+ED_NOTE = "signed ED Provider Notes"
+
+
+def collected_times(triggers, obs):
+    """Fill observed_ts on critical result triggers from observation records (the job reads silver.handoff_events,
+    which carries the result time only)."""
+    seen = {(o.get("csn"), o.get("resulted_ts")): o.get("observed_ts") for o in obs if o.get("flag") in ("HH", "LL")}
+    for t in triggers:
+        if t["kind"] == "critical_result" and not t.get("observed_ts"):
+            t["observed_ts"] = seen.get((t["csn"], t["effective_ts"]))
+    return triggers
+
+
+def _ed_addendum(t, transferred):
+    """After the transfer, only ED information changes the ED handoff: an ED provider note signed late (F16) or a
+    critical result collected before the transfer (F18). Inpatient notes and later transfers belong to the unit."""
+    if t["kind"] == "note_signed":
+        return t.get("reason") == ED_NOTE
+    if t["kind"] == "critical_result":
+        return t.get("observed_ts") is not None and t["observed_ts"] <= transferred
+    return False
+
+
 def select_points(triggers, backfill_interval_min=60):
-    """(points, retracted): points are (csn, as_of, trigger kind, status) tuples, status final for a finalize and
-    draft otherwise. For each encounter with a start: the start, every finalize, and regenerate triggers at least
-    backfill_interval_min apart from the previous point. An encounter with a retract gets no points and is
-    returned in the retracted set. Triggers must be in effective_ts order."""
+    """(points, retracted): points are (csn, as_of, trigger kind, status) tuples. For each encounter with a start:
+    the start, the transfer (status final), and regenerate triggers at least backfill_interval_min apart from the
+    previous point (status draft). After the transfer only ED addenda regenerate (status addendum, not debounced:
+    each is a change the receiving unit must see). An encounter with a retract gets no points and is returned in
+    the retracted set. Triggers must be in effective_ts order."""
     by = {}
     for t in triggers:
         by.setdefault(t["csn"], []).append(t)
@@ -55,10 +79,17 @@ def select_points(triggers, backfill_interval_min=60):
             continue
         if not any(t["action"] == "start" for t in ts):
             continue
-        last = None
+        last, transferred = None, None
         for t in ts:
+            if transferred is not None:
+                if t["action"] == "regenerate" and _ed_addendum(t, transferred) and t["effective_ts"] > last:
+                    points.append((csn, t["effective_ts"], t["kind"], "addendum"))
+                    last = t["effective_ts"]
+                continue
             if t["action"] == "start" and last is None or t["action"] == "finalize" or \
                     (last is not None and t["action"] == "regenerate" and t["effective_ts"] - last >= gap):
                 points.append((csn, t["effective_ts"], t["kind"], "final" if t["action"] == "finalize" else "draft"))
                 last = t["effective_ts"]
+                if t["action"] == "finalize":
+                    transferred = t["effective_ts"]
     return points, retracted
