@@ -169,7 +169,8 @@ def test_vitals_oru_follow_the_flowsheet_knob(rendered):
     truth = rendered["truth"]
     profile = truth["config"]["site_profile"]
     encs = {e["csn"]: e for e in truth["encounters"]}
-    device = {tuple(x) for x in truth["render_plan"]["F24_unvalidated_device_values"]}
+    device = {(v["csn"], v["line"]) for v in truth["vitals"] if not v["validated"]}
+    assert device == {tuple(x) for x in truth["render_plan"]["F24_unvalidated_device_values"]}
     rows = [r for r in rendered["index"] if r["ref"].startswith("vitals") and "F02" not in r["faults"]]
     refs = {r["ref"]: r for r in rows}
     for v in truth["vitals"]:
@@ -249,8 +250,13 @@ def test_fault_mechanics(rendered, parsed):
             a02 = [o for o in index if o["csn"] == r["csn"] and o["trigger"] == "A02"]
             assert a02 and a02[-1]["delivery_ts"] < r["delivery_ts"] and a02[-1]["msh7"] > r["msh7"]
         if "F06" in r["faults"]:
-            first_oru = min(o["delivery_ts"] for o in index if o["csn"] == r["csn"] and o["type"] == "ORU")
-            assert first_oru < r["delivery_ts"]
+            # The ADT outage holds every ADT message until after the first lab (BEAKER) ORU; any earlier
+            # ORU (flowsheet vitals) therefore precedes the A04 as well.
+            orus = [o for o in index if o["csn"] == r["csn"] and o["type"] == "ORU"]
+            first_lab = min(o["delivery_ts"] for o in orus if parsed[o["file"]][0][2] == "BEAKER")
+            assert first_lab < r["delivery_ts"] and min(o["delivery_ts"] for o in orus) < r["delivery_ts"]
+            assert all(a["delivery_ts"] > first_lab for a in index if a["csn"] == r["csn"] and a["type"] == "ADT"
+                       and a["ref"] and a["msh7"] <= r["msh7"])
         if "F08" in r["faults"]:
             pv1 = [s for s in parsed[r["file"]] if s[0] == "PV1"][0]
             a02 = [o for o in index if o["csn"] == r["csn"] and o["trigger"] == "A02"][-1]

@@ -43,8 +43,24 @@ Faults that change what happened (canceled registrations, a patient merge, a can
 
 Faults that only change how a feed looks (A08 floods, retransmits, out-of-order delivery, stale location replays, offset and Z-segment differences, encoding quirks, mixed-status panels) are chosen in `render_plan.json` and applied by the renderers, so every renderer agrees on which encounters are affected.
 
+## Feeds
+
+```bash
+python -m edip_synth.render.hl7 --truth ../data/world/truth --out ../data/world      # one file per message, per interface
+python -m edip_synth.render.fhir --truth ../data/world/truth --out ../data/world     # Redox style events for Zerobus
+python -m edip_synth.render.clarity --truth ../data/world/truth --out ../data/world  # nightly snapshots, Epic EHI names
+```
+
+## Checks
+
+- `tests/realism/` implements the validation checklist (temporal, distributional, clinical plausibility, hygiene) with tolerances sized for 700 visits and 120 admits. Run it against a generated folder with `EDIP_WORLD=<truth dir>`. `EDIP_GAPS_NONSTRICT=1` lists fixed gaps as passes while tuning.
+- `synthetic/tools/realism_report.py <truth dir>` prints distributions against targets and five clinician style timelines.
+- `synthetic/tools/verify_codes.py --refresh` checks every RxNorm, LOINC, ICD-10-CM and SNOMED code against public NLM and HL7 terminology services and records the result in `code_verification.json`.
+
 ## Known limits
 
-- The HL7 v2, FHIR and Clarity renderers are separate modules, built next.
-- A few codes added beyond the research tables are listed in `scenarios.UNVERIFIED` and still need to be checked against RxNav and LOINC.
-- With only 120 admissions, boarding medians move by about 30 percent between seeds. Tests use tolerances sized for that.
+- Two targets differ from the research spec, on purpose: abnormal lab components are checked at 10 to 25 percent (the spec's 5 to 8 percent is below published ED audits), and the p90 of bed request to bed assignment is bounded by the overall boarding p90 (the spec's 240 minutes has no published source).
+- Redox documents no notification for medication administrations, so `FHIR.Event.MedicationAdministration` is an extrapolation, labeled as such in `render/fhir.py`.
+- One Synthea source code (SNOMED 6525002) is retired in SNOMED CT; it is kept as a source code and mapped to a valid ICD-10-CM code.
+- An observation to inpatient conversion appears in ADT and Clarity ADT history, but not as a second bed request.
+- With only 120 admissions, boarding medians move by about 30 percent between seeds.

@@ -19,10 +19,32 @@ def _hm(dt):
     return dt.astimezone(TZ).strftime("%H:%M")
 
 
+def lower_first(text: str) -> str:
+    """'Essential hypertension' -> 'essential hypertension'; keeps acronyms such as 'NSTEMI' or 'COPD'."""
+    if len(text) > 1 and text[0].isupper() and not text[1].isupper():
+        return text[0].lower() + text[1:]
+    return text
+
+
 def history(pat, n):
     probs = sorted(pat.problems, key=lambda p: PRIORITY.index(p["snomed"]) if p["snomed"] in PRIORITY else 99)
-    keep = [p["display"] for p in probs if p["snomed"] in PRIORITY][:n]
-    return ", ".join(keep)
+    keep = [p["display"] for p in probs if p["snomed"] in PRIORITY][:n] or [p["display"] for p in probs][:min(n, 3)]
+    return ", ".join(lower_first(k) for k in keep)
+
+
+def allergy_text(pat, allergies) -> str:
+    if allergies:
+        return "; ".join(f"{a.allergen} ({a.reaction.lower()})" for a in allergies)
+    return {"Not on File": "not on file, unable to obtain", "No Known Allergies": "NKDA"}.get(
+        getattr(pat, "allergy_review", ""), "NKDA")
+
+
+def hpi(scen, pat, enc) -> str:
+    text = scen.hpi or enc.chief_complaint.lower()
+    if scen.key == "chf":
+        meds = " ".join(m["display"].lower() for m in pat.home_meds)
+        text += ", ran out of furosemide 5 days ago" if "furosemide" in meds else ", recent high salt diet"
+    return text
 
 
 def short_med(name: str) -> str:
@@ -61,7 +83,7 @@ def triage(enc, pat, scen, v, allergies) -> str:
     mode = {"EMS": "Arrived via EMS", "Walk-in": "Ambulatory to triage", "Private vehicle": "Arrived by private vehicle",
             "Police": "Brought in by police", "Helicopter": "Arrived by air transport"}[enc.arrival_mode]
     hx = history(pat, 4) or "none reported"
-    alg = "; ".join(f"{a.allergen} ({a.reaction.lower()})" for a in allergies) if allergies else "NKDA"
+    alg = allergy_text(pat, allergies)
     lines = [f"{mode}. CC: {enc.chief_complaint.lower()}.",
              f"Hx: {hx}. Allergies: {alg}.",
              vitals_line(v)]
@@ -78,7 +100,7 @@ def triage(enc, pat, scen, v, allergies) -> str:
 def provider(enc, pat, scen, v, results, meds_given, dispo_text) -> str:
     age = pat_age(pat, enc)
     hx = history(pat, 5) or "no significant PMH"
-    lines = [f"HPI: {age} {pat.sex} with {hx} presents with {scen.hpi or enc.chief_complaint.lower()}.",
+    lines = [f"HPI: {age} {pat.sex} with {hx} presents with {hpi(scen, pat, enc)}.",
              "ROS: as per HPI, otherwise negative.",
              "PE: " + vitals_line(v).replace("VS: ", ""),
              results_line(results),
@@ -92,10 +114,20 @@ def provider(enc, pat, scen, v, results, meds_given, dispo_text) -> str:
 
 def reassessment(v, scen, boarding: bool) -> str:
     lines = [f"Reassessment. {vitals_line(v).replace('VS: ', '')}",
-             "Resting comfortably, call light in reach." if (v and (v.pain or 0) <= 4) else "Reports ongoing pain, provider notified."]
+             _status(v)]
     if boarding:
         lines.append("Awaiting inpatient bed. Admission orders active.")
     return "\n".join(lines)
+
+
+def _status(v) -> str:
+    if v is None:
+        return "Patient in room, call light in reach."
+    if v.hr > 110 or v.sbp < 90 or v.rr > 26 or v.spo2 < 90:
+        return "Remains tachycardic or hypotensive, provider aware, monitoring closely."
+    if (v.pain or 0) > 4:
+        return "Reports ongoing pain, provider notified."
+    return "Resting comfortably, call light in reach."
 
 
 def hp(enc, pat, scen, v, results, code_status) -> str:
@@ -103,14 +135,18 @@ def hp(enc, pat, scen, v, results, code_status) -> str:
     dx = scen.dx[0][2] if scen.dx else enc.chief_complaint
     plan = "\n".join(f"{i}. {p}" for i, p in enumerate(scen.plan or ("Supportive care",), 1))
     cs = code_status or "not yet discussed"
-    return "\n".join([f"Assessment: {age} {pat.sex} admitted with {dx.lower()}.",
+    return "\n".join([f"Assessment: {age} {pat.sex} admitted with {lower_first(dx)}.",
                       vitals_line(v), results_line(results),
                       "Plan:", plan, f"Code status: {cs}.",
-                      f"Disposition: {enc.level_of_care.lower()} level of care."])
+                      f"Disposition: {LEVEL_TEXT.get(enc.level_of_care, 'inpatient')} level of care."])
+
+
+LEVEL_TEXT = {"ICU": "ICU", "STEPDOWN": "step down", "TELE": "telemetry", "MEDSURG": "medical surgical",
+              "OBS": "observation"}
 
 
 def consult(enc, specialty, scen) -> str:
-    return "\n".join([f"{specialty} consult requested by ED for {scen.label.lower()}.",
+    return "\n".join([f"{specialty} consult requested by ED for {lower_first(scen.label)}.",
                       "Chart, imaging and labs reviewed. Patient examined.",
                       f"Recommendations: {'; '.join(scen.plan[:2]) if scen.plan else 'agree with admission'}.",
                       "Will follow."])

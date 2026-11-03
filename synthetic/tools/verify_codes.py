@@ -74,6 +74,8 @@ def collect():
             for c in s.conditions:
                 add("SNOMED CT", c, "patient fit condition", f"{label}[{s.key}].conditions")
     add("RxNorm", scenarios.ENOX.rxcui, scenarios.ENOX.name, "scenarios.ENOX")
+    for m in scenarios.EXTRA_MEDS:
+        add("RxNorm", m.rxcui, m.name, "scenarios.EXTRA_MEDS")
     add("RxNorm", "1665088", "cefepime 2 g injection (penicillin allergy substitute)", "world._meds")
     for name, code, system, _ in world.ALLERGENS:
         if code and system == "RxNorm":

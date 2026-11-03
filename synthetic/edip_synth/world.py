@@ -21,7 +21,7 @@ from .ids import Ids
 from .model import (Allergy, AdtEvent, BedRequest, CodeStatus, EdEvent, Encounter, Infection, MarAdmin, MedOrder,
                     Note, Order, Patient, Result, Vital, World)
 from .reference import FACILITIES, IMAGING, LABS, PANELS, build_departments, build_providers
-from .scenarios import ADMIT_COUNTS, DISCHARGE_WEIGHTS, Med, get
+from .scenarios import ADMIT_COUNTS, DEXTROSE_50, DISCHARGE_WEIGHTS, INSULIN_PUSH, Med, get
 
 UTC = timezone.utc
 M = lambda x: timedelta(minutes=x)  # noqa: E731
@@ -36,15 +36,35 @@ OVERFLOW = {"STEPDOWN": ("ICU", "TELE"), "ICU": ("STEPDOWN",), "TELE": ("STEPDOW
             "OBS": ("MEDSURG", "TELE")}
 BG_LOS_H = {"ICU": (60, 160), "STEPDOWN": (72, 190), "TELE": (80, 200), "MEDSURG": (84, 220), "OBS": (22, 36)}
 IP_LOS_DAYS = [((1, 2), 26.1), ((3, 4), 29.8), ((5, 6), 16.2), ((7, 8), 8.6), ((9, 10), 4.6), ((11, 20), 10.4)]
-ALLERGENS = [("Penicillins", "70618", "RxNorm", 30), ("Sulfa (sulfonamide antibiotics)", "10180", "RxNorm", 15),
+ALLERGENS = [("Penicillins", "7980", "RxNorm", 30), ("Sulfa (sulfonamide antibiotics)", "10180", "RxNorm", 15),
              ("Codeine", "2670", "RxNorm", 7), ("Morphine", "7052", "RxNorm", 5), ("NSAIDs", "", "Local", 8),
              ("Latex", "111088007", "SNOMED", 4), ("Iodinated contrast media", "", "Local", 4),
-             ("Shellfish", "227037002", "SNOMED", 4), ("ACE inhibitors", "", "Local", 5), ("Statins", "", "Local", 4),
+             ("Shellfish", "44027008", "SNOMED", 4), ("ACE inhibitors", "", "Local", 5), ("Statins", "", "Local", 4),
              ("Cephalexin", "2231", "RxNorm", 4), ("Ciprofloxacin", "2551", "RxNorm", 5), ("Adhesive tape", "", "Local", 5)]
 REACTIONS = [("Hives", 30), ("Rash", 30), ("Anaphylaxis", 6), ("Swelling", 10), ("Nausea", 12), ("Other", 12)]
 ISOLATION = [("MRSA", "Contact", 28), ("VRE", "Contact", 10), ("ESBL", "Contact", 10), ("CRE", "Contact", 2),
              ("C. difficile", "Contact Plus (enteric)", 12), ("Influenza", "Droplet", 9), ("COVID-19", "Droplet", 6),
              ("Rule out TB", "Airborne", 3)]
+
+
+def zfmt(dt):
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def poisson(rng, lam):
+    k, p, target = 0, 1.0, math.exp(-lam)
+    while True:
+        p *= rng.random()
+        if p <= target:
+            return k
+        k += 1
+
+
+# Allergen classes that conflict with a home medication (substring of the RxNorm display).
+ALLERGY_CONFLICT = {"Penicillins": ("amoxicillin", "penicillin", "ampicillin"), "Statins": ("statin",),
+                    "ACE inhibitors": ("pril ",), "NSAIDs": ("ibuprofen", "naproxen", "meloxicam", "diclofenac"),
+                    "Sulfa (sulfonamide antibiotics)": ("sulfamethoxazole",), "Codeine": ("codeine",),
+                    "Morphine": ("morphine",), "Cephalexin": ("cephalexin",), "Ciprofloxacin": ("ciprofloxacin",)}
 
 
 def lgn(rng, median, p90, lo=None, hi=None):
@@ -82,7 +102,9 @@ class Simulator:
         self.ids = Ids(cfg.seed)
         self.pop = population
         self.start = cfg.window_start.astimezone(UTC)
-        self.end = self.start + timedelta(days=cfg.days)
+        # Local wall clock arithmetic: the window ends at local midnight even though DST ends inside it,
+        # so the last day is 25 hours long.
+        self.end = (cfg.window_start + timedelta(days=cfg.days)).astimezone(UTC)
         self.sim_end = self.end + H(cfg.inpatient_horizon_h)
         cfg_dict = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in asdict(cfg).items()}
         self.w = World(cfg_dict, FACILITIES, build_departments(random.Random(cfg.seed + 1)),
@@ -94,6 +116,7 @@ class Simulator:
         self.pats = {}
         self.person_of = {}
         self.encs = []
+        self._enc = {}
         self.bed_intervals = []     # (facility, unit, room, bed, start, end, kind)
         self.pcn_override_used = False
 
@@ -104,7 +127,7 @@ class Simulator:
 
     def fault(self, fid, csn, stream, at, desc, expected):
         self.w.faults.append({"fault_id": fid, "csn": csn, "stream": stream,
-                              "event_time": at.isoformat() if at else None, "description": desc,
+                              "event_time": zfmt(at) if at else None, "description": desc,
                               "expected": expected, "level": "truth"})
 
     # ------------------------------------------------------------------ run
@@ -120,8 +143,8 @@ class Simulator:
         for e in self.encs:
             self._detail(e)
         self._post_faults()
-        self._render_plan()
         self._clip()
+        self._render_plan()
         self._census()
         self.w.encounters = self.encs
         self.w.patients = list(self.pats.values())
@@ -189,7 +212,7 @@ class Simulator:
         pat_id, mrn, epi = self.ids.patient()
         age = person.age
         if age >= 65:
-            payer = wpick(rng, {"Medicare": 80, "Medicare Advantage": 12, "Medicaid": 5, "Commercial": 3})
+            payer = wpick(rng, {"Medicare": 80, "Medicare Advantage": 12, "Medicaid": 5, "Commercial": 3 if age < 80 else 0})
         else:
             payer = wpick(rng, {"Commercial": 52, "Medicaid": 34, "Self-pay": 10, "Other": 4})
         lang = wpick(rng, {"English": 86, "Spanish": 8, "Portuguese": 2, "Haitian Creole": 2, "Vietnamese": 1, "Mandarin": 1})
@@ -217,13 +240,15 @@ class Simulator:
             p.allergy_review = "Not on File"
             return
         if roll < 0.04 + prob:
-            n = min(5, 1 + int(rng.expovariate(1 / 0.9)))
-            chosen = set()
+            n = min(5, 1 + poisson(rng, 0.9))
+            meds = " ".join(m["display"].lower() for m in person.home_meds)
+            chosen = {k for k, words in ALLERGY_CONFLICT.items() if any(w in meds for w in words)}
+            blocked = set(chosen)
             for a in person.drug_allergies[:2]:
                 chosen.add(a["display"])
                 self.w.allergies.append(Allergy(self.ids.misc(), p.pat_id, a["display"], a["code"], a["system"],
                                                 a["reaction"] or "Rash", (a["severity"] or "Mild").title(), noted))
-            while len(chosen) < n:
+            while len(chosen) - len(blocked) < n:
                 name, code, system, _ = rng.choices(ALLERGENS, [a[3] for a in ALLERGENS])[0]
                 if name in chosen:
                     continue
@@ -335,7 +360,7 @@ class Simulator:
                 dec = lgn(rng, *cfg.arrival_to_decision, lo=cfg.decision_floor_min, hi=720)
             enc.decision_at = max(arr + M(dec), enc.provider_at + M(rng.uniform(40, 80)))
             enc.bed_request_at = enc.decision_at + M(rng.uniform(3, 20))
-            enc.class_change_at = enc.decision_at + M(lgn(rng, 25, 90, lo=5))
+            enc.class_change_at = max(enc.decision_at + M(lgn(rng, 25, 90, lo=5)), enc.bed_request_at + M(rng.uniform(1, 10)))
             level = "OBS" if disp == "ADMIT_OBS" else wpick(rng, scen.units)
             enc.level_of_care = level
             enc.unit = LEVEL_UNIT[(fac, level)]
@@ -459,6 +484,32 @@ class Simulator:
             e._new_allergy = (e.provider_at + M(rng.uniform(20, 120)),
                               rng.choice([("Iodinated contrast media", "", "Local"), ("Morphine", "7052", "RxNorm"),
                                           ("Ondansetron", "26225", "RxNorm"), ("Latex", "111088007", "SNOMED")]))
+        # Code status by age band, allocated by quota (Kaiser table) so a 120 admit sample matches it.
+        kaiser = {"<65": {"Full Code": 96.9, "DNR/DNI": 2.4, "Partial Code": 0.5, "Comfort Care": 0.2},
+                  "65-84": {"Full Code": 79.2, "DNR/DNI": 17.9, "Partial Code": 2.2, "Comfort Care": 0.7},
+                  "85+": {"Full Code": 45.9, "DNR/DNI": 48.7, "Partial Code": 3.0, "Comfort Care": 2.4}}
+        bands = {}
+        for e in admits:
+            a = N.pat_age(self.pats[e.pat_id], e)
+            bands.setdefault("<65" if a < 65 else "65-84" if a < 85 else "85+", []).append(e)
+        for band, encs in bands.items():
+            w = kaiser[band]
+            exact = {k: v * len(encs) / 100 for k, v in w.items()}
+            counts = {k: int(x) for k, x in exact.items()}
+            for k in sorted(exact, key=lambda k: exact[k] - counts[k], reverse=True)[: len(encs) - sum(counts.values())]:
+                counts[k] += 1
+            quota = [k for k, c in counts.items() for _ in range(c)]
+            rng.shuffle(quota)
+            for e, status in zip(encs, quota):
+                e._planned_code_status = status
+        # Spec item 20: exactly one documented penicillin allergy override (pip tazo in a septic patient).
+        septic = [e for e in admits if e.scenario == "sepsis_uti" and e.arrival_at < self.end - H(12)]
+        if septic:
+            e = septic[0]
+            e._force_piptazo = True
+            if not any(a.pat_id == e.pat_id and a.allergen == "Penicillins" for a in self.w.allergies):
+                self.w.allergies.append(Allergy(self.ids.misc(), e.pat_id, "Penicillins", "7980", "RxNorm", "Rash", "Low",
+                                                e.arrival_at - timedelta(days=900)))
         # F27: a non ASCII surname must survive every interface.
         p = self.pats[pool[5].pat_id]
         p.last = "Nuñez"
@@ -560,7 +611,7 @@ class Simulator:
             req.assigned_at, req.room, req.bed = assigned, st["room"], st["bed"]
             if getattr(e, "_reassign", False):
                 freed = assigned + M(rng.uniform(25, 100))
-                req.deleted, req.delete_cause = True, "Manually Freed"
+                req.deleted, req.delete_cause, req.deleted_at = True, "Manually Freed", freed
                 self._occupy(st, freed + M(15))
                 self.bed_intervals.append((d.facility, d.code, st["room"], st["bed"], assigned, freed, "held"))
                 self.w.bed_requests.append(req)
@@ -650,6 +701,8 @@ class Simulator:
         stop = e.departure_at or self.sim_end
         horizon = (e.departure_at + H(self.cfg.inpatient_horizon_h)) if (admit and e.departure_at) else stop
         e._latest = {}
+        if e.provider_at:
+            self._orders(e, pat, scen, rng, horizon)
         meds_given = self._meds(e, pat, scen, rng, horizon) if e.provider_at else []
         e._tx_start = min([t for _, t in meds_given], default=(e.provider_at or e.triage_at) + M(30))
         self._vitals(e, pat, scen, rng, horizon)
@@ -661,8 +714,6 @@ class Simulator:
             e.flags.append("F23")
             self.fault("F23", e.csn, "vitals", gap, "5 hour gap in charted vitals while boarding",
                        "Last vitals X hours ago warning")
-        if e.provider_at:
-            self._orders(e, pat, scen, rng, horizon)
         if admit:
             self._code_status(e, pat, rng)
         if getattr(e, "_iso_name", None):
@@ -707,6 +758,10 @@ class Simulator:
             else:
                 tgt_v = u(rng, tgt)
             tr[k] = (base, tgt_v)
+        if e.esi == 1:
+            k = rng.choice(["sbp", "spo2", "gcs"])
+            b, t = tr[k]
+            tr[k] = ({"sbp": min(b, u(rng, (72, 88))), "spo2": min(b, u(rng, (82, 89))), "gcs": min(b, u(rng, (9, 12)))}[k], t)
         return tr
 
     def _vitals(self, e, pat, scen, rng, horizon):
@@ -751,9 +806,10 @@ class Simulator:
                         break
                     times.append((t, "inpatient"))
         o2_on = None
-        if scen.o2 and track.get("spo2", (99, 99))[0] < 92:
+        if scen.o2 and track.get("spo2", (99, 99))[0] < 93:     # margin for charting noise around 92
             o2_on = (e.provider_at or e.triage_at) + M(rng.uniform(3, 15))
             flow = round(u(rng, scen.o2[1]))
+        o2_off = None
         line = 0
         for i, (t, phase) in enumerate(sorted(times)):
             if phase == "boarding" and rng.random() < 0.22:
@@ -772,10 +828,14 @@ class Simulator:
             dbp = int(round(min(140, max(32, min(sbp - 20, val("dbp", 4))))))
             rr = int(round(min(48, max(8, val("rr", 1.5)))))
             temp = round(min(41.5, max(34.5, val("temp", 0.12))), 1) if (i % 2 == 0 or phase == "triage") else None
-            o2 = o2_on is not None and t >= o2_on
+            o2 = o2_on is not None and t >= o2_on and o2_off is None
             spo2_base, spo2_tgt = track["spo2"]
-            spo2 = spo2_base + (spo2_tgt - spo2_base) * (r if o2 or not scen.o2 else r * 0.3) + rng.gauss(0, 1)
+            spo2 = spo2_base + (spo2_tgt - spo2_base) * (r if (o2 or o2_off or not scen.o2) else r * 0.3) + rng.gauss(0, 1)
             spo2 = int(round(min(100, max(70, spo2))))
+            if o2 and phase in ("boarding", "inpatient") and t > o2_on + H(6) and spo2 >= 94 and rng.random() < 0.35:
+                flow -= 1                                 # wean toward room air once at target
+                if flow <= 0:
+                    o2, o2_off = False, t
             pain = int(round(min(10, max(0, val("pain", 0.8)))))
             gcs = int(round(min(15, max(3, val("gcs", 0.3))))) if scen.vitals["gcs"][0] < 15 else None
             in_ed = e.departure_at is None or t < e.departure_at or not e.disposition.startswith("ADMIT")
@@ -800,6 +860,8 @@ class Simulator:
                 lo, hi = 10.0, 11.8
             if code in ("GLU", "POCGLU") and "44054006" in probs:
                 lo, hi = 130, 230
+            if code == "INR" and any("warfarin" in m["display"].lower() for m in pat.home_meds):
+                lo, hi = 2.0, 4.6
             if code == "HGB" and pat.sex == "M":
                 lo, hi = lo + 1.0, hi + 1.0
             rngs = (lo, hi)
@@ -895,6 +957,41 @@ class Simulator:
             return [mk("Detected" if det else "Not detected", "A" if det else "", "F", resulted)]
         return []
 
+    def _chain(self, e, override, collected, rng):
+        """Repeat draws move from the prior value at a physiologic rate instead of a fresh draw."""
+        out = dict(override or {})
+        prev = e._latest
+        hrs = lambda k: max(0.5, (collected - prev[k].observed_at).total_seconds() / 3600)  # noqa: E731
+
+        def put(k, v):
+            out[k] = (v, v)
+        if e.scenario == "dka" and "GLU" in prev:
+            put("GLU", max(150, prev["GLU"].numeric - rng.uniform(50, 75) * hrs("GLU")))
+            if "CO2" in prev:
+                put("CO2", min(22, prev["CO2"].numeric + rng.uniform(1.0, 2.0) * hrs("CO2")))
+            if "K" in prev:
+                put("K", max(3.4, prev["K"].numeric - rng.uniform(0.2, 0.4) * hrs("K")))
+        if e.scenario == "ugib" and "HGB" in prev:
+            put("HGB", prev["HGB"].numeric - rng.uniform(0.5, 1.5))
+        if "TROP" in prev:
+            f = rng.uniform(2, 6) if e.scenario in ("nstemi", "stemi_transfer") else rng.uniform(0.9, 1.15)
+            put("TROP", prev["TROP"].numeric * f)
+        if e.scenario.startswith("sepsis") and "LACT" in prev:
+            put("LACT", prev["LACT"].numeric * rng.uniform(0.45, 0.75))
+        return out
+
+    def _timed_lab(self, e, pat, scen, panel, at, override, prov, priority="Timed", comment=""):
+        o = self._add_order(e, "Lab", PANELS[panel][1], PANELS[panel][0], "", at, prov, priority)
+        o.accession = self.ids.accession()
+        o.collected_at = at + M(self.rng.uniform(2, 15))
+        resulted = o.collected_at + M(lgn(self.rng, *PANELS[panel][3], lo=5))
+        rows = self._panel_results(e, pat, scen, o, panel, o.collected_at, resulted, override)
+        if comment:
+            for r in rows:
+                r.comment = (r.comment + " " + comment).strip()
+        self.w.results.extend(rows)
+        return o, resulted
+
     def _prov_name(self, prov_id):
         for p in self.w.providers:
             if p.prov_id == prov_id:
@@ -937,14 +1034,25 @@ class Simulator:
             o.accession = self.ids.accession()
             o.collected_at = at + M(rng.uniform(2, 20))
             resulted = o.collected_at + M(lgn(rng, *PANELS[p][3], lo=5))
-            self.w.results.extend(self._panel_results(e, pat, scen, o, p, o.collected_at, resulted, override))
+            self.w.results.extend(self._panel_results(e, pat, scen, o, p, o.collected_at, resulted,
+                                                      self._chain(e, override, o.collected_at, rng)))
+        low_hgb = [r for r in self.w.results if r.csn == e.csn and r.lab == "HGB" and r.numeric is not None and r.numeric < 7]
+        if low_hgb:
+            self._add_order(e, "Blood Product", "BLD0001", "Transfuse packed red blood cells, 1 unit", "",
+                            low_hgb[0].resulted_at + M(rng.uniform(15, 40)), prov)
         for code, (prob, impressions) in scen.imaging.items():
             if rng.random() >= prob or (not admit and rng.random() > 0.7):
                 continue
             disp, loinc, pre_tat, fin_tat = IMAGING[code]
-            at = (e.triage_at + M(rng.uniform(2, 8))) if code in ("ECG", "CTH") and protocol else t0 + M(rng.uniform(0, 20))
+            chest = scen.key in ("chest_pain_ro", "nstemi", "chest_pain_d", "stemi_transfer")
+            if code == "ECG" and chest:
+                at = e.arrival_at + M(rng.uniform(1, 6))       # ECG on arrival: door to ECG within 10 minutes
+            elif code in ("ECG", "CTH") and protocol:
+                at = e.triage_at + M(rng.uniform(2, 8))
+            else:
+                at = t0 + M(rng.uniform(0, 20))
             o = self._add_order(e, "Imaging", code, disp, loinc, at, prov)
-            o.collected_at = at + M(rng.uniform(5, 40) if code != "ECG" else rng.uniform(1, 8))
+            o.collected_at = at + M(rng.uniform(5, 40) if code != "ECG" else rng.uniform(1, 4) if chest else rng.uniform(1, 8))
             imp = rng.choice(impressions) if impressions else "No acute abnormality."
             if code == "ECG":
                 self.w.results.append(Result(o.order_id, e.csn, 1, "ECG", loinc, "ECG interpretation", imp, None, "", None, None,
@@ -978,7 +1086,11 @@ class Simulator:
                         resulted = draw + M(lgn(rng, *PANELS[p][3], lo=10))
                         trend = None
                         if e.scenario == "ugib":
-                            trend = {"HGB": (7.0, 9.5)}
+                            last = e._latest.get("HGB")
+                            units = sum(1 for o in self.w.orders if o.csn == e.csn and o.order_type == "Blood Product"
+                                        and last and last.resulted_at < o.ordered_at < draw)
+                            base = (last.numeric + units * 1.0 - rng.uniform(0, 0.6)) if last else rng.uniform(7.0, 9.5)
+                            trend = {"HGB": (base, base)}
                         if e.scenario == "dka":
                             trend = {"GLU": (140, 220), "CO2": (19, 24), "K": (3.6, 4.4)}
                         self.w.results.extend(self._panel_results(e, pat, get(e.scenario), o, p, draw, resulted,
@@ -991,7 +1103,7 @@ class Simulator:
             return m.dose, m.unit, m.rate
         per = float(m.dose)
         if m.unit == "mL/kg":
-            vol = int(round(per * weight / 100) * 100)
+            vol = int(min(3000, round(per * weight / 100) * 100))      # 30 mL/kg, capped at 3 L
             return str(vol), "mL", m.rate
         if m.name.startswith("alteplase"):
             return f"{min(90.0, per * weight):.1f}", "mg", ""
@@ -1000,7 +1112,11 @@ class Simulator:
         if m.name.startswith("diltiazem"):
             return str(int(min(25, round(per * weight / 5) * 5))), "mg", ""
         if m.unit in ("units/kg/hr",):
-            return f"{per * weight:.0f}" if per >= 1 else f"{per * weight:.1f}", "units/hr", f"{per * weight:.1f} units/hr"
+            if per >= 1:      # heparin: 12 units/kg/hr, rounded to 50, max 1000 (ACS nomogram)
+                x = min(1000, int(round(per * weight / 50) * 50))
+                return str(x), "units/hr", f"{x} units/hr"
+            x = round(per * weight * 2) / 2   # insulin: 0.1 units/kg/hr, rounded to 0.5
+            return f"{x:g}", "units/hr", f"{x:g} units/hr"
         return m.dose, m.unit, m.rate
 
     def _meds(self, e, pat, scen, rng, horizon):
@@ -1016,16 +1132,18 @@ class Simulator:
         if not admit and e.disposition == "DISCHARGE" and rng.random() > 0.65:
             meds = []
         for m in meds:
-            if rng.random() >= m.prob:
+            forced = m.name.startswith("piperacillin") and getattr(e, "_force_piptazo", False)
+            if rng.random() >= m.prob and not forced:
                 continue
             name, rxcui, comment = m.name, m.rxcui, ""
             if allergic_pcn and m.name.startswith("piperacillin"):
-                if not self.pcn_override_used:
+                if getattr(e, "_force_piptazo", False) and not self.pcn_override_used:
                     self.pcn_override_used = True
                     comment = "Allergy override: prior reaction was mild rash; benefit outweighs risk per ED attending."
                     e.flags.append("PCN_OVERRIDE")
                 else:
                     name, rxcui = "cefepime 2 g injection", "1665088"
+                    m = Med(name, rxcui, "2", "g", "IV", "Q8H", offset=m.offset, repeat_h=8)
             dose, unit, rate = self._dose(m, e.weight_kg)
             ordered = e.provider_at + M(u(rng, m.offset))
             if e.decision_at and ordered > e.decision_at + H(2) and not admit:
@@ -1035,11 +1153,22 @@ class Simulator:
                           rate, comment or (f"Weight based: {m.weight_based}, weight {e.weight_kg} kg" if m.weight_based else ""))
             self.w.med_orders.append(mo)
             first = verified + M(rng.uniform(3, 25))
+            bcx = [o.collected_at for o in self.w.orders if o.csn == e.csn and o.code == "LAB0040" and o.collected_at]
+            if bcx and any(w in name for w in ("cefTRIAXone", "azithromycin", "piperacillin", "vancomycin", "cefepime")):
+                first = max(first, min(bcx) + M(rng.uniform(2, 10)))   # cultures before antibiotics
             line = 1
+            if name.startswith("heparin"):     # 60 units/kg bolus (max 4000) before the infusion, aPTT at 6 h
+                bolus = str(min(4000, int(round(60 * e.weight_kg / 100) * 100)))
+                self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, line, "Given", first - M(2), ordered, bolus, "units", "IV", "",
+                                           e.ed_nurse, e._ed_dept))
+                line += 1
+                self._timed_lab(e, pat, scen, "COAG", first + H(6), {"PTT": (58, 92)}, e.admitting_prov or prov)
             action = "New Bag" if m.kind == "infusion" else "Given"
             self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, line, action, first, ordered, dose, unit, m.route, rate,
                                        e.ed_nurse, e._ed_dept))
             given.append((mo, first))
+            if m.name.startswith("insulin"):
+                self._timed_lab(e, pat, scen, "POCGLU", first + H(1), None, prov)
             if m.freq == "CONTINUOUS" and rng.random() < 0.6:
                 line += 1
                 self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, line, "Rate Change", first + M(rng.uniform(30, 90)), first,
@@ -1054,7 +1183,46 @@ class Simulator:
                                                m.route, rate, e.ed_nurse if in_ed else e.unit_nurse,
                                                e._ed_dept if in_ed else e.unit_dept_id))
                     t += H(m.repeat_h)
+        if admit and e.decision_at:
+            given += self._admission_orders(e, pat, scen, rng, horizon)
         return sorted(given, key=lambda g: g[1])
+
+    def _admission_orders(self, e, pat, scen, rng, horizon):
+        """Admitting team's order set, written after the decision and given while boarding."""
+        out = []
+        prov = e.admitting_prov
+        start = e.decision_at + M(rng.uniform(30, 120))
+        bleeding = e.scenario in ("ugib", "stroke", "nstemi", "hip_fx", "trauma_other")
+        items = []
+        if not bleeding and rng.random() < 0.85:
+            items.append((Med("enoxaparin 100 mg/mL syringe", "854235", "40", "mg", "SC", "DAILY", "bolus", repeat_h=24), 60))
+        if rng.random() < 0.5 and not any(m.kind == "infusion" for m in scen.meds):
+            items.append((Med("sodium chloride 0.9 % infusion", "313002", "1000", "mL", "IV", "CONTINUOUS", "infusion",
+                              rate="75 mL/hr"), 20))
+        items.append((Med("acetaminophen 500 mg tablet", "198440", "650", "mg", "PO", "Q6H PRN", "po"), 0))
+        items.append((Med("ondansetron 2 mg/mL injection", "1740467", "4", "mg", "IV", "Q6H PRN"), 0))
+        for m, delay in items:
+            ordered = start + M(rng.uniform(0, 10))
+            verified = ordered + M(rng.uniform(5, 30))
+            mo = MedOrder(self.ids.order(), e.csn, m.rxcui, m.name, m.dose, m.unit, m.route, m.freq, m.kind, ordered, verified,
+                          prov, m.rate, "Admission order set")
+            self.w.med_orders.append(mo)
+            prn = "PRN" in m.freq
+            t = verified + M(delay + rng.uniform(5, 60))
+            line = 0
+            while t < horizon:
+                if not prn or rng.random() < 0.45:
+                    line += 1
+                    in_ed = not e.departure_at or t < e.departure_at
+                    self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, line, "New Bag" if m.kind == "infusion" else "Given", t, t,
+                                               m.dose, m.unit, m.route, m.rate, e.ed_nurse if in_ed else e.unit_nurse,
+                                               e._ed_dept if in_ed else e.unit_dept_id))
+                    if line == 1:
+                        out.append((mo, t))
+                if m.kind == "infusion" or not (m.repeat_h or prn):
+                    break
+                t += H(m.repeat_h or 6) + M(rng.uniform(-20, 40))
+        return out
 
     # ---- code status
     def _code_status(self, e, pat, rng):
@@ -1065,7 +1233,11 @@ class Simulator:
             w = {"Full Code": 79.2, "DNR/DNI": 17.9, "Partial Code": 2.2, "Comfort Care": 0.7}
         else:
             w = {"Full Code": 45.9, "DNR/DNI": 48.7, "Partial Code": 3.0, "Comfort Care": 2.4}
-        status = wpick(rng, w)
+        status = getattr(e, "_planned_code_status", None) or wpick(rng, w)
+        serious = {"46177005", "26929004", "254837009", "92691004"} & {p["snomed"] for p in pat.problems} or \
+            any("malignant" in p["display"].lower() for p in pat.problems)
+        if age < 50 and not serious:
+            status = "Full Code"
         e._code_status = status
         if "F20" in e.flags:
             at = (e.departure_at or self.sim_end) + H(rng.uniform(2, 6))
@@ -1105,8 +1277,9 @@ class Simulator:
         if e.triage_at:
             created = e.triage_at + M(rng.uniform(1, 6))
             signed = created + M(rng.uniform(1, 8) if rng.random() < 0.98 else rng.uniform(20, 90))
+            tri_v = min(e._vit, key=lambda v: v.taken_at) if e._vit else None
             self._add_note(e, "ED Triage Notes", "84249-2", e.ed_nurse, created, e.triage_at, signed,
-                           N.triage(e, pat, scen, self._vital_at(e, signed), allergies))
+                           N.triage(e, pat, scen, tri_v, allergies))
         if not e.provider_at:
             return
         admit = e.disposition.startswith("ADMIT")
@@ -1119,12 +1292,15 @@ class Simulator:
         else:
             r = rng.random()
             signed = dep + (H(rng.uniform(0.5, 20)) if r < 0.75 else H(rng.uniform(24, 72)) if r < 0.95 else H(rng.uniform(72, 120)))
-        as_of = min(signed, e.decision_at or dep)
+        signed = max(signed, created + M(rng.uniform(5, 15)))
+        as_of = min(signed, e.decision_at or dep, self.end)
         loc = {"ICU": "ICU", "STEPDOWN": "step down", "TELE": "telemetry", "MEDSURG": "medical surgical", "OBS": "observation"}
         dispo = {"ADMIT_IP": f"Admit to {e.admit_service.lower()}, {loc.get(e.level_of_care, 'inpatient')} level of care.",
                  "ADMIT_OBS": "Place in observation.", "DISCHARGE": "Discharge home with return precautions.",
                  "AMA": "Left against medical advice after risks discussed.", "LBTC": "Left before treatment complete.",
                  "TRANSFER": "Transfer to outside facility."}[e.disposition]
+        if e.decision_at is None or e.decision_at > as_of:
+            dispo = "Pending workup."
         author = e.ed_resident or e.ed_attending
         n = self._add_note(e, "ED Provider Notes", "28568-4", author, created, e.provider_at, signed,
                            N.provider(e, pat, scen, self._vital_at(e, as_of), self._results_at(e, as_of),
@@ -1135,13 +1311,16 @@ class Simulator:
                        "Handoff drafted before signature cites the draft and flags it; regenerate on sign")
         # Nursing reassessments roughly every 2 h while in the ED.
         if e.roomed_at:
-            t = e.roomed_at + M(rng.uniform(80, 140))
-            while t < dep - M(20):
+            last = e.roomed_at
+            for v in sorted(e._vit, key=lambda v: v.taken_at):
+                if (v.taken_at < e.roomed_at + M(60) or v.taken_at - last < M(100) or v.taken_at > dep - M(20)
+                        or v.entered_at - v.taken_at > M(20)):
+                    continue
                 if rng.random() < 0.85:
-                    s = t + M(rng.uniform(3, 30))
-                    self._add_note(e, "ED Notes", "57053-1", e.ed_nurse, t, t, s,
-                                   N.reassessment(self._vital_at(e, t), scen, bool(e.decision_at and admit and t > e.decision_at)))
-                t += M(rng.uniform(100, 160))
+                    t = v.entered_at + M(rng.uniform(1, 10))
+                    self._add_note(e, "ED Notes", "57053-1", e.ed_nurse, t, v.taken_at, t + M(rng.uniform(3, 30)),
+                                   N.reassessment(v, scen, bool(e.decision_at and admit and t > e.decision_at)))
+                    last = v.taken_at
         if not admit:
             return
         created = e.decision_at + M(rng.uniform(30, 120))
@@ -1181,11 +1360,13 @@ class Simulator:
         def ed_ev(name, at, user=None):
             ed_only.append((name, at, user, ""))
 
-        a_at = e.arrival_at + M(rng.uniform(0.3, 3))
-        add("arrival", a_at, recorded=getattr(e, "_arrival_recorded", None), ed_name="Patient Arrived in ED",
+        a_at = e.arrival_at
+        rec_delay = min(rng.uniform(0.3, 3), max(0.05, (e.triage_at - a_at) / M(1) - 0.1))
+        add("arrival", a_at, recorded=getattr(e, "_arrival_recorded", None) or a_at + M(rec_delay),
+            ed_name="Patient Arrived in ED",
             ed_at=e.arrival_at, arrival_mode=e.arrival_mode)
         add("registration", e.arrival_at + M(rng.uniform(10, 60)))
-        ed_ev("Triage Started", e.triage_at - M(rng.uniform(1, 4)))
+        ed_ev("Triage Started", max(e.arrival_at + M(0.5), e.triage_at - M(rng.uniform(1, 4))))
         add("triage", e.triage_at, ed_name="Triage Completed", ed_at=e.triage_at, esi=e.esi, chief_complaint=e.chief_complaint)
         if e.registered_pat_id:
             add("merge", merge_at, surviving=e.pat_id, retired=e.registered_pat_id)
@@ -1229,7 +1410,10 @@ class Simulator:
             if e.bed_assigned_at:
                 add("bed_assigned", e.bed_assigned_at, ed_name="Bed Assigned", ed_at=e.bed_assigned_at,
                     pending_unit=e.unit, pending_room=e.room, pending_bed=e.bed)
-                ed_ev("Ready for Transport", e.bed_assigned_at + M(rng.uniform(5, 30)))
+                ready = e.bed_assigned_at + M(rng.uniform(5, 30))
+                if e.departure_at:
+                    ready = min(ready, e.departure_at - M(rng.uniform(1, 4)))
+                ed_ev("Ready for Transport", max(ready, e.bed_assigned_at))
             if e.departure_at:
                 unit_state = {"unit": e.unit, "room": e.room, "bed": e.bed, "dept": e.unit_dept_id}
                 if "F10" in e.flags:
@@ -1267,13 +1451,23 @@ class Simulator:
                           state["attending"], details)
             self.w.adt.append(ev)
             if ed_name:
-                tracked.append((ed_name, ed_at, user, ev.event_id))
-        for line, (name, at, user, eid) in enumerate(sorted(tracked + ed_only, key=lambda x: x[1]), 1):
-            self.w.ed_events.append(EdEvent(e.csn, line, name, at, at + M(rng.uniform(0, 3)), user or e.ed_nurse, eid))
+                tracked.append((ed_name, ed_at, user, ev))
+            if kind == "transfer" and not upd.get("room") == getattr(e, "_wrong_bed", (None,))[0]:
+                for b in self.w.bed_requests:
+                    if b.csn == e.csn and not b.deleted:
+                        b.linked_event_id = ev.event_id
+        ed_only = [(n, t, us, None) for n, t, us, _ in ed_only]
+        for line, (name, at, user, ev) in enumerate(sorted(tracked + ed_only, key=lambda x: x[1]), 1):
+            rec = at + M(rng.uniform(0, 3))
+            if ev is not None:
+                rec = max(rec, ev.recorded_at)   # a tracking event is filed with its ADT event
+            self.w.ed_events.append(EdEvent(e.csn, line, name, at, rec, user or e.ed_nurse, ev.event_id if ev else ""))
 
     # ------------------------------------------------------------------ remaining truth faults
     def _post_faults(self):
         rng = random.Random(self.cfg.seed + 19)
+        self._enc = {e.csn: e for e in self.encs}
+        self._f17_keys = set()
         for e in [x for x in self.encs if "F09" in x.flags]:
             wrong = self._new_patient(rng.choice(self.pop), rng)
             c = Encounter(self.ids.csn(), self.ids.har(), wrong.pat_id, e.facility, e.scenario, e.scenario_label, "CANCELED",
@@ -1301,11 +1495,23 @@ class Simulator:
             o.collected_at = resulted - M(rng.uniform(30, 50))
             rows = self._panel_results(e, pat, scen, o, panel, o.collected_at, resulted, {code: (val, val)})
             self.w.results.extend(rows)
+            self._critical_response(e, pat, scen, code, val, resulted, rng)
+            self._f17_keys.add((e.csn, code, resulted))
             e.flags.append("F17")
             self.fault("F17", e.csn, "results", resulted, f"Critical {LABS[code][1]} resulted near ED departure",
                        "Changed since signed badge; completeness rule forces acknowledgement")
+        # Every critical lab value on an admitted patient after the decision is acted on.
+        handled = {(r.csn, r.lab) for r in self.w.results if "Repeat requested" in r.comment or "Post transfusion" in r.comment}
+        for r in list(self.w.results):
+            e = self._enc.get(r.csn)
+            if (r.flag in ("HH", "LL") and (r.numeric is not None or r.lab == "BCX") and e and e.disposition.startswith("ADMIT") and e.decision_at
+                    and r.resulted_at >= e.decision_at and r.lab in ("K", "LACT", "HGB", "GLU", "NA", "INR", "BCX")
+                    and (r.csn, r.lab, r.resulted_at) not in self._f17_keys and (r.csn, r.lab, r.resulted_at) not in handled):
+                handled.add((r.csn, r.lab, r.resulted_at))
+                self._critical_response(e, self.pats[e.pat_id], get(e.scenario), r.lab, r.numeric, r.resulted_at, rng)
         # F19: corrected hemoglobin 30 min after final.
-        hgb = [r for r in self.w.results if r.lab == "HGB" and r.status == "F" and r.resulted_at < self.end - H(2)]
+        hgb = [r for r in self.w.results if r.lab == "HGB" and r.status == "F" and r.resulted_at < self.end - H(2)
+               and self._enc[r.csn].scenario != "ugib"]      # a correction must not read as a bleed or a transfusion
         for r in rng.sample(hgb, min(4, len(hgb))):
             x = round(r.numeric + rng.choice([-1.5, 1.5]), 1)
             self.w.results.append(Result(r.order_id, r.csn, r.line, r.lab, r.loinc, r.name, str(x), x, r.units, r.ref_low,
@@ -1328,13 +1534,64 @@ class Simulator:
             self.fault("F13", "", "adt", None, f"{fac} renders the admit class change as {prof['class_change']}",
                        "Both paths yield the same encounter state")
 
+    def _critical_response(self, e, pat, scen, code, val, resulted, rng):
+        """What the team does after a critical call: treat and recheck, or recheck a hemolyzed sample."""
+        prov = e.admitting_prov
+        act = resulted + M(rng.uniform(15, 40))
+        if code == "BCX":     # positive blood culture: repeat cultures, confirm gram negative coverage
+            for _ in range(2):
+                o = self._add_order(e, "Lab", PANELS["BCX"][1], PANELS["BCX"][0], "", act, prov, "STAT")
+                o.accession = self.ids.accession()
+                o.collected_at = act + M(rng.uniform(10, 40))
+            return
+        if code in ("GLU", "NA", "INR"):
+            panel = {"GLU": "POCGLU", "NA": "BMP", "INR": "COAG"}[code]
+            self._timed_lab(e, pat, scen, panel, act, None, prov, "STAT", "Repeat after critical value.")
+            return
+        if code == "K" and val > 6 and e.scenario in ("aki", "dka") and "F17" not in e.flags:
+            for med in (INSULIN_PUSH, DEXTROSE_50):
+                mo = MedOrder(self.ids.order(), e.csn, med.rxcui, med.name, med.dose, med.unit, med.route, "ONCE", "bolus",
+                              act, act + M(rng.uniform(3, 8)), prov, "", "Hyperkalemia protocol")
+                self.w.med_orders.append(mo)
+                self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, 1, "Given", mo.verified_at + M(rng.uniform(3, 12)), act,
+                                           med.dose, med.unit, med.route, "", e.ed_nurse if (not e.departure_at or act < e.departure_at)
+                                           else e.unit_nurse, e._ed_dept if (not e.departure_at or act < e.departure_at) else e.unit_dept_id))
+            self._timed_lab(e, pat, scen, "BMP", act + H(rng.uniform(1.5, 2.5)), {"K": (5.0, 5.7)}, prov, "STAT")
+            return
+        if code == "K" and val > 6:
+            self._timed_lab(e, pat, scen, "BMP", act, {"K": (4.3, 5.1)}, prov, "STAT",
+                            "Repeat requested: prior specimen hemolyzed.")
+            return
+        if code == "K":
+            med = Med("potassium chloride 2 mEq/mL injection", "204520", "40", "mEq", "IV")
+            recheck = {"K": (3.1, 3.6)}
+        elif code == "HGB":
+            self._add_order(e, "Blood Product", "BLD0001", "Transfuse packed red blood cells, 1 unit", "", act, prov)
+            self._timed_lab(e, pat, scen, "CBC", act + H(rng.uniform(1.5, 2.5)), {"HGB": (6.9, 7.9)}, prov, "STAT",
+                            "Post transfusion.")
+            return
+        else:
+            med = Med("sodium chloride 0.9 % bolus", "313002", "1000", "mL", "IV", kind="infusion", rate="999 mL/hr")
+            recheck = {"LACT": (2.0, 3.3)}
+        mo = MedOrder(self.ids.order(), e.csn, med.rxcui, med.name, med.dose, med.unit, med.route, "ONCE", med.kind, act,
+                      act + M(rng.uniform(3, 10)), prov, med.rate, "Ordered after critical value call")
+        self.w.med_orders.append(mo)
+        given = mo.verified_at + M(rng.uniform(5, 20))
+        in_ed = not e.departure_at or given < e.departure_at
+        self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, 1, "New Bag" if med.kind == "infusion" else "Given", given, act,
+                                   med.dose, med.unit, med.route, med.rate, e.ed_nurse if in_ed else e.unit_nurse,
+                                   e._ed_dept if in_ed else e.unit_dept_id))
+        self._timed_lab(e, pat, scen, "BMP" if code == "K" else "LACT", given + H(rng.uniform(2, 3)), recheck, prov, "STAT")
+
     def _render_plan(self):
         """Faults injected by renderers, chosen here so every renderer agrees (spec section 11)."""
         rng = random.Random(self.cfg.seed + 23)
         csns = [e.csn for e in self.encs if e.disposition != "CANCELED"]
-        admits = [e.csn for e in self.encs if e.disposition.startswith("ADMIT") and e.departure_at]
-        cbc = [o.order_id for o in self.w.orders if o.name.startswith("CBC")]
-        vit = [(v.csn, v.line) for v in self.w.vitals if v.taken_at < self.end]
+        moved = {a.csn for a in self.w.adt if a.kind == "transfer"}
+        admits = [e.csn for e in self.encs if e.disposition.startswith("ADMIT") and e.csn in moved]
+        final = {r.order_id for r in self.w.results if r.status == "F"}
+        cbc = [o.order_id for o in self.w.orders if o.name.startswith("CBC") and o.order_id in final]
+        vit = [(v.csn, v.line) for v in self.w.vitals]
         long_notes = [n.note_id for n in self.w.notes if n.note_type in ("ED Provider Notes", "H&P")]
         self.w.render_plan = {
             "F01_a08_flood": sorted(rng.sample(csns, round(0.15 * len(csns)))),
@@ -1353,6 +1610,11 @@ class Simulator:
             "F32_clarity_lag": "Clarity snapshot as of the prior local midnight",
             "seed": self.cfg.seed + 29,
         }
+        # F24: monitor values that a nurse never validated; flowsheets (Clarity) must leave them out.
+        unvalidated = set(self.w.render_plan["F24_unvalidated_device_values"])
+        for v in self.w.vitals:
+            if (v.csn, v.line) in unvalidated:
+                v.validated = False
 
     # ------------------------------------------------------------------ clip to the window
     def _clip(self):
@@ -1367,7 +1629,7 @@ class Simulator:
         w.code_status = [c for c in w.code_status if c.activated_at <= end]
         w.infections = [i for i in w.infections if i.added_at <= end]
         w.allergies = [a for a in w.allergies if a.noted_at <= end]
-        w.faults = [f for f in w.faults if not f["event_time"] or f["event_time"] <= end.isoformat()]
+        w.faults = [f for f in w.faults if not f["event_time"] or f["event_time"] <= zfmt(end)]
         w.orders = [o for o in w.orders if o.ordered_at <= end]
         final = {}
         for r in w.results:

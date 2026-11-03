@@ -19,7 +19,9 @@ REF_DATE = date(2026, 11, 1)
 # SNOMED codes treated as acute episodes, never as chronic problems.
 _ACUTE = {"91302008", "401314000", "401303003", "22298006", "1201005", "70995007", "359817006", "5913000",
           "263225007", "16114001", "65966004", "444814009", "10509002", "195662009", "233604007", "68566005",
-          "75498004", "36971009", "43878008", "38822007", "62106007", "403190006", "284551006", "370247008"}
+          "75498004", "36971009", "43878008", "38822007", "62106007", "403190006", "284551006", "370247008",
+          "76571007", "4557003", "53827007", "6072007", "267064002", "19169002", "156073000", "398254007", "90460009",
+          "39848009", "127294003"}
 _DROP_WORDS = ("teeth", "molar", "gingiv", "dental", "periodont", "scoliosis", "pregnan", "sprain", "laceration",
                "fracture", "burn", "concussion", "bite", "abrasion", "viral", "acute", "streptococcal", "otitis",
                "sinusitis", "contact dermatitis")
@@ -29,9 +31,16 @@ _CHRONIC_ICD10 = {
     "195967001": "J45.909", "87433001": "J43.9", "185086009": "J44.9", "55822004": "E78.5", "414545008": "I25.10",
     "271737000": "D64.9", "64859006": "M81.0", "239873007": "M17.9", "239872002": "M16.9", "78275009": "G47.33",
     "128613002": "G40.909", "84757009": "G40.909", "83664006": "E03.9", "60573004": "I35.0", "399211009": "I25.2",
-    "302870006": "E78.1", "237602007": "E88.81", "127013003": "E11.29", "368581000119106": "E11.40",
+    "302870006": "E78.1", "237602007": "E88.810", "127013003": "E11.29", "368581000119106": "E11.40",
     "6525002": "F19.20", "124171000119105": "G43.719", "254837009": "C50.919", "126906006": "D40.0",
-    "197927001": "N39.0", "714628002": "R73.03",
+    "197927001": "N39.0", "714628002": "R73.03", "90781000119102": "E11.29", "157141000119108": "E11.29",
+    "24079001": "L20.9", "7200002": "F10.20", "427419006": "G43.709", "230265002": "G30.0", "128188000": "G80.9",
+    "235595009": "K21.9", "69896004": "M06.9", "109989006": "C90.00", "60234000": "I35.1", "370143000": "F32.9",
+    "111287006": "I36.1", "363406005": "C18.9", "233678006": "J45.909", "232353008": "J30.9", "91434003": "I37.1",
+    "60951000119105": "E11.39", "79619009": "I05.0", "94503003": "C79.82", "110359009": "F79", "109838007": "C18.8",
+    "95417003": "M79.7",
+    "68496003": "K63.5", "80394007": "R73.9", "39898005": "G47.9", "201834006": "M19.049", "203082005": "M79.7",
+    "713197008": "K62.1", "73430006": "G47.30", "92691004": "D07.5", "48724000": "I34.0",
 }
 
 
@@ -64,6 +73,13 @@ class Person:
     @property
     def snomed(self) -> set:
         return {p["snomed"] for p in self.problems}
+
+
+_CKD_ORDER = ["431855005", "431856006", "433144002", "431857002", "46177005"]   # stage 1, 2, 3, 4, ESRD
+
+
+def _strip(text: str) -> str:
+    return re.sub(r"\s*\((finding|disorder|situation|substance|morphologic abnormality)\)", "", text or "").strip()
 
 
 def _clean(name: str) -> str:
@@ -101,8 +117,8 @@ def load(csv_dir: Path) -> list:
     for r in csv.DictReader(open(csv_dir / "allergies.csv", newline="")):
         p = people.get(r["PATIENT"])
         if p and not r["STOP"] and r["CATEGORY"] == "medication":
-            p.drug_allergies.append({"code": r["CODE"], "system": r["SYSTEM"], "display": r["DESCRIPTION"],
-                                     "reaction": r["DESCRIPTION1"], "severity": r["SEVERITY1"]})
+            p.drug_allergies.append({"code": r["CODE"], "system": r["SYSTEM"], "display": _strip(r["DESCRIPTION"]),
+                                     "reaction": _strip(r["DESCRIPTION1"]), "severity": r["SEVERITY1"]})
     for r in csv.DictReader(open(csv_dir / "encounters.csv", newline="")):
         p = people.get(r["PATIENT"])
         if p and r["START"][:4] >= "2024":
@@ -110,6 +126,12 @@ def load(csv_dir: Path) -> list:
                 p.prior_ed_visits += 1
             elif r["ENCOUNTERCLASS"] == "inpatient":
                 p.prior_admissions += 1
+    for p in people.values():
+        # Synthea leaves each CKD stage open as it progresses; keep only the highest stage.
+        ckd = [q for q in p.problems if q["snomed"] in _CKD_ORDER]
+        if len(ckd) > 1:
+            top = max(ckd, key=lambda q: _CKD_ORDER.index(q["snomed"]))
+            p.problems = [q for q in p.problems if q["snomed"] not in _CKD_ORDER or q is top]
     return [p for p in people.values() if p.age >= 18]
 
 
@@ -138,7 +160,8 @@ def stand_in(n: int, seed: int) -> list:
                    f"{rng.randint(10, 999)} Example St", "Boston", f"021{rng.randint(10, 99)}",
                    f"9{rng.randint(10, 99)}-{rng.randint(10, 99)}-{rng.randint(1000, 9999)}")
         for code, disp in _STAND_IN_PROBLEMS:
-            if rng.random() < (0.05 + age / 250):
+            min_age = {"26929004": 65, "185086009": 45, "88805009": 50, "49436004": 50, "64859006": 55}.get(code, 25)
+            if age >= min_age and rng.random() < (0.05 + age / 250):
                 p.problems.append({"snomed": code, "icd10": _CHRONIC_ICD10.get(code), "display": disp, "onset": "2019-01-01"})
         out.append(p)
     return out

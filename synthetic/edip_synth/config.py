@@ -49,7 +49,7 @@ class Config:
     arrival_to_decision: tuple = (200, 360)
     decision_floor_min: int = 45
     boarding: tuple = (150, 480)
-    bed_request_to_assigned: tuple = (35, 190)
+    bed_request_to_assigned: tuple = (25, 120)
     bed_assigned_to_departure: tuple = (50, 150)
     discharged_los: tuple = (160, 330)
     crowding_threshold: float = 0.90

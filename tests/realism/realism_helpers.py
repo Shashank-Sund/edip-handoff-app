@@ -36,7 +36,9 @@ CODE_VERIFICATION = ROOT / "synthetic" / "tools" / "code_verification.json"
 
 def gap(reason, when=True):
     """Strict expected failure naming the concrete generator gap."""
-    return pytest.mark.xfail(when, strict=True, reason="generator gap: " + reason)
+    # EDIP_GAPS_NONSTRICT=1 lists fixed gaps as XPASS instead of failing, which helps when tuning the generator.
+    strict = os.environ.get("EDIP_GAPS_NONSTRICT") != "1"
+    return pytest.mark.xfail(when, strict=strict, reason="generator gap: " + reason)
 
 
 def minutes(a, b):

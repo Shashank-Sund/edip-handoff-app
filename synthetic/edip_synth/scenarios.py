@@ -72,7 +72,10 @@ ONDAN = Med("ondansetron 2 mg/mL injection", "1740467", "4", "mg", "IV", offset=
 MORPH = Med("morphine 4 mg/mL injection", "1732006", "4", "mg", "IV", offset=(10, 45))
 HYDRO = Med("hydromorphone 1 mg/mL injection", "897653", "0.5", "mg", "IV", offset=(10, 45))
 CEFTRI1 = Med("cefTRIAXone 1 g injection", "1665021", "1", "g", "IV", "Q24H", offset=(30, 120), repeat_h=24)
-CEFTRI2 = Med("cefTRIAXone 2 g injection", "1665046", "2", "g", "IV", "Q24H", offset=(20, 60), repeat_h=24)
+CEFTRI2 = Med("cefTRIAXone 2 g injection", "1665046", "2", "g", "IV", "Q24H", offset=(8, 35), repeat_h=24)
+# Sepsis: antibiotics within the first hour of recognition (Surviving Sepsis Campaign).
+CEFTRI1_SEPSIS = Med("cefTRIAXone 1 g injection", "1665021", "1", "g", "IV", "Q24H", offset=(8, 35), repeat_h=24)
+AZITH_SEPSIS = Med("azithromycin 500 mg injection", "1668238", "500", "mg", "IV", "Q24H", offset=(20, 55), repeat_h=24)
 AZITH = Med("azithromycin 500 mg injection", "1668238", "500", "mg", "IV", "Q24H", offset=(30, 120), repeat_h=24)
 ENOX = Med("enoxaparin 100 mg/mL syringe", "854235", "40", "mg", "SC", "DAILY", offset=(240, 480), prob=0.0, repeat_h=24)
 
@@ -85,16 +88,16 @@ SCENARIOS = {s.key: s for s in [
         {"hr": (88, 105), "sbp": (100, 120), "dbp": (55, 70), "rr": (18, 22), "temp": (37.4, 38.4), "pain": (1, 3)},
         tau_min=150,
         panels=("CBC", "CMP", "LACT", "UA", "BCX", "UCX", "COAG", "PCT", "VBG"),
-        labs={"WBC": (14, 24), "LACT": (2.5, 5.0), "CREAT": (1.4, 2.5), "BUN": (28, 48), "PCT": (2, 20),
+        labs={"WBC": (14, 24), "LACT": (2.5, 5.6), "CREAT": (1.4, 2.5), "BUN": (28, 48), "PCT": (2, 20),
               "INR": (1.1, 1.5), "UA_WBC": (50, 182), "CO2": (17, 22), "PLT": (110, 260)},
         repeats=(("LACT", 150, {"LACT": (1.3, 2.4)}),),
         imaging={"CXR": (0.9, ("No acute cardiopulmonary process.",))},
         meds=(LR, CEFTRI2, APAP_PO,
               Med("piperacillin-tazobactam 4.5 g injection", "1659149", "4.5", "g", "IV", "Q6H", offset=(20, 60), prob=0.25, repeat_h=6),
               Med("norepinephrine 1 mg/mL injection", "242969", "4", "mcg/min", "IV", "CONTINUOUS", "infusion", (90, 200), 0.12, "4 mcg/min")),
-        dx=(("A41.9", "91302008", "Sepsis, unspecified organism"), ("N10", "68566005", "Acute pyelonephritis"),
+        dx=(("A41.9", "91302008", "Sepsis, unspecified organism"), ("N10", "36689008", "Acute pyelonephritis"),
             ("N17.9", "14669001", "Acute kidney injury")),
-        units={"STEPDOWN": 70, "ICU": 30},
+        units={"STEPDOWN": 60, "ICU": 40},
         conditions=("197927001", "44054006", "26929004"),
         age={"18-44": 8, "45-64": 22, "65-74": 30, "75+": 40},
         hpi="fever, dysuria and new confusion for 1 to 2 days",
@@ -111,16 +114,16 @@ SCENARIOS = {s.key: s for s in [
         {"hr": (88, 105), "sbp": (102, 122), "rr": (20, 24), "spo2": (92, 96), "temp": (37.4, 38.3)},
         tau_min=150, o2=("Nasal cannula", (2, 6)),
         panels=("CBC", "CMP", "LACT", "BCX", "PCT", "VBG", "RESP"),
-        labs={"WBC": (12, 22), "LACT": (2.1, 4.0), "PCT": (1, 10), "VPH": (7.30, 7.38), "CREAT": (1.0, 1.8)},
+        labs={"WBC": (12, 22), "LACT": (2.1, 4.6), "PCT": (1, 10), "VPH": (7.30, 7.38), "CREAT": (1.0, 1.8)},
         repeats=(("LACT", 150, {"LACT": (1.2, 2.2)}),),
         imaging={"CXR": (1.0, ("Right lower lobe consolidation.", "Left lower lobe airspace opacity concerning for pneumonia.",
                                "Multifocal opacities, right greater than left."))},
-        meds=(LR, CEFTRI1, AZITH, APAP_PO,
+        meds=(LR, CEFTRI1_SEPSIS, AZITH_SEPSIS, APAP_PO,
               Med("vancomycin 1000 mg injection", "1807513", "20", "mg/kg", "IV", "Q12H", offset=(40, 120), prob=0.3, repeat_h=12,
                   weight_based="20 mg/kg")),
         dx=(("A41.9", "91302008", "Sepsis, unspecified organism"), ("J18.9", "233604007", "Pneumonia"),
             ("J96.01", "65710008", "Acute respiratory failure with hypoxia")),
-        units={"STEPDOWN": 45, "TELE": 30, "ICU": 25},
+        units={"STEPDOWN": 40, "TELE": 25, "ICU": 35},
         conditions=("26929004", "87433001", "185086009"),
         age={"18-44": 8, "45-64": 22, "65-74": 30, "75+": 40},
         hpi="productive cough, fever and worsening shortness of breath for 3 days",
@@ -143,10 +146,10 @@ SCENARIOS = {s.key: s for s in [
         meds=(Med("furosemide 10 mg/mL injection", "1719291", "40", "mg", "IV", "BID", offset=(15, 50), repeat_h=12),
               Med("nitroglycerin 0.4 mg SL tablet", "198039", "0.4", "mg", "SL", offset=(5, 20), prob=0.7)),
         dx=(("I50.23", "56675007", "Acute on chronic systolic heart failure"), ("I11.0", "42343007", "Hypertensive heart disease with heart failure")),
-        units={"TELE": 75, "STEPDOWN": 25},
+        units={"TELE": 65, "STEPDOWN": 25, "ICU": 10},
         conditions=("88805009", "59621000", "414545008", "60573004"),
         age={"18-44": 3, "45-64": 22, "65-74": 30, "75+": 45},
-        hpi="3 days of worsening dyspnea, orthopnea and leg swelling, ran out of diuretic",
+        hpi="3 days of worsening dyspnea, orthopnea and leg swelling",
         mdm="Acute on chronic HFrEF exacerbation, likely dietary and medication nonadherence.",
         plan=("IV furosemide, goal net negative 1 to 2 L", "Strict I and O, daily weights", "Repeat BMP and Mg in AM",
               "Echo if none in 12 months"),
@@ -165,7 +168,7 @@ SCENARIOS = {s.key: s for s in [
               Med("methylPREDNISolone 125 mg injection", "1743704", "125", "mg", "IV", offset=(15, 50)),
               Med("azithromycin 500 mg injection", "1668238", "500", "mg", "IV", "Q24H", offset=(40, 120), prob=0.6, repeat_h=24)),
         dx=(("J44.1", "195951007", "COPD with acute exacerbation"), ("J96.02", "65710008", "Acute respiratory failure with hypercapnia")),
-        units={"MEDSURG": 40, "TELE": 35, "STEPDOWN": 25},
+        units={"MEDSURG": 40, "TELE": 30, "STEPDOWN": 22, "ICU": 8},
         conditions=("87433001", "185086009"),
         age={"18-44": 2, "45-64": 33, "65-74": 35, "75+": 30},
         hpi="increased dyspnea, sputum and wheeze for 2 days despite home inhalers",
@@ -209,7 +212,7 @@ SCENARIOS = {s.key: s for s in [
                   rate="12 units/kg/hr", weight_based="60 units/kg bolus then 12 units/kg/hr"),
               Med("metoprolol tartrate 5 mg injection", "866508", "5", "mg", "IV", offset=(30, 90), prob=0.5)),
         dx=(("I21.4", "401314000", "NSTEMI"),),
-        units={"TELE": 60, "STEPDOWN": 40}, consult=("Cardiology",),
+        units={"TELE": 50, "STEPDOWN": 35, "ICU": 15}, consult=("Cardiology",),
         conditions=("414545008", "59621000", "55822004", "44054006"),
         age={"18-44": 4, "45-64": 36, "65-74": 30, "75+": 30},
         hpi="crushing chest pressure radiating to the left arm with diaphoresis for 3 hours",
@@ -247,7 +250,7 @@ SCENARIOS = {s.key: s for s in [
         V(hr=(100, 130), sbp=(85, 110), dbp=(45, 65), rr=(18, 24), spo2=(94, 98), pain=(0, 4), gcs=(14, 15)),
         {"hr": (85, 100), "sbp": (105, 125), "dbp": (58, 72)}, tau_min=120,
         panels=("CBC", "CMP", "COAG", "TS", "LACT"),
-        labs={"HGB": (7.0, 11.0), "BUN": (30, 60), "CREAT": (0.8, 1.4), "INR": (1.0, 1.3), "LACT": (1.5, 3.5)},
+        labs={"HGB": (5.8, 11.0), "BUN": (30, 60), "CREAT": (0.8, 1.4), "INR": (1.0, 1.3), "LACT": (1.5, 3.5)},
         repeats=(("CBC", 240, {"HGB": (6.2, 9.5)}),),
         meds=(NS, Med("pantoprazole 40 mg injection", "283669", "80", "mg", "IV", offset=(15, 50)),
               Med("octreotide 50 mcg/mL injection", "312068", "50", "mcg", "IV", offset=(30, 90), prob=0.2)),
@@ -268,7 +271,7 @@ SCENARIOS = {s.key: s for s in [
         {"hr": (90, 105), "rr": (18, 22), "pain": (1, 3)}, tau_min=240,
         panels=("CBC", "BMP", "VBG", "BHB", "MGPHOS", "UA", "LIPASE", "POCGLU"),
         labs={"GLU": (350, 700), "POCGLU": (350, 600), "BHB": (4, 12), "VPH": (6.95, 7.28), "CO2": (5, 17),
-              "VHCO3": (5, 17), "K": (4.5, 6.0), "NA": (128, 135), "CREAT": (1.3, 2.2), "WBC": (12, 25), "PHOS": (1.0, 2.0),
+              "VHCO3": (5, 17), "K": (4.5, 6.8), "NA": (128, 135), "CREAT": (1.3, 2.2), "WBC": (12, 25), "PHOS": (1.0, 2.0),
               "MG": (1.5, 1.9)},
         repeats=(("BMP", 120, {"GLU": (250, 420), "CO2": (10, 19), "K": (3.8, 5.0)}),
                  ("BMP", 240, {"GLU": (180, 280), "CO2": (14, 21), "K": (3.4, 4.6)})),
@@ -330,7 +333,8 @@ SCENARIOS = {s.key: s for s in [
 def _generic(key, label, complaints, esi, vitals, units, dx, hpi, mdm, panels=("CBC", "BMP"), imaging=None, meds=(),
              labs=None, age=None, admit=True, plan=(), pending=(), conditions=(), consult=(), isolation_bias=1.0):
     return Scenario(key, label, admit, complaints, esi, vitals, {}, 120, (), panels, {}, labs or {}, (), imaging or {}, meds,
-                    dx, units, consult, conditions, age or {"18-44": 25, "45-64": 30, "65-74": 20, "75+": 25},
+                    dx, units, consult, conditions,
+                    age or ({"18-44": 25, "45-64": 30, "65-74": 20, "75+": 25} if admit else {"18-44": 35, "45-64": 30, "65-74": 16, "75+": 19}),
                     isolation_bias, hpi, mdm, plan, pending)
 
 
@@ -339,21 +343,22 @@ GENERIC_ADMITS = {s.key: s for s in [
              V(hr=(125, 165), sbp=(100, 140), rr=(18, 24)), {"TELE": 100}, (("I48.91", "49436004", "Atrial fibrillation"),),
              "palpitations and dyspnea since this morning", "AF with RVR, rate controlled with diltiazem.",
              ("CBC", "BMP", "TROP", "MGPHOS"), {"ECG": (1.0, ("Atrial fibrillation with rapid ventricular response.",))},
-             (Med("diltiazem 5 mg/mL injection", "1791229", "0.25", "mg/kg", "IV", offset=(10, 30)),),
+             (Med("diltiazem 5 mg/mL injection", "1791229", "0.25", "mg/kg", "IV", offset=(10, 30), weight_based="0.25 mg/kg"),),
              conditions=("49436004",), age={"18-44": 5, "45-64": 25, "65-74": 30, "75+": 40}),
     _generic("aki", "Acute kidney injury or electrolyte disorder", ("Weakness", "Decreased urination"), {3: 70, 2: 30},
              V(hr=(80, 105)), {"MEDSURG": 70, "TELE": 30}, (("N17.9", "14669001", "Acute kidney injury"),),
              "poor oral intake and weakness for several days", "AKI, likely prerenal, potassium elevated.",
-             ("CBC", "BMP", "UA", "MGPHOS"), None, (NS,), {"CREAT": (2.2, 4.5), "BUN": (40, 90), "K": (5.2, 6.4)},
+             ("CBC", "BMP", "UA", "MGPHOS"), {"CXR": (0.5, ("No acute cardiopulmonary process.",))}, (NS,), {"CREAT": (2.2, 4.5), "BUN": (40, 90), "K": (5.3, 7.0)},
              conditions=("433144002", "431857002")),
     _generic("pyelo", "Pyelonephritis", ("Flank pain", "Fever"), {3: 80, 2: 20},
              V(hr=(95, 115), temp=(38.2, 39.4), pain=(5, 8)), {"MEDSURG": 100},
-             (("N10", "68566005", "Acute pyelonephritis"),), "flank pain, fever and dysuria", "Pyelonephritis, failed outpatient therapy.",
-             ("CBC", "BMP", "UA", "UCX"), None, (CEFTRI1, ONDAN), {"WBC": (12, 19), "UA_WBC": (40, 182)},
+             (("N10", "36689008", "Acute pyelonephritis"),), "flank pain, fever and dysuria", "Pyelonephritis, failed outpatient therapy.",
+             ("CBC", "BMP", "UA", "UCX"), {"CTAP": (0.4, ("Right perinephric stranding, no obstructing stone.",)),
+                                           "CXR": (0.4, ("No acute cardiopulmonary process.",))}, (CEFTRI1, ONDAN), {"WBC": (12, 19), "UA_WBC": (40, 182)},
              pending=("Urine culture",)),
     _generic("cellulitis", "Cellulitis", ("Leg redness", "Swelling"), {3: 100}, V(temp=(37.4, 38.8), pain=(4, 7)),
              {"MEDSURG": 100}, (("L03.115", "", "Cellulitis of right lower limb"),), "spreading redness of the lower leg for 3 days",
-             "Nonpurulent cellulitis failing oral antibiotics.", ("CBC", "BMP", "CRP"), None,
+             "Nonpurulent cellulitis failing oral antibiotics.", ("CBC", "BMP", "CRP"), {"CXR": (0.3, ("No acute cardiopulmonary process.",))},
              (Med("cefazolin 2 g injection", "1665060", "2", "g", "IV", "Q8H", offset=(30, 90), repeat_h=8),),
              {"WBC": (11, 16)}, isolation_bias=2.0),
     _generic("trauma_other", "Trauma, other", ("Fall", "Motor vehicle collision"), {1: 12, 2: 60, 3: 28}, V(pain=(5, 9)),
@@ -440,6 +445,14 @@ ADMIT_COUNTS = {"sepsis_uti": 7, "sepsis_pna": 5, "chf": 9, "copd": 6, "chest_pa
 DISCHARGE_WEIGHTS = {"abd_pain_d": 14, "chest_pain_d": 8, "sob_d": 10, "fever_d": 6, "headache_d": 5, "back_pain_d": 6,
                      "injury_d": 18, "vomiting_d": 5, "psych_d": 4, "uti_d": 5, "dizzy_d": 4, "minor_d": 15}
 
+
+# Medications the simulator orders outside a scenario (admission order set, critical value responses).
+INSULIN_PUSH = Med("insulin regular IV push 100 units/mL", "311034", "10", "units", "IV")
+DEXTROSE_50 = Med("dextrose 50 % injection", "1795514", "25", "g", "IV")
+EXTRA_MEDS = (INSULIN_PUSH, DEXTROSE_50,
+              Med("potassium chloride 2 mEq/mL injection", "204520", "40", "mEq", "IV"),
+              Med("cefepime 2 g injection", "1665088", "2", "g", "IV", "Q8H"),
+              Med("sodium chloride 0.9 % infusion", "313002", "1000", "mL", "IV", "CONTINUOUS", "infusion"))
 
 # Codes added beyond the spec's verified tables. The realism tests look these up
 # (RxNav, LOINC) before the dataset is published.

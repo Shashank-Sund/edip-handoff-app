@@ -52,13 +52,13 @@ FACILITIES = [
 
 # (facility, code, name, level, beds, private share). Bed counts from spec 2.1.
 _UNITS = [
-    ("MGH", "ED", "MGH EMERGENCY DEPT", "ED", 30, 0.0),
+    ("MGH", "ED", "MGH EMERGENCY DEPT", "ED", 20, 0.0),
     ("MGH", "MICU", "MGH MEDICAL ICU", "ICU", 12, 1.0),
     ("MGH", "5N", "MGH 5 NORTH STEP DOWN", "STEPDOWN", 16, 0.5),
     ("MGH", "6W", "MGH 6 WEST TELEMETRY", "TELE", 28, 0.4),
     ("MGH", "7E", "MGH 7 EAST MED SURG", "MEDSURG", 32, 0.3),
     ("MGH", "4C", "MGH 4C CLINICAL DECISION UNIT", "OBS", 16, 0.2),
-    ("LKS", "ED", "LKS EMERGENCY DEPT", "ED", 18, 0.0),
+    ("LKS", "ED", "LKS EMERGENCY DEPT", "ED", 14, 0.0),
     ("LKS", "ICU", "LKS INTENSIVE CARE UNIT", "ICU", 8, 1.0),
     ("LKS", "3S", "LKS 3 SOUTH MED SURG", "MEDSURG", 30, 0.3),
     ("LKS", "2E", "LKS 2 EAST OBSERVATION", "OBS", 10, 0.2),
@@ -167,7 +167,7 @@ LABS = {
     "BCX": ("600-7", "Blood culture", "", None, None, None, None, None, None),
     "UCX": ("630-4", "Urine culture", "", None, None, None, None, None, None),
     "ABORH": ("882-1", "ABO and Rh", "", None, None, None, None, None, None),
-    "FLU": ("92142-9", "Influenza A and B RNA", "", None, None, None, None, None, None),
+    "FLU": ("92142-9", "Influenza A RNA", "", None, None, None, None, None, None),
     "COVID": ("94500-6", "SARS-CoV-2 RNA", "", None, None, None, None, None, None),
 }
 
@@ -203,10 +203,10 @@ IMAGING = {
     "CTH": ("CT head without contrast", "30799-1", (25, 60), (60, 240)),
     "CTA": ("CTA head and neck", "37498-3", (40, 90), (90, 300)),
     "CTAP": ("CT abdomen and pelvis with contrast", "36813-4", (70, 150), (120, 480)),
-    "CTPE": ("CTA chest pulmonary embolism protocol", "36916-5", (60, 130), (120, 480)),
-    "XRHIP": ("XR hip and pelvis", "37622-8", (40, 100), (120, 600)),
+    "CTPE": ("CTA chest pulmonary embolism protocol", "88322-3", (60, 130), (120, 480)),
+    "XRHIP": ("XR pelvis and hip", "30767-8", (40, 100), (120, 600)),
     "ECG": ("12 lead ECG", "34534-8", (5, 15), (120, 720)),
-    "RUQUS": ("US abdomen right upper quadrant", "24558-9", (80, 180), (60, 300)),
+    "RUQUS": ("US abdomen", "24558-9", (80, 180), (60, 300)),
 }
 
 VITAL_LOINC = {

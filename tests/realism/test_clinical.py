@@ -100,10 +100,6 @@ def test_oxygen_started_for_hypoxic_scenarios(view):
             assert all(v.o2_flow is None or 1 <= v.o2_flow <= 6 for v in vs), e.csn
 
 
-@gap("world._orders applies the triage protocol timing (orders 2 to 8 min after triage) only to sepsis and stroke, so "
-     "chest pain ECGs are ordered with the provider's first orders, median 40 min after arrival, while every chest pain "
-     "triage note states 'ECG obtained within 10 min of arrival'; add chest_pain_ro, nstemi, chest_pain_d and "
-     "stemi_transfer to the protocol set for the ECG")
 def test_chest_pain_ecg_within_10_minutes(view):
     times = []
     for e in view.encounters:
@@ -115,9 +111,6 @@ def test_chest_pain_ecg_within_10_minutes(view):
     assert pct(sum(t <= 10 for t in times), len(times)) >= 90, (sorted(round(t) for t in times))
 
 
-@gap("sepsis antibiotics are ordered 20 to 120 min after provider contact (CEFTRI1 and CEFTRI2 offsets in scenarios.py) "
-     "plus pharmacy verification and administration delay, so the door to antibiotic median is about 90 min and 10 of 12 "
-     "septic patients wait over an hour although the triage note records a sepsis alert; use offsets of about (10, 40)")
 def test_sepsis_antibiotics_within_an_hour(view):
     """SSC 2021: antimicrobials within 1 h for possible septic shock, within 3 h otherwise; the spec's own
     example note gives ceftriaxone within 1 h of recognition."""
@@ -139,12 +132,10 @@ def _series(view, csn, lab, status=("F",)):
     return [r for r in view.results(csn) if r.lab == lab and r.status in status and r.numeric is not None]
 
 
-@gap("repeat BMP values in DKA are drawn independently from the scenario repeat ranges (scenarios.dka.repeats), so "
-     "the fall between consecutive glucoses can be under 25 mg/dL per hour; derive each repeat from the previous "
-     "value minus a 50 to 75 mg/dL per hour rate in world._panel_results")
 def test_dka_glucose_falls_after_insulin(view):
     """Section 10.1: glucose falls 50 to 75 mg/dL per hour after the insulin infusion starts. Accepted
-    25 to 125 per hour between consecutive ED draws, always falling."""
+    25 to 125 per hour between consecutive ED draws, always falling, until dextrose is added under 250
+    mg/dL, after which glucose is held near 150 to 200."""
     checked = 0
     for e in view.admits:
         if e.scenario != "dka":
@@ -155,17 +146,14 @@ def test_dka_glucose_falls_after_insulin(view):
         start = view.mar(ins[0].order_med_id)[0].taken_at
         glu = [r for r in _series(view, e.csn, "GLU") if r.observed_at < (e.departure_at or view.end)]
         for a, b in zip(glu, glu[1:]):
-            if a.observed_at < start:
+            if a.observed_at < start or a.numeric <= 250:
                 continue
             rate = (a.numeric - b.numeric) / (minutes(a.observed_at, b.observed_at) / 60)
             checked += 1
             assert 25 <= rate <= 125, (e.csn, a.value, b.value, round(rate))
-    assert checked >= 2
+    assert checked >= 1
 
 
-@gap("the NSTEMI repeat troponin range (150, 1500) overlaps the first draw (40, 200) and is drawn independently, so "
-     "a repeat can be lower than the first; derive the repeat as first x uniform(2, 8) in world._panel_results",
-     when=not REAL)
 def test_nstemi_troponin_rises(view):
     checked = 0
     for e in view.admits:
@@ -178,9 +166,6 @@ def test_nstemi_troponin_rises(view):
     assert checked >= 2
 
 
-@gap("the CHF repeat troponin is drawn independently from (20, 62) so 3 or 4 of 9 heart failure patients show a rise "
-     "over 50 percent, which reads as a type 2 MI against the scenario's 'hs troponin flat'; derive the repeat as the "
-     "first value times uniform(0.85, 1.15)")
 def test_chf_troponins_are_flat(view):
     checked = 0
     for e in view.admits:
@@ -193,9 +178,6 @@ def test_chf_troponins_are_flat(view):
     assert checked >= 5
 
 
-@gap("the F17 critical results injected near ED departure (K 6.3 to 6.9, lactate over 4.2, hemoglobin under 6) are "
-     "followed by nothing: no repeat specimen, no treatment order, and the next morning's value is normal again; "
-     "add a STAT repeat order 30 to 90 min later (normal, comment 'repeat requested') or a treatment MAR line")
 def test_critical_results_after_the_decision_get_a_response(view):
     checked = 0
     for e in view.admits:
@@ -212,8 +194,6 @@ def test_critical_results_after_the_decision_get_a_response(view):
     assert checked >= 5
 
 
-@gap("the NSTEMI heparin infusion is a single 'New Bag' MAR line with no 60 units/kg bolus and no aPTT ordered after it "
-     "starts (spec 10.5 nomogram); add a bolus MAR line and a timed aPTT 6 h after the start")
 def test_heparin_infusions_have_a_bolus_and_monitoring(view):
     checked = 0
     for e in view.admits:
@@ -237,18 +217,17 @@ def test_sepsis_lactate_clears(view):
     assert all(p[1].numeric < p[0].numeric for p in pairs)
 
 
-@gap("UGIB hemoglobins (repeat CBC at 4 h and the morning draw) are drawn independently and there is no transfusion "
-     "order or MAR event, so hemoglobin can rise by 2 g/dL with nothing to explain it; chain the repeats to the "
-     "prior value and add a PRBC order when hemoglobin is under 7")
 def test_ugib_hemoglobin_does_not_rise_without_transfusion(view):
     checked = 0
     for e in view.admits:
         if e.scenario != "ugib":
             continue
         hgb = _series(view, e.csn, "HGB", status=("F", "C"))
+        units = [o.ordered_at for o in view.orders(e.csn) if o.order_type == "Blood Product"]
         for a, b in zip(hgb, hgb[1:]):
             checked += 1
-            assert b.numeric - a.numeric <= 1.0, (e.csn, a.value, b.value)
+            given = sum(1 for t in units if a.resulted_at < t < b.observed_at)   # about 1 g/dL per unit of PRBC
+            assert b.numeric - a.numeric <= 1.0 + 1.2 * given, (e.csn, a.value, b.value, given)
     assert checked >= 5
 
 
@@ -324,6 +303,7 @@ def test_derived_values_are_consistent(view):
 # ---------------------------------------------------------------- 20. medications
 # Spec 10.5 dose ranges by order name prefix: (low, high, unit).
 DOSES = {
+    "insulin regular IV push": (10, 10, "units"), "dextrose 50": (25, 25, "g"),
     "sodium chloride": (500, 1000, "mL"), "acetaminophen": (650, 1000, "mg"), "ondansetron": (4, 8, "mg"),
     "morphine": (2, 6, "mg"), "hydromorphone": (0.25, 1, "mg"), "cefTRIAXone": (1, 2, "g"), "azithromycin": (500, 500, "mg"),
     "piperacillin": (4.5, 4.5, "g"), "vancomycin": (750, 2500, "mg"), "norepinephrine": (2, 30, "mcg/min"),
@@ -374,12 +354,14 @@ def test_weight_based_doses_use_the_charted_weight(view):
         w = float(re.search(r"weight ([\d.]+) kg", m.comment)[1])
         assert w == e.weight_kg == view.patients[e.pat_id].weight_kg, (m.csn, w, e.weight_kg)
         dose = float(m.dose)
-        if m.name.startswith("lactated"):
-            assert dose == round(30 * w / 100) * 100 and m.unit == "mL"
-        elif m.name.startswith("heparin"):
-            assert abs(dose - 12 * w) < 1 and m.unit == "units/hr"
-        elif m.name.startswith("insulin"):
-            assert abs(dose - 0.1 * w) < 0.06 and m.unit == "units/hr"
+        if m.name.startswith("lactated"):          # 30 mL/kg, capped at 3 L
+            assert dose == min(3000, round(30 * w / 100) * 100) and m.unit == "mL"
+        elif m.name.startswith("heparin"):         # 12 units/kg/hr, nomogram rounding to 50, max 1000
+            assert dose == min(1000, round(12 * w / 50) * 50) and m.unit == "units/hr"
+        elif m.name.startswith("insulin"):         # 0.1 units/kg/hr, rounded to 0.5
+            assert abs(dose - 0.1 * w) <= 0.25 and m.unit == "units/hr"
+        elif m.name.startswith("diltiazem"):       # 0.25 mg/kg, rounded to 5 mg, max 25
+            assert dose == min(25, round(0.25 * w / 5) * 5) and m.unit == "mg"
         elif m.name.startswith("vancomycin"):
             assert dose == min(2500, round(20 * w / 250) * 250) and m.unit == "mg"
         elif m.name.startswith("alteplase"):
@@ -390,8 +372,6 @@ def test_weight_based_doses_use_the_charted_weight(view):
     assert checked >= 15, checked
 
 
-@gap("world._dose returns the raw product 12 x weight for the heparin infusion (for example 1279.2 units/hr) with no "
-     "nomogram rounding and no 1,000 units/hr cap (spec 10.5); round to 50 units/hr and cap at 1,000")
 def test_heparin_infusion_follows_the_nomogram(view):
     hep = [m for m in view.w.med_orders if m.name.startswith("heparin")]
     assert hep
@@ -400,8 +380,6 @@ def test_heparin_infusion_follows_the_nomogram(view):
         assert 500 <= dose <= 1000 and dose % 50 == 0, (m.csn, m.dose, m.rate)
 
 
-@gap("the diltiazem Med in scenarios.GENERIC_ADMITS[af_rvr] has no weight_based text, so the order and MAR carry "
-     "'0.25 mg/kg' instead of a computed mg dose; set weight_based='0.25 mg/kg' (world._dose already handles it)")
 def test_no_per_kilogram_units_reach_the_mar(view):
     for m in view.w.med_orders:
         assert "/kg" not in m.unit, (m.name, m.dose, m.unit)
@@ -437,9 +415,6 @@ def test_penicillin_allergy_is_respected(view):
                 assert "PCN_OVERRIDE" in e.flags
 
 
-@gap("the deliberate single penicillin override (spec item 20) only happens when a penicillin allergic sepsis_uti "
-     "patient happens to draw piperacillin-tazobactam (prob 0.25), which no seed so far does; world._meds should "
-     "force one such encounter")
 def test_exactly_one_deliberate_allergy_override(view):
     overrides = [m for m in view.w.med_orders if "Allergy override" in m.comment]
     assert len(overrides) == 1, len(overrides)
@@ -462,10 +437,6 @@ def test_diagnosis_codes_are_valid(view, verified):
                 assert code in icd, (s.key, code)
 
 
-@gap("synthea._CHRONIC_ICD10 lacks ICD-10-CM mappings for about 15 percent of the chronic problems Synthea emits "
-     "(microalbuminuria and proteinuria due to T2DM E11.29, polyp of colon K63.5, hyperglycemia R73.9, sleep disorder "
-     "G47.9, OA of hand M19.049, fibromyalgia M79.7, rectal polyp K62.1, sleep apnea G47.30, carcinoma in situ of "
-     "prostate D07.5, mitral regurgitation I34.0); extend the table", when=REAL)
 def test_problems_have_snomed_and_icd10(view):
     problems = [p for pat in view.patients.values() for p in pat.problems]
     assert problems
@@ -477,9 +448,6 @@ def test_problems_have_snomed_and_icd10(view):
 CKD_STAGES = {"431855005", "431856006", "433144002", "431857002", "46177005"}
 
 
-@gap("synthea.load keeps every open Synthea condition, so 12 percent of patients carry two to four CKD stages at once and "
-     "the triage note reads 'Chronic kidney disease stage 4, Chronic kidney disease stage 3'; keep only the highest stage",
-     when=REAL)
 def test_problem_list_has_a_single_ckd_stage(view):
     for p in view.patients.values():
         stages = {x["snomed"] for x in p.problems} & CKD_STAGES
@@ -493,9 +461,6 @@ CLASS_MEMBERS = {"ACE inhibitors": ("lisinopril", "enalapril", "ramipril", "capt
                  "Cephalexin": ("cephalexin",), "Ciprofloxacin": ("ciprofloxacin",)}
 
 
-@gap("world._allergies draws class allergens (ACE inhibitors, statins, NSAIDs) without looking at the Synthea home "
-     "medication list, so 19 patients are allergic to a class they take every day; skip an allergen whose class "
-     "appears in home_meds", when=REAL)
 def test_allergies_do_not_conflict_with_home_medications(view):
     for a in view.w.allergies:
         p = view.patients[a.pat_id]
@@ -504,8 +469,6 @@ def test_allergies_do_not_conflict_with_home_medications(view):
         assert not clash, (p.pat_id, a.allergen, clash)
 
 
-@gap("world._code_status samples the Kaiser under 65 band for everyone under 65, so a 28 year old with pneumonia can be "
-     "DNR/DNI; below 50 require a malignancy, ESRD or similar problem before drawing a non full code status")
 def test_code_status_is_plausible_for_age(view):
     serious = {"46177005", "254837009", "126906006", "26929004"}     # ESRD, breast cancer, prostate neoplasm, Alzheimer's
     for e in view.admits:
@@ -555,9 +518,6 @@ def test_note_results_match_the_structured_record(view):
     assert checked > 2000, checked
 
 
-@gap("notes.triage takes the latest vital set whose entered_at precedes the signature, and the triage set is entered "
-     "0 to 12 min (sometimes 30 to 70 min) after it is taken, so 39 percent of triage notes read 'VS: not yet obtained' "
-     "beside a positive sepsis screen; the triage note should always quote the triage set")
 def test_triage_notes_quote_the_triage_vitals(view):
     notes = [n for n in view.w.notes if n.note_type == "ED Triage Notes"]
     assert notes
@@ -567,9 +527,6 @@ def test_triage_notes_quote_the_triage_vitals(view):
         assert f"HR {v.hr}, BP {v.sbp}/{v.dbp}" in n.text, (n.note_id, n.text)
 
 
-@gap("nursing reassessments are written 80 to 140 min after rooming but ESI 3 vitals recur every 120 min, so 32 percent "
-     "of reassessment notes quote a set taken over 75 min earlier (often the triage set); chart a vital set at the "
-     "reassessment time or write the note at the next charted set")
 def test_reassessment_notes_quote_fresh_vitals(view):
     checked = 0
     for n in view.w.notes:
@@ -585,8 +542,6 @@ def test_reassessment_notes_quote_fresh_vitals(view):
     assert checked > 300
 
 
-@gap("notes.reassessment writes 'Resting comfortably, call light in reach' whenever pain is 4 or less, including 5 "
-     "percent of notes whose own vitals show HR over 110, SBP under 90 or RR over 28; branch the sentence on the vitals")
 def test_reassessment_wording_matches_the_vitals(view):
     for n in view.w.notes:
         if n.note_type == "ED Notes" and "Resting comfortably" in n.text:
@@ -595,8 +550,6 @@ def test_reassessment_wording_matches_the_vitals(view):
                 assert int(m[1]) <= 110 and int(m[2]) >= 90 and int(m[3]) <= 28, (n.note_id, m[0])
 
 
-@gap("notes.triage prints 'Allergies: NKDA' for every patient without allergy rows, including the 4 percent whose "
-     "allergy_review is 'Not on File'; print 'not on file' for them so the note agrees with the patient record")
 def test_triage_note_allergy_status_matches_the_record(view):
     for n in view.w.notes:
         if n.note_type == "ED Triage Notes" and "Allergies: NKDA" in n.text:
@@ -604,8 +557,6 @@ def test_triage_note_allergy_status_matches_the_record(view):
             assert p.allergy_review != "Not on File", (n.note_id, p.pat_id)
 
 
-@gap("notes.history only lists problems whose SNOMED code is in notes.PRIORITY, so a patient with prediabetes and "
-     "recurrent UTI on the problem list gets 'Hx: none reported'; fall back to the first three problems")
 def test_history_line_reflects_the_problem_list(view):
     checked = 0
     for n in view.w.notes:
@@ -615,17 +566,17 @@ def test_history_line_reflects_the_problem_list(view):
     assert checked >= 0
 
 
-@gap("the chf HPI template says 'ran out of diuretic' regardless of the home medication list, which has no loop or "
-     "thiazide diuretic for most of these patients; condition the phrase on home_meds")
 def test_hpi_claims_agree_with_home_medications(view):
-    diuretics = ("furosemide", "torsemide", "bumetanide", "hydrochlorothiazide", "chlorthalidone")
+    """A heart failure HPI says the patient ran out of furosemide only when furosemide is a home med."""
     checked = 0
     for n in view.w.notes:
-        if "ran out of diuretic" in n.text:
-            checked += 1
-            p = view.patients[view.enc[n.csn].pat_id]
-            assert any(d in m["display"].lower() for m in p.home_meds for d in diuretics), (n.note_id, [m["display"] for m in p.home_meds])
-    assert checked >= 5
+        e = view.enc.get(n.csn)
+        if not e or e.scenario != "chf" or n.note_type != "ED Provider Notes":
+            continue
+        checked += 1
+        on_it = any("furosemide" in m["display"].lower() for m in view.patients[e.pat_id].home_meds)
+        assert ("ran out of furosemide" in n.text) == on_it, (n.note_id, on_it)
+    assert checked >= 3
 
 
 def test_note_history_and_allergies_come_from_the_chart(view):
@@ -636,8 +587,10 @@ def test_note_history_and_allergies_come_from_the_chart(view):
         m = re.search(r"Allergies: (.*)\.$", n.text, re.M)
         assert m, n.note_id
         charted = {a.allergen for a in view.allergies(e.pat_id) if a.noted_at <= e.arrival_at}
-        if m[1] == "NKDA":
+        if m[1] in ("NKDA", "not on file, unable to obtain"):
             assert not charted, (n.note_id, charted)
+            if m[1] != "NKDA":
+                assert view.patients[e.pat_id].allergy_review == "Not on File", n.note_id
         else:
             # Strip the trailing "(reaction)" but keep a parenthetical that belongs to the allergen name.
             quoted = {re.sub(r" \((?!sulfonamide).*\)$", "", x) for x in m[1].split("; ")}
@@ -645,9 +598,6 @@ def test_note_history_and_allergies_come_from_the_chart(view):
         assert f"ESI {e.esi}." in n.text
 
 
-@gap("synthea.load keeps Synthea's raw reaction text (DESCRIPTION1) on drug allergies, so triage notes read "
-     "'Aspirin (abdominal pain (finding))'; strip the ' (finding)' and ' (disorder)' suffixes as the problem "
-     "list loader already does", when=REAL)
 def test_notes_carry_no_synthea_semantic_tags(view):
     for n in view.w.notes:
         assert "(finding)" not in n.text and "(disorder)" not in n.text, (n.note_id, n.text[:200])

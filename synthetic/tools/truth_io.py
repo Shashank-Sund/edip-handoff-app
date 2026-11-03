@@ -10,6 +10,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -62,8 +63,12 @@ def load_truth(folder) -> model.World:
     return w
 
 
+TZ = ZoneInfo("America/New_York")
+
+
 def window(world) -> tuple:
     """(start, end) of the generated week as UTC datetimes, read from the world config."""
     cfg = world.config
-    start = datetime.fromisoformat(cfg["window_start"]).astimezone(UTC)
-    return start, start + timedelta(days=int(cfg["days"]))
+    local_start = datetime.fromisoformat(cfg["window_start"]).astimezone(TZ)
+    # Wall clock arithmetic in local time: DST ends inside the window, so the last day has 25 hours.
+    return local_start.astimezone(UTC), (local_start + timedelta(days=int(cfg["days"]))).astimezone(UTC)

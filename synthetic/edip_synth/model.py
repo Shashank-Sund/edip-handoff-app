@@ -136,6 +136,7 @@ class BedRequest:
     completed_at: Optional[datetime] = None
     deleted: bool = False
     delete_cause: str = ""
+    deleted_at: Optional[datetime] = None
     linked_event_id: str = ""
 
 

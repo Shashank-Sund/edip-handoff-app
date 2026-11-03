@@ -479,11 +479,10 @@ class Renderer:
         return Msg("ORU", APP["RAD"], fac, csn, "ORU", "R01", "", at, head + [orc, obr, obx], o["order_id"])
 
     def build_vitals(self):
-        f24 = {tuple(x) for x in self.plan.get("F24_unvalidated_device_values", [])}
         for csn in sorted(self.vitals):
             fac = self.encs[csn]["facility"]
             for v in sorted(self.vitals[csn], key=lambda v: v["line"]):
-                device = (csn, v["line"]) in f24
+                device = not v["validated"]                 # F24: monitor value a nurse never validated
                 if not self.profile[fac]["flowsheet_oru"] and not device:
                     continue
                 at = ts(v["entered_at"])
@@ -583,7 +582,8 @@ class Renderer:
 
     # ------------------------------------------------------------------ feed level faults
     def fault(self, fid, csn, at, desc, expected, m: Msg):
-        self.manifest.append({"fault_id": fid, "csn": csn, "stream": "hl7", "event_time": at.isoformat() if at else None,
+        self.manifest.append({"fault_id": fid, "csn": csn, "stream": "hl7",
+                              "event_time": at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if at else None,
                               "description": desc, "expected": expected, "_msg": m})
 
     def inject_adt_faults(self):
@@ -706,9 +706,10 @@ class Renderer:
             if m.interface == "ADT" and rng.random() < self.plan.get("F03_content_duplicate_rate", 0):
                 d = m.copy()
                 d.at = m.at + timedelta(seconds=rng.uniform(10, 300))
-                d.delivery = d.at + timedelta(seconds=rng.uniform(0.2, 4.0))
+                # A resave goes through the same queue, so a delayed original (F05, F06) delays the copy too.
+                d.delivery = max(d.at, m.delivery) + timedelta(seconds=rng.uniform(0.2, 4.0))
                 d.msh10 = None
-                d.faults.append("F03")
+                d.faults = [f for f in m.faults if f not in ("F05", "F06")] + ["F03"]
                 self.fault("F03", m.csn, d.at, f"Content duplicate of {m.mtype}^{m.trigger} {m.msh10} with a new MSH-10 and MSH-7",
                            "Content hash dedupe; keep the first", d)
                 extra.append(d)

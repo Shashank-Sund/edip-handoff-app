@@ -2,12 +2,9 @@
  "generated_by": "synthetic/tools/verify_codes.py",
  "checked_on": "2026-11-02",
  "summary": {
-  "total": 231,
-  "verified": 227,
+  "total": 294,
+  "verified": 293,
   "not_verified": [
-   "ICD-10-CM E88.81",
-   "RxNorm 70618",
-   "SNOMED CT 227037002",
    "SNOMED CT 6525002"
   ],
   "corrections": [
@@ -93,31 +90,59 @@
    }
   ],
   "name_review": [
+   "ICD-10-CM C18.8: expected 'chronic problem mapping', found 'Malignant neoplasm of overlapping sites of colon'",
+   "ICD-10-CM C18.9: expected 'chronic problem mapping', found 'Malignant neoplasm of colon, unspecified'",
    "ICD-10-CM C50.919: expected 'chronic problem mapping', found 'Malignant neoplasm of unspecified site of unspecified female breast'",
+   "ICD-10-CM C79.82: expected 'chronic problem mapping', found 'Secondary malignant neoplasm of genital organs'",
+   "ICD-10-CM C90.00: expected 'chronic problem mapping', found 'Multiple myeloma not having achieved remission'",
+   "ICD-10-CM D07.5: expected 'chronic problem mapping', found 'Carcinoma in situ of prostate'",
    "ICD-10-CM D40.0: expected 'chronic problem mapping', found 'Neoplasm of uncertain behavior of prostate'",
    "ICD-10-CM D64.9: expected 'chronic problem mapping', found 'Anemia, unspecified'",
    "ICD-10-CM E03.9: expected 'chronic problem mapping', found 'Hypothyroidism, unspecified'",
    "ICD-10-CM E11.29: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus with other diabetic kidney complication'",
+   "ICD-10-CM E11.39: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus with other diabetic ophthalmic complication'",
    "ICD-10-CM E11.40: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus with diabetic neuropathy, unspecified'",
    "ICD-10-CM E11.9: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus without complications'",
    "ICD-10-CM E78.1: expected 'chronic problem mapping', found 'Pure hyperglyceridemia'",
    "ICD-10-CM E78.5: expected 'chronic problem mapping', found 'Hyperlipidemia, unspecified'",
+   "ICD-10-CM E88.810: expected 'chronic problem mapping', found 'Metabolic syndrome'",
+   "ICD-10-CM F10.20: expected 'chronic problem mapping', found 'Alcohol dependence, uncomplicated'",
    "ICD-10-CM F19.20: expected 'chronic problem mapping', found 'Other psychoactive substance dependence, uncomplicated'",
+   "ICD-10-CM F32.9: expected 'chronic problem mapping', found 'Major depressive disorder, single episode, unspecified'",
+   "ICD-10-CM F79: expected 'chronic problem mapping', found 'Unspecified intellectual disabilities'",
+   "ICD-10-CM G30.0: expected 'chronic problem mapping', found 'Alzheimer's disease with early onset'",
    "ICD-10-CM G30.9: expected 'chronic problem mapping', found 'Alzheimer's disease, unspecified'",
    "ICD-10-CM G40.909: expected 'chronic problem mapping', found 'Epilepsy, unspecified, not intractable, without status epilepticus'",
+   "ICD-10-CM G47.30: expected 'chronic problem mapping', found 'Sleep apnea, unspecified'",
    "ICD-10-CM G47.33: expected 'chronic problem mapping', found 'Obstructive sleep apnea (adult) (pediatric)'",
+   "ICD-10-CM G47.9: expected 'chronic problem mapping', found 'Sleep disorder, unspecified'",
+   "ICD-10-CM G80.9: expected 'chronic problem mapping', found 'Cerebral palsy, unspecified'",
+   "ICD-10-CM I05.0: expected 'chronic problem mapping', found 'Rheumatic mitral stenosis'",
    "ICD-10-CM I10: expected 'chronic problem mapping', found 'Essential (primary) hypertension'",
    "ICD-10-CM I25.10: expected 'chronic problem mapping', found 'Atherosclerotic heart disease of native coronary artery without angina pectoris'",
    "ICD-10-CM I25.2: expected 'chronic problem mapping', found 'Old myocardial infarction'",
+   "ICD-10-CM I34.0: expected 'chronic problem mapping', found 'Nonrheumatic mitral (valve) insufficiency'",
    "ICD-10-CM I35.0: expected 'chronic problem mapping', found 'Nonrheumatic aortic (valve) stenosis'",
+   "ICD-10-CM I35.1: expected 'chronic problem mapping', found 'Nonrheumatic aortic (valve) insufficiency'",
+   "ICD-10-CM I36.1: expected 'chronic problem mapping', found 'Nonrheumatic tricuspid (valve) insufficiency'",
+   "ICD-10-CM I37.1: expected 'chronic problem mapping', found 'Nonrheumatic pulmonary valve insufficiency'",
    "ICD-10-CM I50.9: expected 'chronic problem mapping', found 'Heart failure, unspecified'",
+   "ICD-10-CM J30.9: expected 'chronic problem mapping', found 'Allergic rhinitis, unspecified'",
    "ICD-10-CM J43.9: expected 'chronic problem mapping', found 'Emphysema, unspecified'",
    "ICD-10-CM J45.909: expected 'chronic problem mapping', found 'Unspecified asthma, uncomplicated'",
+   "ICD-10-CM K21.9: expected 'chronic problem mapping', found 'Gastro-esophageal reflux disease without esophagitis'",
+   "ICD-10-CM K62.1: expected 'chronic problem mapping', found 'Rectal polyp'",
+   "ICD-10-CM K63.5: expected 'chronic problem mapping', found 'Polyp of colon'",
+   "ICD-10-CM L20.9: expected 'chronic problem mapping', found 'Atopic dermatitis, unspecified'",
+   "ICD-10-CM M06.9: expected 'chronic problem mapping', found 'Rheumatoid arthritis, unspecified'",
    "ICD-10-CM M16.9: expected 'chronic problem mapping', found 'Osteoarthritis of hip, unspecified'",
    "ICD-10-CM M17.9: expected 'chronic problem mapping', found 'Osteoarthritis of knee, unspecified'",
+   "ICD-10-CM M19.049: expected 'chronic problem mapping', found 'Primary osteoarthritis, unspecified hand'",
+   "ICD-10-CM M79.7: expected 'chronic problem mapping', found 'Fibromyalgia'",
    "ICD-10-CM M81.0: expected 'chronic problem mapping', found 'Age-related osteoporosis without current pathological fracture'",
    "ICD-10-CM N18.6: expected 'chronic problem mapping', found 'End stage renal disease'",
    "ICD-10-CM R73.03: expected 'chronic problem mapping', found 'Prediabetes'",
+   "ICD-10-CM R73.9: expected 'chronic problem mapping', found 'Hyperglycemia, unspecified'",
    "LOINC 11488-4: expected 'Consults', found 'Consult Note'",
    "LOINC 1742-6: expected 'ALT', found 'Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma'",
    "LOINC 1920-8: expected 'AST', found 'Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma'",
@@ -125,47 +150,80 @@
    "LOINC 28568-4: expected 'ED Provider Notes', found 'Physician Emergency Department Note'",
    "LOINC 30934-4: expected 'BNP', found 'Natriuretic peptide B [Mass/volume] in Serum or Plasma'",
    "LOINC 3094-0: expected 'BUN', found 'Urea nitrogen [Mass/volume] in Serum or Plasma'",
-   "LOINC 36916-5: expected 'CTA chest pulmonary embolism protocol', found 'Kappa light chains.free [Mass/volume] in Serum'",
+   "LOINC 36916-5: expected '(listed in scenarios.UNVERIFIED only)', found 'Kappa light chains.free [Mass/volume] in Serum'",
    "LOINC 57053-1: expected 'ED Notes (nursing)', found 'Nurse Emergency Department Note'",
    "LOINC 6301-6: expected 'INR', found 'INR in Platelet poor plasma by Coagulation assay'",
    "LOINC 6690-2: expected 'WBC', found 'Leukocytes [#/volume] in Blood by Automated count'",
    "LOINC 882-1: expected 'ABO and Rh', found 'ABO and Rh group [Type] in Blood'",
    "RxNorm 10180: expected 'allergen: Sulfa (sulfonamide antibiotics)', found 'sulfamethoxazole'",
+   "RxNorm 7980: expected 'allergen: Penicillins', found 'penicillin G'",
    "RxNorm 847630: expected 'lactated Ringer's bolus', found 'calcium chloride 0.2 MG/ML / potassium chloride 0.3 MG/ML / sodium chloride 6 MG/ML / sodium lactate 3.1 MG/ML Injectable Solution'",
+   "SNOMED CT 109838007: expected 'chronic problem (Synthea)', found 'Overlapping malignant neoplasm of colon'",
+   "SNOMED CT 109989006: expected 'chronic problem (Synthea)', found 'Multiple myeloma'",
+   "SNOMED CT 110359009: expected 'chronic problem (Synthea)', found 'Intellectual disability'",
+   "SNOMED CT 111287006: expected 'chronic problem (Synthea)', found 'Tricuspid valve regurgitation'",
    "SNOMED CT 126906006: expected 'chronic problem (Synthea)', found 'Neoplasm of prostate'",
    "SNOMED CT 127013003: expected 'chronic problem (Synthea)', found 'Disorder of kidney due to diabetes mellitus'",
+   "SNOMED CT 128188000: expected 'chronic problem (Synthea)', found 'Cerebral palsy'",
    "SNOMED CT 128613002: expected 'chronic problem (Synthea)', found 'Seizure disorder'",
+   "SNOMED CT 157141000119108: expected 'chronic problem (Synthea)', found 'Proteinuria due to type 2 diabetes mellitus'",
    "SNOMED CT 185086009: expected 'patient fit condition', found 'Emphysematous bronchitis'",
    "SNOMED CT 195967001: expected 'patient fit condition', found 'Asthma'",
    "SNOMED CT 197927001: expected 'patient fit condition', found 'Recurrent urinary tract infection'",
+   "SNOMED CT 201834006: expected 'chronic problem (Synthea)', found 'Localized, primary osteoarthritis of the hand'",
+   "SNOMED CT 203082005: expected 'chronic problem (Synthea)', found 'Fibromyalgia'",
+   "SNOMED CT 230265002: expected 'chronic problem (Synthea)', found 'Familial Alzheimer's disease of early onset'",
+   "SNOMED CT 232353008: expected 'chronic problem (Synthea)', found 'Perennial allergic rhinitis with seasonal variation'",
+   "SNOMED CT 233678006: expected 'chronic problem (Synthea)', found 'Childhood asthma'",
+   "SNOMED CT 235595009: expected 'chronic problem (Synthea)', found 'Gastroesophageal reflux disease'",
    "SNOMED CT 237602007: expected 'chronic problem (Synthea)', found 'Metabolic syndrome X'",
    "SNOMED CT 239872002: expected 'patient fit condition', found 'Osteoarthritis of hip'",
    "SNOMED CT 239873007: expected 'chronic problem (Synthea)', found 'Osteoarthritis of knee'",
+   "SNOMED CT 24079001: expected 'chronic problem (Synthea)', found 'Atopic dermatitis'",
    "SNOMED CT 254837009: expected 'chronic problem (Synthea)', found 'Malignant neoplasm of breast'",
    "SNOMED CT 26929004: expected 'patient fit condition', found 'Alzheimer's disease'",
    "SNOMED CT 271737000: expected 'patient fit condition', found 'Anemia'",
    "SNOMED CT 302870006: expected 'chronic problem (Synthea)', found 'Hypertriglyceridemia'",
+   "SNOMED CT 363406005: expected 'chronic problem (Synthea)', found 'Malignant neoplasm of colon'",
    "SNOMED CT 368581000119106: expected 'chronic problem (Synthea)', found 'Neuropathy due to type 2 diabetes mellitus'",
+   "SNOMED CT 370143000: expected 'chronic problem (Synthea)', found 'Major depressive disorder'",
+   "SNOMED CT 39898005: expected 'chronic problem (Synthea)', found 'Sleep disorder'",
    "SNOMED CT 399211009: expected 'chronic problem (Synthea)', found 'History of myocardial infarction'",
    "SNOMED CT 401303003: expected 'STEMI', found 'Acute ST segment elevation myocardial infarction'",
    "SNOMED CT 401314000: expected 'NSTEMI', found 'Acute non-ST segment elevation myocardial infarction'",
    "SNOMED CT 414545008: expected 'patient fit condition', found 'Ischemic heart disease'",
+   "SNOMED CT 427419006: expected 'chronic problem (Synthea)', found 'Transformed migraine'",
    "SNOMED CT 431857002: expected 'patient fit condition', found 'Chronic kidney disease stage 4'",
    "SNOMED CT 433144002: expected 'patient fit condition', found 'Chronic kidney disease stage 3'",
+   "SNOMED CT 44027008: expected 'allergen: Shellfish', found 'Seafood'",
    "SNOMED CT 44054006: expected 'patient fit condition', found 'Type 2 diabetes mellitus'",
    "SNOMED CT 46177005: expected 'chronic problem (Synthea)', found 'End-stage renal disease'",
+   "SNOMED CT 48724000: expected 'chronic problem (Synthea)', found 'Mitral valve regurgitation'",
    "SNOMED CT 49436004: expected 'patient fit condition', found 'Atrial fibrillation'",
    "SNOMED CT 55822004: expected 'patient fit condition', found 'Hyperlipidemia'",
    "SNOMED CT 59621000: expected 'patient fit condition', found 'Essential hypertension'",
+   "SNOMED CT 60234000: expected 'chronic problem (Synthea)', found 'Aortic valve regurgitation'",
    "SNOMED CT 60573004: expected 'patient fit condition', found 'Aortic valve stenosis'",
+   "SNOMED CT 60951000119105: expected 'chronic problem (Synthea)', found 'Blindness due to type 2 diabetes mellitus'",
    "SNOMED CT 64859006: expected 'patient fit condition', found 'Osteoporosis'",
-   "SNOMED CT 68566005: expected 'Acute pyelonephritis', found 'Urinary tract infectious disease'",
+   "SNOMED CT 68496003: expected 'chronic problem (Synthea)', found 'Polyp of colon'",
+   "SNOMED CT 69896004: expected 'chronic problem (Synthea)', found 'Rheumatoid arthritis'",
+   "SNOMED CT 713197008: expected 'chronic problem (Synthea)', found 'Recurrent rectal polyp'",
    "SNOMED CT 714628002: expected 'chronic problem (Synthea)', found 'Prediabetes'",
+   "SNOMED CT 7200002: expected 'chronic problem (Synthea)', found 'Alcoholism'",
+   "SNOMED CT 73430006: expected 'chronic problem (Synthea)', found 'Sleep apnea'",
    "SNOMED CT 78275009: expected 'chronic problem (Synthea)', found 'Obstructive sleep apnea syndrome'",
+   "SNOMED CT 79619009: expected 'chronic problem (Synthea)', found 'Mitral valve stenosis'",
+   "SNOMED CT 80394007: expected 'chronic problem (Synthea)', found 'Hyperglycemia'",
    "SNOMED CT 83664006: expected 'chronic problem (Synthea)', found 'Idiopathic atrophic hypothyroidism'",
    "SNOMED CT 84757009: expected 'chronic problem (Synthea)', found 'Epilepsy'",
    "SNOMED CT 87433001: expected 'patient fit condition', found 'Pulmonary emphysema'",
-   "SNOMED CT 88805009: expected 'patient fit condition', found 'Chronic congestive heart failure'"
+   "SNOMED CT 88805009: expected 'patient fit condition', found 'Chronic congestive heart failure'",
+   "SNOMED CT 90781000119102: expected 'chronic problem (Synthea)', found 'Microalbuminuria due to type 2 diabetes mellitus'",
+   "SNOMED CT 91434003: expected 'chronic problem (Synthea)', found 'Pulmonic valve regurgitation'",
+   "SNOMED CT 92691004: expected 'chronic problem (Synthea)', found 'Carcinoma in situ of prostate'",
+   "SNOMED CT 94503003: expected 'chronic problem (Synthea)', found 'Metastatic malignant neoplasm to prostate'",
+   "SNOMED CT 95417003: expected 'chronic problem (Synthea)', found 'Primary fibromyalgia syndrome'"
   ]
  },
  "codes": [
@@ -185,6 +243,34 @@
    "name_consistent": true
   },
   {
+   "code": "C18.8",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Malignant neoplasm of overlapping sites of colon",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C18.8&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "C18.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Malignant neoplasm of colon, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C18.9&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "C50.919",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -196,6 +282,48 @@
    "name_found": "Malignant neoplasm of unspecified site of unspecified female breast",
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C50.919&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "C79.82",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Secondary malignant neoplasm of genital organs",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C79.82&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "C90.00",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Multiple myeloma not having achieved remission",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C90.00&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "D07.5",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Carcinoma in situ of prostate",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=D07.5&maxList=50",
    "name_consistent": false
   },
   {
@@ -283,6 +411,20 @@
    "name_consistent": false
   },
   {
+   "code": "E11.39",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Type 2 diabetes mellitus with other diabetic ophthalmic complication",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E11.39&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "E11.40",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -339,17 +481,31 @@
    "name_consistent": false
   },
   {
-   "code": "E88.81",
+   "code": "E88.810",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
    "used_in": [
     "synthea._CHRONIC_ICD10"
    ],
    "in_unverified_list": false,
-   "status_found": "not found",
-   "name_found": null,
-   "verified": false,
-   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E88.81&maxList=50",
+   "status_found": "billable code",
+   "name_found": "Metabolic syndrome",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E88.810&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "F10.20",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Alcohol dependence, uncomplicated",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F10.20&maxList=50",
    "name_consistent": false
   },
   {
@@ -367,6 +523,20 @@
    "name_consistent": false
   },
   {
+   "code": "F32.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Major depressive disorder, single episode, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F32.9&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "F41.9",
    "system": "ICD-10-CM",
    "expected": "Anxiety disorder, unspecified",
@@ -379,6 +549,34 @@
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F41.9&maxList=50",
    "name_consistent": true
+  },
+  {
+   "code": "F79",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Unspecified intellectual disabilities",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F79&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "G30.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Alzheimer's disease with early onset",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G30.0&maxList=50",
+   "name_consistent": false
   },
   {
    "code": "G30.9",
@@ -409,6 +607,20 @@
    "name_consistent": false
   },
   {
+   "code": "G43.709",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic migraine without aura, not intractable, without status migrainosus",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G43.709&maxList=50",
+   "name_consistent": true
+  },
+  {
    "code": "G43.719",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -423,6 +635,20 @@
    "name_consistent": true
   },
   {
+   "code": "G47.30",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Sleep apnea, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G47.30&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "G47.33",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -434,6 +660,48 @@
    "name_found": "Obstructive sleep apnea (adult) (pediatric)",
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G47.33&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "G47.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Sleep disorder, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G47.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "G80.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Cerebral palsy, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G80.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I05.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Rheumatic mitral stenosis",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I05.0&maxList=50",
    "name_consistent": false
   },
   {
@@ -521,6 +789,20 @@
    "name_consistent": false
   },
   {
+   "code": "I34.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Nonrheumatic mitral (valve) insufficiency",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I34.0&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "I35.0",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -532,6 +814,48 @@
    "name_found": "Nonrheumatic aortic (valve) stenosis",
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I35.0&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I35.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Nonrheumatic aortic (valve) insufficiency",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I35.1&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I36.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Nonrheumatic tricuspid (valve) insufficiency",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I36.1&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I37.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Nonrheumatic pulmonary valve insufficiency",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I37.1&maxList=50",
    "name_consistent": false
   },
   {
@@ -635,6 +959,20 @@
    "name_consistent": true
   },
   {
+   "code": "J30.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Allergic rhinitis, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J30.9&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "J43.9",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -719,6 +1057,48 @@
    "name_consistent": true
   },
   {
+   "code": "K21.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Gastro-esophageal reflux disease without esophagitis",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K21.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "K62.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Rectal polyp",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K62.1&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "K63.5",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Polyp of colon",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K63.5&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "K81.0",
    "system": "ICD-10-CM",
    "expected": "Acute cholecystitis",
@@ -775,6 +1155,34 @@
    "name_consistent": true
   },
   {
+   "code": "L20.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Atopic dermatitis, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=L20.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "M06.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Rheumatoid arthritis, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M06.9&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "M16.9",
    "system": "ICD-10-CM",
    "expected": "chronic problem mapping",
@@ -803,6 +1211,20 @@
    "name_consistent": false
   },
   {
+   "code": "M19.049",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Primary osteoarthritis, unspecified hand",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M19.049&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "M54.50",
    "system": "ICD-10-CM",
    "expected": "Low back pain, unspecified",
@@ -815,6 +1237,20 @@
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M54.50&maxList=50",
    "name_consistent": true
+  },
+  {
+   "code": "M79.7",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Fibromyalgia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M79.7&maxList=50",
+   "name_consistent": false
   },
   {
    "code": "M81.0",
@@ -1128,6 +1564,20 @@
    "name_consistent": false
   },
   {
+   "code": "R73.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Hyperglycemia, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R73.9&maxList=50",
+   "name_consistent": false
+  },
+  {
    "code": "S22.41XA",
    "system": "ICD-10-CM",
    "expected": "Multiple fractures of ribs, right side, initial",
@@ -1438,7 +1888,7 @@
   {
    "code": "24558-9",
    "system": "LOINC",
-   "expected": "US abdomen right upper quadrant",
+   "expected": "US abdomen",
    "used_in": [
     "reference.IMAGING[RUQUS]"
    ],
@@ -1576,6 +2026,20 @@
    "name_consistent": true
   },
   {
+   "code": "30767-8",
+   "system": "LOINC",
+   "expected": "XR pelvis and hip",
+   "used_in": [
+    "reference.IMAGING[XRHIP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "XR Pelvis and Hip Views",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=30767-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
    "code": "30799-1",
    "system": "LOINC",
    "expected": "CT head without contrast",
@@ -1704,9 +2168,9 @@
   {
    "code": "36916-5",
    "system": "LOINC",
-   "expected": "CTA chest pulmonary embolism protocol",
+   "expected": "(listed in scenarios.UNVERIFIED only)",
    "used_in": [
-    "reference.IMAGING[CTPE]"
+    "scenarios.UNVERIFIED"
    ],
    "in_unverified_list": true,
    "status_found": "ACTIVE",
@@ -1727,20 +2191,6 @@
    "name_found": "CTA Head vessels and Neck vessels W contrast IV",
    "verified": true,
    "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=37498-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
-   "name_consistent": true
-  },
-  {
-   "code": "37622-8",
-   "system": "LOINC",
-   "expected": "XR hip and pelvis",
-   "used_in": [
-    "reference.IMAGING[XRHIP]"
-   ],
-   "in_unverified_list": false,
-   "status_found": "ACTIVE",
-   "name_found": "XR Pelvis AP",
-   "verified": true,
-   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=37622-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
    "name_consistent": true
   },
   {
@@ -2052,6 +2502,20 @@
    "name_consistent": false
   },
   {
+   "code": "88322-3",
+   "system": "LOINC",
+   "expected": "CTA chest pulmonary embolism protocol",
+   "used_in": [
+    "reference.IMAGING[CTPE]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "CT Chest W contrast IV and CT angiogram Pulmonary arteries for pulmonary embolus W contrast IV",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=88322-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
    "code": "8867-4",
    "system": "LOINC",
    "expected": "Heart rate",
@@ -2068,7 +2532,7 @@
   {
    "code": "92142-9",
    "system": "LOINC",
-   "expected": "Influenza A and B RNA",
+   "expected": "Influenza A RNA",
    "used_in": [
     "reference.LABS[FLU]"
    ],
@@ -2131,9 +2595,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "sulfamethoxazole",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/10180/properties.json",
-   "tty": "IN",
    "name_consistent": false
   },
   {
@@ -2146,9 +2610,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "albuterol 0.833 MG/ML / ipratropium bromide 0.167 MG/ML Inhalation Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1437702/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2161,9 +2625,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "250 ML heparin sodium, porcine 100 UNT/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1658717/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2176,9 +2640,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "piperacillin 4000 MG / tazobactam 500 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1659149/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2193,9 +2657,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "ceftriaxone 1000 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665021/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2208,9 +2672,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "ceftriaxone 2000 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665046/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2223,24 +2687,25 @@
    "in_unverified_list": true,
    "status_found": "Active",
    "name_found": "cefazolin 2000 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665060/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
    "code": "1665088",
    "system": "RxNorm",
-   "expected": "cefepime 2 g injection (penicillin allergy substitute)",
+   "expected": "cefepime 2 g injection",
    "used_in": [
+    "scenarios.EXTRA_MEDS",
     "world._meds"
    ],
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "cefepime 2000 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665088/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2253,9 +2718,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "1 ML lorazepam 2 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665188/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2270,9 +2735,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "azithromycin 500 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1668238/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2285,9 +2750,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "4 ML furosemide 10 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1719291/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2300,9 +2765,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "1 ML morphine sulfate 4 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1732006/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2321,9 +2786,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "2 ML ondansetron 2 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1740467/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2336,9 +2801,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "methylprednisolone 125 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1743704/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2351,9 +2816,24 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "5 ML diltiazem hydrochloride 5 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1791229/properties.json",
+   "name_consistent": true
+  },
+  {
+   "code": "1795514",
+   "system": "RxNorm",
+   "expected": "dextrose 50 % injection",
+   "used_in": [
+    "scenarios.EXTRA_MEDS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "50 ML glucose 500 MG/ML Injection",
    "tty": "SCD",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1795514/properties.json",
    "name_consistent": true
   },
   {
@@ -2366,9 +2846,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "alteplase 100 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1804799/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2381,9 +2861,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "vancomycin 1000 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1807513/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2398,9 +2878,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "nitroglycerin 0.4 MG Sublingual Tablet",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/198039/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2419,9 +2899,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "acetaminophen 500 MG Oral Tablet",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/198440/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2429,14 +2909,15 @@
    "system": "RxNorm",
    "expected": "potassium chloride 2 mEq/mL injection",
    "used_in": [
+    "scenarios.EXTRA_MEDS",
     "scenarios.SCENARIOS[dka].meds"
    ],
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "potassium chloride 2 MEQ/ML Injectable Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/204520/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2449,9 +2930,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "cephalexin",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2231/properties.json",
-   "tty": "IN",
    "name_consistent": true
   },
   {
@@ -2464,9 +2945,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "4 ML norepinephrine 1 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/242969/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2479,9 +2960,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "ciprofloxacin",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2551/properties.json",
-   "tty": "IN",
    "name_consistent": true
   },
   {
@@ -2494,9 +2975,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "ondansetron",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/26225/properties.json",
-   "tty": "IN",
    "name_consistent": true
   },
   {
@@ -2509,9 +2990,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "codeine",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2670/properties.json",
-   "tty": "IN",
    "name_consistent": true
   },
   {
@@ -2524,9 +3005,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "pantoprazole 40 MG Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/283669/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2534,14 +3015,15 @@
    "system": "RxNorm",
    "expected": "insulin regular 100 units/mL infusion",
    "used_in": [
+    "scenarios.EXTRA_MEDS",
     "scenarios.SCENARIOS[dka].meds"
    ],
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "insulin, regular, human 100 UNT/ML Injectable Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/311034/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2554,9 +3036,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "1 ML octreotide 0.05 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/312068/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2565,6 +3047,7 @@
    "expected": "sodium chloride 0.9 % bolus",
    "used_in": [
     "scenarios.DISCHARGE[vomiting_d].meds",
+    "scenarios.EXTRA_MEDS",
     "scenarios.GENERIC_ADMITS[abdominal].meds",
     "scenarios.GENERIC_ADMITS[aki].meds",
     "scenarios.GENERIC_ADMITS[other_medical].meds",
@@ -2575,9 +3058,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "sodium chloride 9 MG/ML Injectable Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/313002/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2593,9 +3076,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "aspirin 81 MG Chewable Tablet",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/318272/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2609,9 +3092,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "100 ML acetaminophen 10 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/483017/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2624,24 +3107,24 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "morphine",
+   "tty": "IN",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/7052/properties.json",
-   "tty": "IN",
    "name_consistent": true
   },
   {
-   "code": "70618",
+   "code": "7980",
    "system": "RxNorm",
    "expected": "allergen: Penicillins",
    "used_in": [
     "world.ALLERGENS"
    ],
    "in_unverified_list": false,
-   "status_found": "NotCurrent",
-   "name_found": "Penicillin",
-   "verified": false,
-   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/70618/properties.json",
+   "status_found": "Active",
+   "name_found": "penicillin G",
    "tty": "IN",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/7980/properties.json",
    "name_consistent": false
   },
   {
@@ -2655,9 +3138,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "calcium chloride 0.2 MG/ML / potassium chloride 0.3 MG/ML / sodium chloride 6 MG/ML / sodium lactate 3.1 MG/ML Injectable Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/847630/properties.json",
-   "tty": "SCD",
    "name_consistent": false
   },
   {
@@ -2670,9 +3153,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "0.4 ML enoxaparin sodium 100 MG/ML Prefilled Syringe",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/854235/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2687,9 +3170,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "1 ML ketorolac tromethamine 15 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/860092/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2702,9 +3185,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "5 ML metoprolol tartrate 1 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/866508/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2717,9 +3200,9 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "labetalol hydrochloride 5 MG/ML Injectable Solution",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/896771/properties.json",
-   "tty": "SCD",
    "name_consistent": true
   },
   {
@@ -2733,10 +3216,52 @@
    "in_unverified_list": false,
    "status_found": "Active",
    "name_found": "1 ML hydromorphone hydrochloride 1 MG/ML Injection",
+   "tty": "SCD",
    "verified": true,
    "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/897653/properties.json",
-   "tty": "SCD",
    "name_consistent": true
+  },
+  {
+   "code": "109838007",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Overlapping malignant neoplasm of colon",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=109838007",
+   "name_consistent": false
+  },
+  {
+   "code": "109989006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Multiple myeloma",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=109989006",
+   "name_consistent": false
+  },
+  {
+   "code": "110359009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Intellectual disability",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=110359009",
+   "name_consistent": false
   },
   {
    "code": "111088007",
@@ -2751,6 +3276,20 @@
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=111088007",
    "name_consistent": true
+  },
+  {
+   "code": "111287006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Tricuspid valve regurgitation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=111287006",
+   "name_consistent": false
   },
   {
    "code": "124171000119105",
@@ -2795,6 +3334,20 @@
    "name_consistent": false
   },
   {
+   "code": "128188000",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Cerebral palsy",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=128188000",
+   "name_consistent": false
+  },
+  {
    "code": "128613002",
    "system": "SNOMED CT",
    "expected": "chronic problem (Synthea)",
@@ -2822,6 +3375,20 @@
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=14669001",
    "name_consistent": true
+  },
+  {
+   "code": "157141000119108",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Proteinuria due to type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=157141000119108",
+   "name_consistent": false
   },
   {
    "code": "185086009",
@@ -2898,17 +3465,59 @@
    "name_consistent": false
   },
   {
-   "code": "227037002",
+   "code": "201834006",
    "system": "SNOMED CT",
-   "expected": "allergen: Shellfish",
+   "expected": "chronic problem (Synthea)",
    "used_in": [
-    "world.ALLERGENS"
+    "synthea._CHRONIC_ICD10"
    ],
    "in_unverified_list": false,
-   "status_found": "inactive",
-   "name_found": "Fish - dietary",
-   "verified": false,
-   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=227037002",
+   "status_found": "active",
+   "name_found": "Localized, primary osteoarthritis of the hand",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=201834006",
+   "name_consistent": false
+  },
+  {
+   "code": "203082005",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Fibromyalgia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=203082005",
+   "name_consistent": false
+  },
+  {
+   "code": "230265002",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Familial Alzheimer's disease of early onset",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=230265002",
+   "name_consistent": false
+  },
+  {
+   "code": "232353008",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Perennial allergic rhinitis with seasonal variation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=232353008",
    "name_consistent": false
   },
   {
@@ -2925,6 +3534,34 @@
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=233604007",
    "name_consistent": true
+  },
+  {
+   "code": "233678006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Childhood asthma",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=233678006",
+   "name_consistent": false
+  },
+  {
+   "code": "235595009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Gastroesophageal reflux disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=235595009",
+   "name_consistent": false
   },
   {
    "code": "237602007",
@@ -2967,6 +3604,20 @@
    "name_found": "Osteoarthritis of knee",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=239873007",
+   "name_consistent": false
+  },
+  {
+   "code": "24079001",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Atopic dermatitis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=24079001",
    "name_consistent": false
   },
   {
@@ -3045,6 +3696,35 @@
    "name_consistent": false
   },
   {
+   "code": "363406005",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Malignant neoplasm of colon",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=363406005",
+   "name_consistent": false
+  },
+  {
+   "code": "36689008",
+   "system": "SNOMED CT",
+   "expected": "Acute pyelonephritis",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[pyelo].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute pyelonephritis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=36689008",
+   "name_consistent": true
+  },
+  {
    "code": "368581000119106",
    "system": "SNOMED CT",
    "expected": "chronic problem (Synthea)",
@@ -3056,6 +3736,34 @@
    "name_found": "Neuropathy due to type 2 diabetes mellitus",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=368581000119106",
+   "name_consistent": false
+  },
+  {
+   "code": "370143000",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Major depressive disorder",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=370143000",
+   "name_consistent": false
+  },
+  {
+   "code": "39898005",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Sleep disorder",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=39898005",
    "name_consistent": false
   },
   {
@@ -3146,6 +3854,20 @@
    "name_consistent": true
   },
   {
+   "code": "427419006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Transformed migraine",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=427419006",
+   "name_consistent": false
+  },
+  {
    "code": "431855005",
    "system": "SNOMED CT",
    "expected": "chronic problem (Synthea)",
@@ -3218,6 +3940,20 @@
    "name_consistent": false
   },
   {
+   "code": "44027008",
+   "system": "SNOMED CT",
+   "expected": "allergen: Shellfish",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Seafood",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=44027008",
+   "name_consistent": false
+  },
+  {
    "code": "44054006",
    "system": "SNOMED CT",
    "expected": "patient fit condition",
@@ -3247,6 +3983,20 @@
    "name_found": "End-stage renal disease",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=46177005",
+   "name_consistent": false
+  },
+  {
+   "code": "48724000",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Mitral valve regurgitation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=48724000",
    "name_consistent": false
   },
   {
@@ -3329,6 +4079,20 @@
    "name_consistent": false
   },
   {
+   "code": "60234000",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Aortic valve regurgitation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=60234000",
+   "name_consistent": false
+  },
+  {
    "code": "60573004",
    "system": "SNOMED CT",
    "expected": "patient fit condition",
@@ -3341,6 +4105,20 @@
    "name_found": "Aortic valve stenosis",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=60573004",
+   "name_consistent": false
+  },
+  {
+   "code": "60951000119105",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Blindness due to type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=60951000119105",
    "name_consistent": false
   },
   {
@@ -3388,19 +4166,59 @@
    "name_consistent": true
   },
   {
+   "code": "68496003",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Polyp of colon",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=68496003",
+   "name_consistent": false
+  },
+  {
    "code": "68566005",
    "system": "SNOMED CT",
-   "expected": "Acute pyelonephritis",
+   "expected": "Urinary tract infection",
    "used_in": [
-    "scenarios.DISCHARGE[uti_d].dx",
-    "scenarios.GENERIC_ADMITS[pyelo].dx",
-    "scenarios.SCENARIOS[sepsis_uti].dx"
+    "scenarios.DISCHARGE[uti_d].dx"
    ],
    "in_unverified_list": false,
    "status_found": "active",
    "name_found": "Urinary tract infectious disease",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=68566005",
+   "name_consistent": true
+  },
+  {
+   "code": "69896004",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Rheumatoid arthritis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=69896004",
+   "name_consistent": false
+  },
+  {
+   "code": "713197008",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Recurrent rectal polyp",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=713197008",
    "name_consistent": false
   },
   {
@@ -3415,6 +4233,34 @@
    "name_found": "Prediabetes",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=714628002",
+   "name_consistent": false
+  },
+  {
+   "code": "7200002",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Alcoholism",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=7200002",
+   "name_consistent": false
+  },
+  {
+   "code": "73430006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Sleep apnea",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=73430006",
    "name_consistent": false
   },
   {
@@ -3443,6 +4289,34 @@
    "name_found": "Obstructive sleep apnea syndrome",
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=78275009",
+   "name_consistent": false
+  },
+  {
+   "code": "79619009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Mitral valve stenosis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=79619009",
+   "name_consistent": false
+  },
+  {
+   "code": "80394007",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Hyperglycemia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=80394007",
    "name_consistent": false
   },
   {
@@ -3505,6 +4379,20 @@
    "name_consistent": false
   },
   {
+   "code": "90781000119102",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Microalbuminuria due to type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=90781000119102",
+   "name_consistent": false
+  },
+  {
    "code": "91302008",
    "system": "SNOMED CT",
    "expected": "Sepsis, unspecified organism",
@@ -3518,6 +4406,62 @@
    "verified": true,
    "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=91302008",
    "name_consistent": true
+  },
+  {
+   "code": "91434003",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Pulmonic valve regurgitation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=91434003",
+   "name_consistent": false
+  },
+  {
+   "code": "92691004",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Carcinoma in situ of prostate",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=92691004",
+   "name_consistent": false
+  },
+  {
+   "code": "94503003",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Metastatic malignant neoplasm to prostate",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=94503003",
+   "name_consistent": false
+  },
+  {
+   "code": "95417003",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Primary fibromyalgia syndrome",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=95417003",
+   "name_consistent": false
   }
  ]
 }
