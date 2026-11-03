@@ -118,14 +118,28 @@ def adt_events():
             .dropDuplicatesWithinWatermark(["source", "msg_key"]))          # F02 retransmits and retries
 
 
+def _second_keys(df, keys):
+    """Dedupe keys with timestamps truncated to the second: HL7 carries seconds, FHIR milliseconds."""
+    out = []
+    for k in keys:
+        if k.endswith("_ts"):
+            df = df.withColumn(f"_k_{k}", F.date_trunc("second", k))
+            out.append(f"_k_{k}")
+        else:
+            out.append(k)
+    return df, out
+
+
 def _cross_feed(kind, keys, ts):
     """Clinical records arrive on both feeds; keep whichever copy lands first."""
-    return _exploded(kind).withWatermark(ts, "7 days").dropDuplicatesWithinWatermark(keys)
+    df, k = _second_keys(_exploded(kind), keys)
+    return df.withWatermark(ts, "7 days").dropDuplicatesWithinWatermark(k).drop(*[c for c in k if c.startswith("_k_")])
 
 
 @dp.table(name=f"{SILVER}.observations", comment="Labs, imaging, ECG and vitals from both feeds")
 def observations():
-    return _cross_feed("obs", ["csn", "category", "order_id", "line", "loinc", "status", "observed_ts", "resulted_ts"],
+    # Keyed on the component code, not the line: the feeds number lines differently.
+    return _cross_feed("obs", ["csn", "category", "order_id", "code", "status", "observed_ts", "resulted_ts"],
                        "resulted_ts")
 
 
@@ -216,9 +230,15 @@ def handoff_events():
               .select("csn", F.lit("note_signed").alias("kind"), F.col("signed_ts").alias("effective_ts"),
                       F.col("signed_ts").alias("recorded_ts"), "processed_ts", F.lit("regenerate").alias("action"),
                       F.concat_ws(" ", F.lit("signed"), "note_type").alias("reason")))
-    return (adt.unionByName(crit).unionByName(signed)
-            .withWatermark("effective_ts", "7 days")
-            .dropDuplicatesWithinWatermark(["csn", "kind", "effective_ts"]))   # the same event on both feeds
+    events, keys = _second_keys(adt.unionByName(crit).unionByName(signed), ["csn", "kind", "effective_ts"])
+    # A handoff starts and is retracted once per encounter; keying those on the encounter alone also absorbs the
+    # feeds disagreeing on the time (seconds apart, or an hour apart when an HL7 feed without UTC offsets sends a
+    # time inside the repeated DST hour). Finalize and regenerate stay time keyed (F10 finalizes twice).
+    events = events.withColumn("_k_effective_ts", F.when(F.col("action").isin("start", "retract"), F.lit(None))
+                               .otherwise(F.col("_k_effective_ts")))
+    return (events.withWatermark("effective_ts", "7 days")
+            .dropDuplicatesWithinWatermark(keys)                                # the same event on both feeds
+            .drop(*[c for c in keys if c.startswith("_k_")]))
 
 
 # ------------------------------------------------------------------ silver: Clarity history (nightly batch)

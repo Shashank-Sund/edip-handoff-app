@@ -22,7 +22,7 @@ resources:
       catalog: ${var.catalog}
       schema: silver
       serverless: true
-      continuous: false
+      continuous: false   # switched on through the API only for demos and freshness tests
       channel: CURRENT
       configuration:
         edip.catalog: ${var.catalog}

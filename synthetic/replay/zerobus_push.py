@@ -8,8 +8,12 @@ Credentials come from the environment (never the repo): DATABRICKS_CLIENT_ID and
 a service principal with USE CATALOG, USE SCHEMA and MODIFY plus SELECT on the table, WORKSPACE_URL,
 WORKSPACE_ID and ZEROBUS_ENDPOINT. Load them with: set -a; . ~/.config/edip/zerobus.env; set +a
 
-This is the bulk backfill: events go in delivery order, in batches, several requests at a time. Zerobus
+Default is the bulk backfill: events go in delivery order, in batches, several requests at a time. Zerobus
 orders records only within a stream, so the pipeline sequences by event time, not arrival order.
+
+Probe mode (--probe N --rate R) measures freshness: it re-sends the last N ADT events at R records per
+second with a suffix on the message ids, so they land as new silver rows (with exact timing) while the
+encounter state stays unchanged (same content).
 Stdlib only.
 """
 import argparse
@@ -113,6 +117,20 @@ def send(url, token, batch):
             raise
 
 
+def probe(a, url, token):
+    rows = [json.loads(line) for line in open(a.events, encoding="utf-8")]
+    adt = [r for r in rows if r["data_model"] == "FHIR.Event.PatientAdmin"][-a.probe:]
+    suffix = time.strftime("-probe%H%M%S")
+    t0 = time.time()
+    for i, e in enumerate(adt):
+        e = {**e, "event_id": e["event_id"] + suffix, "attempt_id": e["attempt_id"] + suffix}
+        e["bundle"] = {**e["bundle"], "Meta": {**e["bundle"]["Meta"],
+                                               "Logs": [{"ID": e["event_id"], "AttemptID": e["attempt_id"]}]}}
+        send(url, token, [record(e)])
+        time.sleep(max(0.0, t0 + (i + 1) / a.rate - time.time()))
+    print(f"probe: sent {len(adt)} events with suffix {suffix} in {time.time() - t0:.0f}s")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--events", required=True)
@@ -120,10 +138,14 @@ def main():
     ap.add_argument("--batch-mb", type=float, default=4.0)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--probe", type=int, default=0, help="freshness probe: re-send the last N ADT events")
+    ap.add_argument("--rate", type=float, default=2.0, help="probe records per second")
     a = ap.parse_args()
     url = f"{os.environ['ZEROBUS_ENDPOINT'].rstrip('/')}/zerobus/v1/tables/{a.table}/insert"
     token = Token(a.table)
     token.get()
+    if a.probe:
+        return probe(a, url, token)
     t0, sent = time.time(), 0
     with ThreadPoolExecutor(a.workers) as pool:
         futures = [pool.submit(send, url, token, b) for b in batches(a.events, a.limit, int(a.batch_mb * 1e6))]
