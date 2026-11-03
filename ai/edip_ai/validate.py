@@ -14,7 +14,7 @@ NUM = re.compile(r"(?<![\w.])\d+(?:\.\d+)?")
 # Numbers that set a threshold, a schedule or an instruction are advice, not claimed facts ("if SBP under 90",
 # "q2h", "give 500 mL").
 THRESHOLD = re.compile(r"(?:over|under|above|below|less than|more than|greater than|at least|within|every|q|give|bolus|"
-                       r"start|titrate to|increase to|repeat in|recheck in|goal|target|[<>]=?)\s*"
+                       r"start|titrate to|increase to|repeat in|recheck in|goal|target|for|next|[<>\u2264\u2265]=?)\s*"
                        r"(\d+(?:\.\d+)?)", re.I)
 SEVERITY = {"stable", "watcher", "unstable"}
 # Em and en dashes become commas and "to"; Unicode hyphens become plain hyphens (project writing rule).
@@ -35,9 +35,16 @@ def _numbers(text):
     return set(NUM.findall(text or ""))
 
 
+# Clock times ("19:47") and expected durations ("24 to 48 h", "48-72 h") are not charted values.
+CLOCK = re.compile(r"\b\d{1,2}:\d{2}\b")
+DURATION = re.compile(r"(\d+)\s*(?:-|to)\s*(\d+)\s*(?:h|hr|hrs|hours|days?|d)\b", re.I)
+
+
 def _claimed(text):
-    """Numbers stated as facts: all numbers minus thresholds and schedules."""
-    return _numbers(text) - set(THRESHOLD.findall(text or ""))
+    """Numbers stated as facts: all numbers minus thresholds, schedules, clock times and expected durations."""
+    text = CLOCK.sub(" ", text or "")
+    exempt = set(THRESHOLD.findall(text)) | {n for pair in DURATION.findall(text) for n in pair}
+    return _numbers(text) - exempt
 
 
 def _values(sources, ids):

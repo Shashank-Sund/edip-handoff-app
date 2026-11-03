@@ -1,7 +1,7 @@
 """Generate handoff drafts for one encounter: packet, one model call, validation, rules, per template drafts."""
 import time
 
-from . import prompts, rules, templates, validate
+from . import prompts, rules, severity, templates, validate
 
 
 def _deterministic(element, packet, el_defs):
@@ -32,6 +32,7 @@ def draft(packet, llm, template_ids=None):
         narrative, report = validate.check(raw, packet, wanted)
         report["retried"] = True
         usage = {k: (usage.get(k) or 0) + (usage2.get(k) or 0) for k in ("prompt_tokens", "completion_tokens")}
+    severity.apply(narrative, packet)        # the model may raise severity, never lower it below the rule floor
     drafts = {}
     for tid, t in templates.templates().items():
         if template_ids and tid not in template_ids:

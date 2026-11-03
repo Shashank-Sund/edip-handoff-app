@@ -35,10 +35,7 @@ from pathlib import Path
 
 ADMIT_DISPOSITIONS = ("ADMIT_IP", "ADMIT_OBS")
 CRITICAL_FLAGS = ("HH", "LL")
-UNSTABLE_VITALS = {"sbp": lambda v: v < 90, "spo2": lambda v: v < 90, "hr": lambda v: v > 130, "rr": lambda v: v > 30,
-                   "gcs": lambda v: v < 13}
-ABNORMAL_VITALS = {"hr": lambda v: v > 110 or v < 50, "sbp": lambda v: v < 100, "rr": lambda v: v > 24,
-                   "spo2": lambda v: v < 92, "temp": lambda v: v >= 38.3 or v < 36.0}
+from edip_ai.severity import ABNORMAL_VITALS, UNSTABLE_VITALS  # noqa: E402  (one definition shared with the generator)
 VITAL_KEYS = ("hr", "sbp", "dbp", "map", "rr", "temp", "spo2", "o2_device", "o2_flow", "pain", "gcs")
 STATUS_RANK = {"I": 0, "P": 1, "F": 2, "C": 3}
 
@@ -125,6 +122,10 @@ class Truth:
         for r in self.results.get(csn, []):
             if r.get("numeric") is not None:
                 out.setdefault(r["name"].lower(), set()).add(float(r["numeric"]))
+        # A short name in text can mean a related test: "WBC" may be the urine WBC, "glucose" the point of care value.
+        for short, related in (("wbc", "wbc, urine"), ("glucose", "glucose, poc")):
+            if related in out:
+                out.setdefault(short, set()).update(out[related])
         return out
 
     def world_lexicon(self):

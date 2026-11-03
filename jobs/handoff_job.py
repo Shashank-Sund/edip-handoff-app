@@ -41,7 +41,9 @@ def main():
     ap.add_argument("--model", default="")
     ap.add_argument("--backfill-interval-min", type=int, default=60)
     ap.add_argument("--limit", type=int, default=0, help="only the first N encounters (trial runs)")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=2,
+                    help="concurrent model calls; pay per token endpoints rate limit per workspace (HTTP 429)")
+    ap.add_argument("--flush-every", type=int, default=20)
     a = ap.parse_args()
     sys.path[:0] = [f"{a.code_path}/ai", f"{a.code_path}/pipelines"]
     from edip_ai import generate, llm, local, templates
@@ -102,18 +104,11 @@ def main():
                  "completion_tokens": (run["usage"] or {}).get("completion_tokens"), "seconds": run["seconds"]}
                 for tid, d in drafts.items()]
 
-    out, failures, t1 = [], 0, time.time()
-    with ThreadPoolExecutor(a.workers) as pool:
-        for i, res in enumerate(pool.map(lambda p: _guard(one, p), todo), 1):
-            if isinstance(res, Exception):
-                failures += 1
-                print(f"  generation failed: {type(res).__name__}: {str(res)[:200]}")
-                continue
-            out += res
-            if i % 25 == 0:
-                print(f"  {i}/{len(todo)} points, {time.time() - t1:.0f}s")
-    if out:
-        df = spark.createDataFrame(out, schema="csn STRING, template STRING, status STRING, trigger STRING, as_of TIMESTAMP, "
+    def flush(batch):
+        """Append one batch of drafts; versions continue from what is already stored."""
+        if not batch:
+            return
+        df = spark.createDataFrame(batch, schema="csn STRING, template STRING, status STRING, trigger STRING, as_of TIMESTAMP, "
                                    "model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING, "
                                    "validation STRING, prompt_tokens INT, completion_tokens INT, seconds DOUBLE")
         df.createOrReplaceTempView("new_drafts")
@@ -124,6 +119,23 @@ def main():
                    n.validation, n.prompt_tokens, n.completion_tokens, n.seconds
             FROM new_drafts n LEFT JOIN (SELECT csn, template, max(version) v FROM {cat}.gold.handoff_draft GROUP BY ALL) m
               ON n.csn = m.csn AND n.template = m.template""")
+
+    # Results are written every --flush-every points, so a cancel or a failure loses at most one batch and a rerun
+    # resumes (points already stored are skipped).
+    out, batch, failures, t1 = [], [], 0, time.time()
+    with ThreadPoolExecutor(a.workers) as pool:
+        for i, res in enumerate(pool.map(lambda p: _guard(one, p), todo), 1):
+            if isinstance(res, Exception):
+                failures += 1
+                print(f"  generation failed: {type(res).__name__}: {str(res)[:200]}")
+                continue
+            out += res
+            batch += res
+            if i % a.flush_every == 0:
+                flush(batch)
+                batch = []
+                print(f"  {i}/{len(todo)} points written, {time.time() - t1:.0f}s")
+    flush(batch)
     if retracted:
         ids = ",".join(f"'{c}'" for c in sorted(retracted))
         spark.sql(f"UPDATE {cat}.gold.handoff_draft SET status = 'retracted' WHERE csn IN ({ids})")

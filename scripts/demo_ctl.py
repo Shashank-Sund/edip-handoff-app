@@ -108,4 +108,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    rc = main(sys.argv[1:])
+    if rc:                      # exit only on failure: serverless Python tasks treat any SystemExit as an error
+        sys.exit(rc)

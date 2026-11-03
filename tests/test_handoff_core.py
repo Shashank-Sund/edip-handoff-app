@@ -83,3 +83,14 @@ def test_rules_attest_missing_and_stale():
     assert res["N08"]["status"] == "pass" and res["N05"]["status"] == "pass"
     s = rules.score(list(res.values()))
     assert 0 <= s["score"] <= 1 and "N08" not in s["blocking"]
+
+
+def test_severity_floor_raises_but_never_lowers():
+    from edip_ai import severity
+    p = _packet()                                   # critical lactate still the latest value, HR 112, SBP 96
+    sev, reasons, srcs = severity.floor(p)
+    assert sev == "unstable" and any("Lactate" in r for r in reasons) and srcs
+    n = severity.apply({"E07": {"value": "stable", "text": "Looks well", "sources": []}}, p)
+    assert n["E07"]["value"] == "unstable" and n["E07"]["model_value"] == "stable" and n["E07"]["sources"]
+    n = severity.apply({"E07": {"value": "unstable", "text": "Septic shock", "sources": ["enc:visit"]}}, p)
+    assert n["E07"]["text"] == "Septic shock"       # a model at or above the floor is kept as written

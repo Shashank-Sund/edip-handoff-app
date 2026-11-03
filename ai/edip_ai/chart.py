@@ -5,12 +5,18 @@ Input records use the pipeline contract (pipelines/edip_contract.py) plus the en
 Clarity history rows. Output is a plain dict, JSON serializable.
 """
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 ANALGESICS = ("morphine", "hydromorphone", "fentanyl", "acetaminophen", "ketorolac", "oxycodone")
 
 
+# Clinicians read local clock times, so every time in the packet is facility local with its UTC offset
+# (for example 2026-10-29T15:47:00-04:00). The model then writes local times in the narrative.
+LOCAL_TZ = ZoneInfo("America/New_York")
+
+
 def _iso(t):
-    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else t
+    return t.astimezone(LOCAL_TZ).isoformat(timespec="seconds") if isinstance(t, datetime) else t
 
 
 def _age_min(t, now):

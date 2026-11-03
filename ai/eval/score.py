@@ -85,7 +85,8 @@ def source_known(sid, idx, exp):
     if fam in ("problem", "homemed"):
         return len(p) == 2 and bool(p[1])
     if fam == "vital":
-        return ":".join(p[1:]) in idx["vital"]
+        rest = ":".join(p[1:])
+        return rest in idx["vital"] or X.iso(X.ts(rest)) in idx["vital"]      # ids carry local times with offsets
     if fam == "obs":
         if len(p) != 4:
             return False
@@ -138,7 +139,7 @@ def compare_deterministic(eid, data, exp):
             return True, ""
         if bool(want) != bool(got):
             return False, f"vitals draft {'present' if got else 'absent'} expected {'present' if want else 'absent'}"
-        if got.get("taken_ts") != want["taken_ts"]:
+        if X.ts(got.get("taken_ts")) != X.ts(want["taken_ts"]):     # same instant, whatever the offset
             return False, f"latest vitals time draft {got.get('taken_ts')} expected {want['taken_ts']}"
         bad = [k for k in VITAL_COMPARE if want.get(k) is not None and not _same(got.get(k), want.get(k))]
         return not bad, "vital values differ: " + ", ".join(f"{k} draft {got.get(k)} expected {want.get(k)}" for k in bad)
@@ -166,9 +167,9 @@ def compare_deterministic(eid, data, exp):
             why.append(f"labs not in truth {wrong}")
         return ok, "; ".join(why)
     if fact == "ed_meds":
-        got = {(p[1], p[2], x.get("action"), str(_num(x.get("dose")) if _num(x.get("dose")) is not None else x.get("dose")), x.get("taken_ts"))
+        got = {(p[1], p[2], x.get("action"), str(_num(x.get("dose")) if _num(x.get("dose")) is not None else x.get("dose")), X.iso(X.ts(x.get("taken_ts"))))
                for x, p in ((x, _src_parts(x.get("src"))) for x in (data or [])) if len(p) == 3}
-        want = {(m["order_id"], str(m["line"]), m["action"], str(_num(m["dose"]) if _num(m["dose"]) is not None else m["dose"]), m["taken_ts"])
+        want = {(m["order_id"], str(m["line"]), m["action"], str(_num(m["dose"]) if _num(m["dose"]) is not None else m["dose"]), X.iso(X.ts(m["taken_ts"])))
                 for m in exp["ed_meds"]}
         return got == want, f"ED meds draft minus expected {sorted(got - want)}, expected minus draft {sorted(want - got)}"
     if fact == "destination":
@@ -228,8 +229,15 @@ def _mask_strengths(text, drugs):
 
 
 def _doses_after(text, drug):
-    pat = re.compile(r"(?<![a-z0-9])" + re.escape(drug) + r"(?![a-z0-9])\s*" + NUMBER + r"\s*(?:mg|g|mcg|units?|mL|mEq)\b", re.I)
-    return [float(m.group(1)) for m in pat.finditer(text)]
+    """Doses written after a drug name, converted to mg when written in g (1 g of acetaminophen is 1000 mg)."""
+    pat = re.compile(r"(?<![a-z0-9])" + re.escape(drug) + r"(?![a-z0-9])\s*" + NUMBER + r"\s*(mg|g|mcg|units?|mL|mEq)\b", re.I)
+    return [float(m.group(1)) * (1000 if m.group(2).lower() == "g" else 1) for m in pat.finditer(text)]
+
+
+# Statements of fact; action lists and contingencies (E24, E25) name future drugs and threshold values, which are
+# advice, so they are not checked for unknown names or contradicting values.
+FACTUAL = ("E06", "E07", "E11", "E20")      # E26 disposition is a plan
+CLOCK = re.compile(r"\b\d{1,2}:\d{2}\b")
 
 
 def narrative_metrics(draft, exp, truth, lexicon, validation=None):
@@ -243,8 +251,9 @@ def narrative_metrics(draft, exp, truth, lexicon, validation=None):
         unknown += len(ids) - len(good)
         supported += bool(good)
         unsupported_numbers += len(s.get("unsupported_numbers") or [])
-        text_all.append(s.get("text") or "")
-    text = " ".join(text_all)
+        if eid in FACTUAL:
+            text_all.append(s.get("text") or "")
+    text = CLOCK.sub(" ", " ".join(text_all))
     drug_lex, lab_lex = lexicon
     known_drugs, known_labs = truth.drug_names(exp["csn"]), truth.lab_names(exp["csn"])
     mentioned_drugs = _find_names(text, drug_lex | COMMON_DRUGS)
@@ -274,6 +283,7 @@ def narrative_metrics(draft, exp, truth, lexicon, validation=None):
             strengths.setdefault(g, set()).update(float(x) for x in re.findall(NUMBER, m.get("name") or ""))
     for drug, ds in doses.items():
         allowed = ds | strengths.get(drug, set()) | ({sum(ds)} if len(ds) > 1 else set())
+        allowed |= {a * 1000 for a in allowed}            # truth doses recorded in g
         for v in _doses_after(text, drug):
             if not any(abs(v - a) < 0.051 for a in allowed):
                 contradictions.append(f"{drug} {v:g} (truth {sorted(ds)})")

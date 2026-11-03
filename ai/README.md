@@ -41,6 +41,10 @@ model: databricks-gpt-oss-120b      # open model default
 
 You can also pass the model for one run: `databricks bundle run handoff_generator -t dev --params model=databricks-claude-sonnet-5-5`. `client: mock` writes a deterministic narrative without a model, for CI and the app's mock mode.
 
+## Rate limits and throughput
+
+Pay-per-token model endpoints are rate limited per workspace. On the trial workspace used to build this app, `databricks-gpt-oss-120b` completed about 6 handoff calls a minute and answered extra concurrent requests with HTTP 429. The job therefore defaults to 2 concurrent calls, writes results every 20 generation points, and skips points already stored, so a rerun resumes. A production deployment that needs more throughput should use provisioned throughput for the model, or a hosted endpoint with higher limits.
+
 ## Local runs
 
 `edip_ai/local.py` builds silver-shaped records, encounter states and packets from a rendered world without Spark, so the whole chain runs on a laptop with the mock model (see `tests/test_handoff_core.py`). For one real call, set `DATABRICKS_CONFIG_PROFILE` and use `llm.ServingLLM("<endpoint>")`.
