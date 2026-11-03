@@ -1,0 +1,29 @@
+# Starting point for a health system's own handoff format. Defaults to the Joint Commission Sentinel Event
+# Alert 58 minimum critical content, plus two patient identifiers and receiver read back. Copy this file,
+# rename the sections to your local labels, move elements between sections, and adjust the rules.
+id: custom_sea58
+name: Custom handoff (Joint Commission minimum)
+audience: any
+sections:
+  - {id: ID, label: Identification, elements: [E01, E02, E03, E04]}
+  - {id: SEV, label: Illness assessment, elements: [E07]}
+  - {id: SUM, label: Patient summary, elements: [E06, E11, E26]}
+  - {id: SAFE, label: Allergies and code status, elements: [E09, E08, E10]}
+  - {id: MED, label: Medications, elements: [E18, E13]}
+  - {id: DATA, label: Dated labs and vitals, elements: [E15, E14, E16]}
+  - {id: TODO, label: To do and contingency, elements: [E24, E25]}
+  - {id: RB, label: Read back, elements: [E29]}
+rules:
+  - {id: C01, element: E01, level: hard}
+  - {id: C02, element: E02, level: hard, at: sign}
+  - {id: C03, element: E07, level: hard}
+  - {id: C04, element: E11, level: hard}
+  - {id: C05, element: E24, level: hard, attest: ["No actions outstanding"]}
+  - {id: C06, element: E25, level: hard, attest: ["Stable, nothing anticipated"]}
+  - {id: C07, element: E09, level: hard, attest: ["No known allergies confirmed"]}
+  - {id: C08, element: E08, level: hard, attest: ["Full code confirmed with patient or family"]}
+  - {id: C09, element: E18, level: hard, attest: ["No medications given in the ED"]}
+  - {id: C10, element: E15, level: hard, attest: ["No abnormal results"]}
+  - {id: C11, element: E14, level: stale, max_age_min: {stable: 60, watcher: 30, unstable: 15}}
+  - {id: C12, element: E29, level: hard, at: accept}
+narrative: [E06, E07, E11, E24, E25, E26]

@@ -1,0 +1,31 @@
+# ED physician to admitting team handoff (I-PASS, with the ED adaptation: anticipated disposition in the
+# patient summary, brief ED course) and the PREP-4Cs high risk branch.
+id: ipass_physician
+name: Physician handoff (I-PASS)
+audience: physician
+sections:
+  - {id: HDR, label: Handoff, elements: [E01, E02, E03, E04]}
+  - {id: I, label: Illness severity, elements: [E07, E08]}
+  - {id: P, label: Patient summary, elements: [E06, E05, E11, E12, E09, E13, E18, E14, E15, E17, E26, E10, E23]}
+  - {id: A, label: Action list, elements: [E24, E16]}
+  - {id: S1, label: Situation awareness and contingency, elements: [E25]}
+  - {id: S2, label: Synthesis by receiver, elements: [E29]}
+rules:
+  - {id: P01, element: E07, level: hard}
+  - {id: P02, element: E11, level: hard}
+  - {id: P03, element: E26, level: hard}
+  - {id: P04, element: E08, level: hard, attest: ["Full code confirmed with patient or family"]}
+  - {id: P05, element: E09, level: hard, attest: ["No known allergies confirmed"]}
+  - {id: P06, element: E18, level: hard, attest: ["No medications given in the ED"]}
+  - {id: P07, element: E14, level: stale, max_age_min: {stable: 120, watcher: 60, unstable: 30}}
+  - {id: P07b, element: E15, level: hard, attest: ["No abnormal results"]}
+  - {id: P08, element: E24, level: hard, attest: ["No actions outstanding"]}
+  - {id: P09, element: E16, level: hard, attest: ["No results pending"]}
+  - {id: P10, element: E25, level: hard, attest: ["Stable, nothing anticipated"]}
+  - {id: P11, element: E25, level: hard, when: "severity in (watcher, unstable)",
+     note: "High risk branch: why high risk, how decompensation may look, reassessment frequency"}
+  - {id: P12, element: E03, level: hard}
+  - {id: P13, element: E29, level: hard, at: accept}
+  - {id: P15, element: E23, level: soft}
+  - {id: P15b, element: E10, level: soft}
+narrative: [E06, E07, E11, E24, E25, E26]

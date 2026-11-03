@@ -1,0 +1,37 @@
+# ED nurse to inpatient nurse handoff (SBAR with identification and read back: I-SBAR-R).
+# Rule levels: hard blocks sign off until the element has data or an attestation from the fixed list;
+# stale blocks until refreshed or attested "reviewed, unchanged"; soft is a warning counted in the score.
+# A site can downgrade a rule (hard to soft) with a reason when its feeds cannot supply the element.
+id: sbar_nurse
+name: Nurse handoff (SBAR)
+audience: nurse
+sections:
+  - {id: I, label: Identify, elements: [E01, E02, E03, E04]}
+  - {id: S, label: Situation, elements: [E05, E06, E07]}
+  - {id: B, label: Background, elements: [E08, E09, E10, E12, E13, E27]}
+  - {id: A, label: Assessment, elements: [E14, E15, E17, E18, E19, E20, E21, E30, E11]}
+  - {id: R, label: Recommendation, elements: [E16, E22, E23, E24, E25, E28]}
+  - {id: RB, label: Read back, elements: [E29]}
+rules:
+  - {id: N01, element: E01, level: hard}
+  - {id: N02, element: E02, level: hard, at: sign}
+  - {id: N03, element: E03, level: hard}
+  - {id: N04, element: E06, level: hard}
+  - {id: N05, element: E08, level: hard, attest: ["Full code confirmed with patient or family"]}
+  - {id: N06, element: E09, level: hard, attest: ["No known allergies confirmed"]}
+  - {id: N07, element: E10, level: hard, attest: ["No isolation needed"]}
+  - {id: N08, element: E14, level: stale, max_age_min: {stable: 60, watcher: 30, unstable: 15}}
+  - {id: N09, element: E18, level: hard, attest: ["No medications given in the ED"]}
+  - {id: N10, element: E16, level: hard, attest: ["No results pending"]}
+  - {id: N11, element: E15, level: hard, attest: ["No abnormal results"]}
+  - {id: N12, element: E19, level: soft, note: "Hard where the site sends lines, drains and airways; the reference feeds do not"}
+  - {id: N13, element: E07, level: hard}
+  - {id: N14, element: E21, level: soft}
+  - {id: N15, element: E20, level: soft}
+  - {id: N16, element: E22, level: soft}
+  - {id: N17, element: E23, level: soft}
+  - {id: N18, element: E27, level: soft}
+  - {id: N19, element: E28, level: soft}
+  - {id: N20, element: E29, level: hard, at: accept, note: "Receiver action, not sender sign off"}
+  - {id: N21, element: E30, level: soft}
+narrative: [E06, E07, E11, E20, E24, E25]

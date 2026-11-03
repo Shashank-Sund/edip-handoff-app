@@ -30,3 +30,24 @@ resources:
       libraries:
         - file:
             path: ./pipelines/edip_pipeline.py
+
+  jobs:
+    handoff_generator:
+      name: edip-handoff-generator
+      tags: {project: edip}
+      max_concurrent_runs: 1
+      parameters:
+        - {name: limit, default: "0"}
+        - {name: model, default: ""}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies: ["pyyaml>=6", "databricks-sdk>=0.50"]
+      tasks:
+        - task_key: generate
+          environment_key: default
+          spark_python_task:
+            python_file: ./jobs/handoff_job.py
+            parameters: [--catalog, "${var.catalog}", --code-path, "${workspace.file_path}", --limit, "{{job.parameters.limit}}",
+                         --model, "{{job.parameters.model}}"]

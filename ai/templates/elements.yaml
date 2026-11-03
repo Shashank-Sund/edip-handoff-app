@@ -1,0 +1,44 @@
+# Canonical handoff elements shared by every template. Each template picks elements into its sections and
+# sets a completeness rule per element.
+#
+# kind:
+#   deterministic  rendered from structured data in the chart packet, never from model text
+#   narrative      written by the model from the chart packet, every statement cites packet source ids
+#   process        recorded by people in the app (identity, read back, sign off), not generated
+#
+# packet: the chart packet key that holds the element's data (see ai/edip_ai/chart.py).
+# Sources for the element list: Joint Commission Sentinel Event Alert 58 (2017); IHI SBAR tool; I-PASS
+# (Starmer et al., NEJM 2014) and its ED adaptation (Heilman et al., WestJEM 2016); SBAR-DR (Smith et al.,
+# WestJEM 2018); PREP-4Cs (Lee et al., WestJEM 2017).
+elements:
+  E01: {label: Patient identity, kind: deterministic, packet: identity, help: "Name, age, sex, MRN: two identifiers"}
+  E02: {label: Sender and callback, kind: process, packet: null, help: "Sender name, role, callback number"}
+  E03: {label: Receiving team, kind: deterministic, packet: destination, help: "Accepting service and admitting physician"}
+  E04: {label: Location and destination, kind: deterministic, packet: destination, help: "Current ED bay, destination unit, bed, level of care"}
+  E05: {label: Chief complaint, kind: deterministic, packet: visit, help: "Reason for visit"}
+  E06: {label: Working diagnosis, kind: narrative, packet: diagnoses, help: "One line working or admitting diagnosis"}
+  E07: {label: Illness severity, kind: narrative, packet: null, help: "Stable, watcher or unstable, and why"}
+  E08: {label: Code status, kind: deterministic, packet: code_status}
+  E09: {label: Allergies, kind: deterministic, packet: allergies}
+  E10: {label: Isolation, kind: deterministic, packet: isolation}
+  E11: {label: ED course, kind: narrative, packet: null, help: "Events, interventions and response; what has and has not worked"}
+  E12: {label: Past medical history, kind: deterministic, packet: problems}
+  E13: {label: Home medications, kind: deterministic, packet: home_meds}
+  E14: {label: Vital signs, kind: deterministic, packet: vitals, help: "Latest set with time, trend, oxygen"}
+  E15: {label: Abnormal and critical labs, kind: deterministic, packet: labs, help: "With result times"}
+  E16: {label: Pending results, kind: deterministic, packet: pending, help: "Each with an owner"}
+  E17: {label: Imaging and ECG, kind: deterministic, packet: imaging}
+  E18: {label: ED medications, kind: deterministic, packet: ed_meds, help: "Given with times; active infusions and rates"}
+  E19: {label: Lines, drains, airways, kind: deterministic, packet: lines}
+  E20: {label: Mental status and safety, kind: narrative, packet: null, help: "Orientation, delirium risk, restraints or sitter"}
+  E21: {label: Fall risk and precautions, kind: deterministic, packet: precautions}
+  E22: {label: Diet and NPO, kind: deterministic, packet: diet}
+  E23: {label: Consults, kind: deterministic, packet: consults}
+  E24: {label: Action list, kind: narrative, packet: null, help: "To do items with time and owner"}
+  E25: {label: Contingency plan, kind: narrative, packet: null, help: "If then statements, how the patient may decompensate, reassessment"}
+  E26: {label: Anticipated disposition, kind: narrative, packet: null, help: "Level of care, observation or inpatient, expected course"}
+  E27: {label: Family, language, decision maker, kind: deterministic, packet: social}
+  E28: {label: Bed and transport, kind: deterministic, packet: destination, help: "Bed assigned, transport, monitor and oxygen"}
+  E29: {label: Receiver synthesis and read back, kind: process, packet: null}
+  E30: {label: Pain, kind: deterministic, packet: pain, help: "Latest pain score and last analgesic"}
+  E31: {label: Record, kind: process, packet: null, help: "Saved with time and version (system)"}

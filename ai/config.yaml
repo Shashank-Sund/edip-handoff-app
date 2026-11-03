@@ -1,0 +1,8 @@
+# Handoff generation settings. Switch models by changing "model" to any chat endpoint in your workspace,
+# for example databricks-claude-sonnet-5-5 (hosted) or databricks-gpt-oss-120b (open model, the default).
+model: databricks-gpt-oss-120b
+client: serving            # serving (Databricks SDK, one call per handoff) or mock (no model, CI and the mock app)
+max_tokens: 4000             # reasoning models spend part of this before answering
+temperature: 0.1
+debounce_minutes: 5        # coalesce regenerate triggers for the same encounter
+templates: [sbar_nurse, ipass_physician, custom_sea58]

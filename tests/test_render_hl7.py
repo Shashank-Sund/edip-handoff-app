@@ -60,7 +60,7 @@ def test_every_file_parses_and_matches_the_site_profile(rendered, parsed):
         for s in segs[1:]:
             assert len(s[0]) == 3 and s[0].isalnum() and s[0].isupper(), (r["file"], s[0])
         text = "\r".join("|".join(s) for s in segs)
-        assert "—" not in text and "–" not in text
+        assert chr(0x2014) not in text and chr(0x2013) not in text
         if prof["z_segments"] and r["type"] == "ADT" and r["trigger"] in ("A04", "A06", "A14") and not r["faults"]:
             assert any(s[0] == "ZPV" for s in segs)
         if not prof["z_segments"]:

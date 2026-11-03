@@ -140,7 +140,7 @@ def test_hygiene(world):
         assert p.ssn.startswith("9")
         assert re.fullmatch(r"617-555-01\d\d", p.phone)
     text = json.dumps([n.text for n in world.notes], ensure_ascii=False)
-    assert "—" not in text and "–" not in text
+    assert chr(0x2014) not in text and chr(0x2013) not in text
 
 
 def test_note_vitals_match_structured_data(world):
