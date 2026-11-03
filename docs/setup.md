@@ -93,6 +93,7 @@ App settings (in `databricks.yml` under the app's `config.env`): `EDIP_SYNTHETIC
 
 - **Costs.** Everything scales to zero except a running app. `python scripts/demo_ctl.py status|up|down` lists, starts or stops this project's apps, pipelines and warehouses; the nightly job runs `down` at 01:00.
 - **Regenerate drafts** (for example after changing a template or the model): run `edip-handoff-generator-<target>`. It skips drafts that already exist; delete `gold.handoff_draft` rows first to redo them. It refreshes Lakebase when it finishes.
+- **Live updates** (optional): the handoff job has a trigger on `<catalog>.silver.handoff_events`, paused by default so a deploy never starts model calls by itself. With new data arriving (for example through Zerobus, [zerobus.md](zerobus.md)) and the pipeline running, unpause it under **Jobs > edip-handoff-generator-<target> > Schedules and triggers**: the job then drafts only the new admit decisions and changes, at most every 5 minutes, and refreshes Lakebase. Set the app's `EDIP_CLOCK_MODE` to `live` to show the current time instead of the replayed week. Pause it again to stop model spend.
 - **Change the code**: `databricks bundle deploy -t dev`, then `databricks bundle run edip_app -t dev` for app changes.
 
 ## Remove it

@@ -120,6 +120,26 @@ def test_scorer_catches_an_invented_drug(evaluated):
     assert any("hallucinated_meds" in x for x in r["reasons"])
 
 
+def test_a_drug_planned_in_a_note_is_not_invented(evaluated):
+    row, e = _pick(evaluated, lambda e, els: "warfarin" not in evaluated["truth"].drug_names(e["csn"]))
+    draft = copy.deepcopy(row["draft"])
+    n = S.elements(draft)["E11"]["narrative"]
+    n["text"] = (n.get("text") or "") + " Plan to start warfarin 5 mg."
+    notes = evaluated["truth"].notes
+    saved = notes.get(e["csn"])
+    planned = {"note_id": "1", "csn": e["csn"], "created_at": "2000-01-01T00:00:00Z", "text": "Plan: warfarin 5 mg daily."}
+    notes[e["csn"]] = (saved or []) + [planned]
+    try:
+        assert _rescore(evaluated, row, draft, e)["narrative"]["hallucinated_meds"] == []
+        planned["created_at"] = "2100-01-01T00:00:00Z"      # written after as_of: still invented
+        assert _rescore(evaluated, row, draft, e)["narrative"]["hallucinated_meds"] == ["warfarin"]
+    finally:
+        if saved is None:
+            notes.pop(e["csn"], None)
+        else:
+            notes[e["csn"]] = saved
+
+
 def test_scorer_catches_an_unknown_source(evaluated):
     row, e = _pick(evaluated, lambda e, els: True)
     draft = copy.deepcopy(row["draft"])

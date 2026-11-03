@@ -129,6 +129,14 @@ resources:
       name: edip-handoff-generator-${bundle.target}
       tags: {project: edip}
       max_concurrent_runs: 1
+      # Live mode: draft new handoffs when the pipeline adds triggers. Paused, so a deploy never starts model calls
+      # on its own; unpause it in the job's Schedules and Triggers (docs/setup.md, "Live updates").
+      trigger:
+        pause_status: PAUSED
+        table_update:
+          table_names: ["${var.catalog}.silver.handoff_events"]
+          min_time_between_triggers_seconds: 300
+          wait_after_last_change_seconds: 60
       parameters:
         - {name: limit, default: "0"}
         - {name: model, default: "${var.model}"}

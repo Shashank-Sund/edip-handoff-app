@@ -256,6 +256,9 @@ def narrative_metrics(draft, exp, truth, lexicon, validation=None):
     text = CLOCK.sub(" ", " ".join(text_all))
     drug_lex, lab_lex = lexicon
     known_drugs, known_labs = truth.drug_names(exp["csn"]), truth.lab_names(exp["csn"])
+    # A drug a note written by as_of plans ("Prednisone 40 mg daily x5 days") is charted, not invented.
+    notes = " ".join(n["text"] for n in truth.notes.get(exp["csn"], []) if X.ts(n["created_at"]) <= idx["as_of"])
+    known_drugs = known_drugs | set(_find_names(notes, drug_lex | COMMON_DRUGS))
     mentioned_drugs = _find_names(text, drug_lex | COMMON_DRUGS)
     mentioned_labs = _find_names(text, lab_lex)
     # A mention covered by a longer known name (sodium inside sodium chloride) is not a hallucination.

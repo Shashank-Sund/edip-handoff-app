@@ -47,7 +47,7 @@ Pay-per-token model endpoints are rate limited per workspace. On the trial works
 
 ## Verified on the reference week
 
-`databricks-gpt-oss-120b`, all 596 generation points of the reference week (118 admitted encounters, 1,788 drafts), scored against the synthetic truth with `ai/eval/run_eval.py` (Mode B, drafts exported with `ai/eval/export_drafts.py`):
+`databricks-gpt-oss-120b`, all 440 generation points of the reference week (118 admitted encounters, 1,320 drafts; one point per admit decision or meaningful change before transfer, plus ED addenda), scored against the synthetic truth with `ai/eval/run_eval.py` (Mode B, drafts exported with `ai/eval/export_drafts.py`):
 
 | Measure | Result |
 | --- | --- |
@@ -55,9 +55,9 @@ Pay-per-token model endpoints are rate limited per workspace. On the trial works
 | Missed critical items (critical results, pending results, allergies, code status, isolation) | 0 |
 | Contradictions, invented medications, invented labs | 0 |
 | Narrative statements citing a real source | 99.8% |
-| Unknown source ids per model call (removed by the validator) | 0.41 |
-| Numbers flagged for the clinician, per template | 25: fluid volumes the model summed across boluses, and two approximations ("about 100") |
-| Illness severity agreement with the reference (rule floor plus model) | 0.99; no unstable patient called stable or watcher |
+| Unknown source ids per model call (removed by the validator) | 1.1 |
+| Numbers flagged for the clinician, per template | 16, mostly fluid volumes summed across boluses |
+| Illness severity agreement with the reference (rule floor plus model) | 0.977; no unstable patient called stable or watcher (the 30 disagreements all call a patient one level sicker) |
 | Model calls failed | 0 |
 
 Severity agreement was 0.33 before the rule floor, because the model tended to call patients one level lower than the reference. Completeness scores stay below 1 by design: sender identity, read back and some soft elements are completed in the app.
@@ -70,7 +70,7 @@ Measured from `system.billing.usage` and `system.serving.endpoint_usage` on the 
 
 - model tokens: about 0.15 USD per million input and 0.60 USD per million output tokens for `databricks-gpt-oss-120b`; one generation point (all three templates) uses about 2,650 input and 1,550 output tokens, about 0.0013 USD;
 - job compute (serverless): about 0.35 USD per hour while the job runs;
-- the full reference week backfill: about 0.79 USD of tokens plus 0.53 USD of compute, 90 minutes at 2 concurrent calls.
+- the full reference week backfill: about 0.57 USD of tokens plus 0.43 USD of compute, 73 minutes at 2 concurrent calls (estimated from the per call figures above).
 
 Live, at about 80 generation points a day for this volume, the model costs about 0.10 USD a day. A hosted model costs more per token; scale the token counts above by its price.
 
