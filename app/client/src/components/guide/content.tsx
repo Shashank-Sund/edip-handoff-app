@@ -288,7 +288,7 @@ export const GUIDE: GuideSection[] = [
               ['From the chart', 'Allergies, code status, isolation, vital signs, labs, medications given, pending results, destination. These are copied straight from the record, so they cannot be edited here. If one is wrong, correct the chart; the next draft will pick it up.'],
               [<span className="inline-flex items-center gap-1"><Sparkles className="size-3.5" />Drafted by the model</span>, <>The working diagnosis, ED course, severity reasoning, mental status, action list, contingency plan and expected course. Read these carefully. Press <Key><Pencil />Edit</Key> to change the text; your version is kept and marked "Edited by" you.</>],
               [<span className="inline-grid size-[18px] place-items-center rounded bg-primary/10 text-[10px] font-semibold text-primary">1</span>, 'Each numbered chip is a source the text came from: a note, a lab, a medication, a set of vital signs. Hover to see what it is; click to read the record. The link chip next to chart items does the same.'],
-              [<mark className="rounded-sm bg-flag/15 px-0.5 underline decoration-flag decoration-dotted underline-offset-4">2.8</mark>, 'A highlighted number was not found in the sources the text cites. Often it is a total the model added up (for example fluids from two boluses). Check it before you sign.'],
+              [<mark className="rounded-sm bg-flag/15 px-0.5 text-inherit underline decoration-flag decoration-dotted underline-offset-4">2.8</mark>, 'A highlighted number was not found in the sources the text cites. Often it is a total the model added up (for example fluids from two boluses). Check it before you sign.'],
               [<Pill tone="warn">Changed</Pill>, 'The item is different from the previous version (or from the version you signed). A thin amber line marks it on the left.'],
               [<span className="text-muted-foreground">Grey items</span>, 'Some items, such as lines and drains, fall risk and diet, are not sent by this demo hospital\'s systems. They are listed in grey and never block signing.'],
             ]}
@@ -489,5 +489,6 @@ export function findTopic(id: string): { section: GuideSection; topics: Topic[] 
   const [s, t] = id.split('.');
   const section = GUIDE.find((x) => x.id === s);
   if (!section) return null;
-  return { section, topics: t ? section.topics.filter((x) => x.id === t) : section.topics };
+  const topics = t ? section.topics.filter((x) => x.id === t) : section.topics;
+  return topics.length ? { section, topics } : null;
 }

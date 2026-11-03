@@ -113,3 +113,14 @@ def test_severity_floor_raises_but_never_lowers():
     assert n["E07"]["value"] == "unstable" and n["E07"]["model_value"] == "stable" and n["E07"]["sources"]
     n = severity.apply({"E07": {"value": "unstable", "text": "Septic shock", "sources": ["enc:visit"]}}, p)
     assert n["E07"]["text"] == "Septic shock"       # a model at or above the floor is kept as written
+
+
+def test_severity_floor_counts_an_icu_destination_before_the_level_is_charted():
+    from edip_ai import severity
+    p = _packet(state={"pending_unit": "MICU", "level_of_care": None})
+    p["labs"] = []                                   # no critical result, so only the destination can make it unstable
+    sev, reasons, _ = severity.floor(p)
+    assert sev == "unstable" and "ICU level of care" in reasons
+    p = _packet(state={"pending_unit": "5N", "level_of_care": None})
+    p["labs"] = []
+    assert severity.floor(p)[0] == "watcher"         # HR 112 and SBP 96 are abnormal, not shock range

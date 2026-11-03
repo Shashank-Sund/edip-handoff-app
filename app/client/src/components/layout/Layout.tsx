@@ -26,7 +26,7 @@ export function Layout({ title, crumbs, actions, help, children }: { title: Reac
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2 focus:shadow">
         Skip to content
       </a>
-      <aside className={cn('fixed inset-y-0 left-0 z-30 hidden border-r bg-sidebar transition-[width] duration-200 lg:block', collapsed ? 'w-16' : 'w-60')}>
+      <aside aria-label="Sidebar" className={cn('fixed inset-y-0 left-0 z-30 hidden border-r bg-sidebar transition-[width] duration-200 lg:block', collapsed ? 'w-16' : 'w-60')}>
         <SidebarBody collapsed={collapsed} onToggle={flip} theme={theme} onTheme={toggle} />
       </aside>
       <Sheet open={open} onOpenChange={setOpen}>

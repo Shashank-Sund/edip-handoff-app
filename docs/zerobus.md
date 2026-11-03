@@ -30,10 +30,10 @@ python scripts/setup_zerobus.py --catalog edip
 
 The script:
 
-1. creates the service principal `edip-zerobus` (or reuses it);
+1. creates the service principal `edip-zerobus-<catalog>` (or reuses it), so each deployment has its own;
 2. grants it `USE CATALOG`, `USE SCHEMA` on `bronze`, and `SELECT` and `MODIFY` on `bronze.redox_fhir_events` only;
 3. creates an OAuth secret;
-4. writes `~/.config/edip/zerobus.env` with the client id, secret, workspace URL and id, and the Zerobus endpoint (`https://<workspace-id>.zerobus.<region>.cloud.databricks.com`), readable only by you.
+4. writes `~/.config/edip/zerobus.env` with the client id, secret, workspace URL and id, and the Zerobus endpoint (`https://<workspace-id>.zerobus.<region>.cloud.databricks.com` on AWS, `...azuredatabricks.net` on Azure), readable only by you.
 
 The secret never goes into the repo or the bundle. To rotate it, run the script again.
 

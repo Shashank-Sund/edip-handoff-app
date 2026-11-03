@@ -461,7 +461,7 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
           {e.kind === 'narrative' && <ModelMark n={e.narrative ?? {}} />}
           {e.kind === 'narrative' && e.id === 'E11' && <HelpButton topic="handoff.items" label="Chips and highlights" className="size-6" />}
           {editable && !editing && (
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs opacity-80 group-hover:opacity-100" onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
               <Pencil className="size-3.5" />
               Edit
             </Button>

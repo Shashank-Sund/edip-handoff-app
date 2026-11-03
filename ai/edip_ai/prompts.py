@@ -5,6 +5,7 @@ import json
 SYSTEM = """You write the narrative parts of an emergency department to inpatient handoff for clinicians.
 Rules:
 - Use only facts in the CHART PACKET. Never invent values, times, medications, results or plans.
+- Copy doses, volumes and lab values exactly as charted (68.1 mg stays 68.1 mg); do not round or add them up.
 - Every statement must cite the packet source ids it relies on, in "sources".
 - Allergies, code status, isolation, vitals, labs and medications are shown to clinicians from structured data;
   do not restate them unless needed for a statement, and then cite them.

@@ -72,7 +72,8 @@ def load_dataset() -> Dataset:
                              "draft FROM gold.handoff_draft_pg").fetchall()
     for d in drafts:
         if isinstance(d["blocking"], str):
-            d["blocking"] = json.loads(d["blocking"]) if d["blocking"].startswith("[") else d["blocking"].strip("{}").split(",")
+            b = d["blocking"]
+            d["blocking"] = json.loads(b) if b.startswith("[") else [x for x in b.strip("{}").split(",") if x]
     return Dataset(encounters, drafts, meta_from(encounters, drafts), "lakebase")
 
 
@@ -149,15 +150,28 @@ class Reloading:
     """Holds the current Dataset and rebuilds it from Lakebase at most once a minute, on demand."""
 
     def __init__(self, every=timedelta(minutes=1)):
-        self.every, self._ds, self._t = every, load_dataset(), time.time()
+        self.every = every
         self._lock = threading.Lock()
+        self._ds, self._t = self._load(), time.time()
+
+    @staticmethod
+    def _load() -> Dataset:
+        try:
+            return load_dataset()
+        except Exception as exc:          # synced tables missing (setup not finished) or Lakebase unreachable
+            ds = Dataset([], [], {"window": {}}, "lakebase")
+            ds.error = (f"The handoff data is not in Lakebase yet ({type(exc).__name__}). Run the setup job "
+                        f"(edip_setup) to the end; the app retries every 30 seconds.")
+            print(ds.error, str(exc)[:200])
+            return ds
 
     def get(self) -> Dataset:
-        if time.time() - self._t > self.every.total_seconds() and self._lock.acquire(blocking=False):
+        wait = 30 if getattr(self._ds, "error", None) else self.every.total_seconds()
+        if time.time() - self._t > wait and self._lock.acquire(blocking=False):
             try:
-                self._ds, self._t = load_dataset(), time.time()
-            except Exception as exc:          # keep serving the last good data
-                print(f"reload failed: {type(exc).__name__}: {str(exc)[:200]}")
+                fresh = self._load()
+                if not getattr(fresh, "error", None) or getattr(self._ds, "error", None):
+                    self._ds = fresh          # keep serving the last good data when a reload fails
                 self._t = time.time()
             finally:
                 self._lock.release()

@@ -42,18 +42,24 @@ export function PersonaMenu({ collapsed }: { collapsed: boolean }) {
           'flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
           collapsed && 'justify-center',
         )}
-        aria-label={`Signed in as ${persona.name}, ${scope}. Switch persona`}
       >
+        <span className="sr-only">Signed in as </span>
         <Avatar p={persona} />
-        {!collapsed && (
+        {collapsed ? (
+          <span className="sr-only">
+            {persona.name}, {persona.unit ? `${persona.role_label}, ${scope}` : scope}
+          </span>
+        ) : (
           <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{persona.name}</span>
+              <span className="sr-only">, </span>
               <span className="block truncate text-xs text-muted-foreground">{persona.unit ? `${persona.role_label}, ${scope}` : scope}</span>
             </span>
             <ChevronsUpDown className="size-4 text-muted-foreground" aria-hidden />
           </>
         )}
+        <span className="sr-only">. Switch persona</span>
       </DropdownTrigger>
       <DropdownContent side={collapsed ? 'right' : 'top'} align="start" className="max-h-[70vh] w-72 overflow-y-auto">
         {config.mode === 'mock' && <p className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Demo personas: switch to see each role's view.</p>}

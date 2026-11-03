@@ -35,13 +35,16 @@ export function ClockControl() {
       </WithTooltip>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="min-w-0 gap-2 px-2.5 tabular-nums sm:min-w-44" aria-label={`Replay time ${day(at)} ${clock(at)}. Change`}>
-            <CalendarClock className="text-muted-foreground" />
+          <Button variant="outline" size="sm" className="min-w-0 gap-2 px-2.5 tabular-nums sm:min-w-44">
+            <CalendarClock className="text-muted-foreground" aria-hidden />
+            <span className="sr-only">Replay time </span>
             <span className="hidden sm:inline">{day(at)}</span>
+            <span className="sr-only"> </span>
             <span className="font-semibold">{clock(at)}</span>
+            <span className="sr-only">. Change</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-[min(92vw,22rem)] space-y-4">
+        <PopoverContent align="end" className="w-[min(92vw,22rem)] space-y-4" aria-label="Replay the reference week">
           <div>
             <p className="text-sm font-medium">Replay the reference week</p>
             <p className="mt-0.5 text-xs text-muted-foreground">

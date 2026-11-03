@@ -1,21 +1,22 @@
 """Who is using the app and what they may do.
 
 Mock mode offers demo personas (invented people). Live mode maps the signed in Databricks user to a role through
-EDIP_ROLE_MAP (see config.py); without a mapping a user gets the ED nurse role.
+EDIP_ROLE_MAP (see config.py); without a mapping a user gets the read only viewer role.
 
 Roles:
   ed_nurse, ed_physician     see every patient; edit, attest and sign the handoffs for their audience
   unit_nurse                 sees patients bound for their unit; acknowledges nurse handoffs with a read back
   admitting_physician        sees every admitted patient; acknowledges physician handoffs with a read back
+  viewer                     sees every patient, changes nothing (signed in users without a role)
 """
 from __future__ import annotations
 
 SIGNS = {"ed_nurse": ("sbar_nurse", "custom_sea58"), "ed_physician": ("ipass_physician", "custom_sea58")}
 ACKS = {"unit_nurse": ("sbar_nurse", "custom_sea58"), "admitting_physician": ("ipass_physician", "custom_sea58")}
 DEFAULT_TEMPLATE = {"ed_nurse": "sbar_nurse", "ed_physician": "ipass_physician", "unit_nurse": "sbar_nurse",
-                    "admitting_physician": "ipass_physician"}
+                    "admitting_physician": "ipass_physician", "viewer": "sbar_nurse"}
 ROLE_LABEL = {"ed_nurse": "ED nurse", "ed_physician": "ED physician", "unit_nurse": "Receiving nurse",
-              "admitting_physician": "Admitting physician"}
+              "admitting_physician": "Admitting physician", "viewer": "Viewer (read only)"}
 
 
 def demo_personas(units: list[dict]) -> list[dict]:
@@ -29,6 +30,7 @@ def demo_personas(units: list[dict]) -> list[dict]:
     for i, u in enumerate(sorted(units, key=lambda u: (u["facility"], u["code"]))):
         people.append({"id": f"unit-{u['facility']}-{u['code']}".lower(), "name": names[i % len(names)],
                        "role": "unit_nurse", "unit": u["code"], "facility": u["facility"], "unit_name": u["name"]})
+    people.append({"id": "viewer", "name": "Viewer", "role": "viewer", "unit": None, "facility": None})
     for p in people:
         p["role_label"] = ROLE_LABEL[p["role"]]
         p["default_template"] = DEFAULT_TEMPLATE[p["role"]]

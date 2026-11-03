@@ -63,6 +63,7 @@ resources:
           - {name: EDIP_MODE, value: live}
           - {name: EDIP_CLOCK_MODE, value: replay}
           - {name: EDIP_DEMO_PERSONAS, value: "true"}
+          - {name: EDIP_SYNTHETIC_DATA, value: "true"}   # set to false (or remove) before any real patient data
           - {name: EDIP_PG_ENDPOINT, value: "projects/${var.lakebase_project}/branches/production/endpoints/primary"}
       resources:
         - name: lakebase
@@ -99,7 +100,7 @@ resources:
         - environment_key: default
           spec:
             environment_version: "2"
-            dependencies: ["pyyaml>=6", "databricks-sdk>=0.81", "psycopg[binary]>=3.1"]
+            dependencies: ["pyyaml>=6", "databricks-sdk>=0.159", "psycopg[binary]>=3.1"]
       tasks:
         - task_key: data
           environment_key: default
@@ -135,7 +136,7 @@ resources:
         - environment_key: default
           spec:
             environment_version: "2"
-            dependencies: ["pyyaml>=6", "databricks-sdk>=0.81"]
+            dependencies: ["pyyaml>=6", "databricks-sdk>=0.159"]
       tasks:
         - task_key: generate
           environment_key: default
@@ -154,10 +155,11 @@ resources:
         - environment_key: default
           spec:
             environment_version: "2"
-            dependencies: ["databricks-sdk>=0.81"]
+            dependencies: ["databricks-sdk>=0.159"]
       tasks:
         - task_key: demo_down
           environment_key: default
           spark_python_task:
             python_file: ./scripts/demo_ctl.py
-            parameters: [down]
+            # Only this deployment's app and pipeline; Lakebase scales to zero on its own.
+            parameters: [down, --app, "${resources.apps.edip_app.name}", --pipeline-id, "${resources.pipelines.edip_pipeline.id}"]

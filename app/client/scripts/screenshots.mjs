@@ -7,11 +7,13 @@ import { chromium } from 'playwright-core';
 const base = process.argv[2] || 'http://localhost:5180';
 const out = process.argv[3] || 'screenshots';
 mkdirSync(out, { recursive: true });
+// EDIP_BEARER: a token for a deployed app (Databricks Apps accept workspace OAuth tokens).
+const headers = process.env.EDIP_BEARER ? { Authorization: `Bearer ${process.env.EDIP_BEARER}` } : {};
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' });
 const problems = [];
 
 async function shot(name, path, { width = 1440, height = 900, dark = false, persona = 'ed-rn', full = true, before } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, colorScheme: dark ? 'dark' : 'light' });
+  const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, colorScheme: dark ? 'dark' : 'light', extraHTTPHeaders: headers });
   await ctx.addInitScript(([p, d]) => {
     localStorage.setItem('edip.persona', p);
     localStorage.setItem('edip.theme', d ? 'dark' : 'light');
@@ -28,7 +30,7 @@ async function shot(name, path, { width = 1440, height = 900, dark = false, pers
   await ctx.close();
 }
 
-const first = await (await fetch(`${base}/api/board`, { headers: { 'X-Demo-Persona': 'ed-rn' } })).json();
+const first = await (await fetch(`${base}/api/board`, { headers: { 'X-Demo-Persona': 'ed-rn', ...headers } })).json();
 const csn = first.rows[0]?.csn;
 await shot('board', '/');
 await shot('board-dark', '/', { dark: true });

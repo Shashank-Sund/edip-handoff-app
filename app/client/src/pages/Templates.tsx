@@ -29,7 +29,7 @@ function TemplateView({ t }: { t: Def }) {
           <Card key={s.id} className="overflow-hidden">
             <div className="flex items-center gap-2.5 border-b bg-muted/30 px-4 py-2.5 sm:px-5">
               <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-[11px] font-bold text-primary">{s.id}</span>
-              <h3 className="text-sm font-semibold">{s.label}</h3>
+              <h2 className="text-sm font-semibold">{s.label}</h2>
             </div>
             <ul className="divide-y">
               {s.elements.map((id) => {
@@ -66,19 +66,19 @@ function TemplateView({ t }: { t: Def }) {
       </div>
       <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
         <Card className="space-y-3 p-5 text-sm">
-          <h3 className="font-semibold">{t.name}</h3>
+          <h2 className="font-semibold">{t.name}</h2>
           {t.description && <p className="text-muted-foreground">{t.description}</p>}
           <dl className="grid grid-cols-3 gap-2 text-center">
             {(['deterministic', 'narrative', 'process'] as const).map((kind) => (
-              <div key={kind} className="rounded-lg bg-muted/50 px-2 py-2">
-                <dd className="text-lg font-semibold tabular-nums">{Object.values(t.sections).flatMap((s) => s.elements).filter((e) => t.elements[e]?.kind === kind).length}</dd>
+              <div key={kind} className="flex flex-col-reverse rounded-lg bg-muted/50 px-2 py-2">
                 <dt className="text-[11px] text-muted-foreground">{KIND[kind].label}</dt>
+                <dd className="text-lg font-semibold tabular-nums">{Object.values(t.sections).flatMap((s) => s.elements).filter((e) => t.elements[e]?.kind === kind).length}</dd>
               </div>
             ))}
           </dl>
         </Card>
         <Card className="space-y-2 p-5 text-sm">
-          <h3 className="font-semibold">Adapt it for your hospital</h3>
+          <h2 className="font-semibold">Adapt it for your hospital</h2>
           <p className="text-muted-foreground">
             Templates are YAML in <code className="rounded bg-muted px-1 py-0.5 text-xs">ai/templates</code>. Copy the custom template, rename sections to local labels, move elements and set each rule. A site whose feeds cannot supply an element downgrades its rule from hard to soft, with a note.
           </p>

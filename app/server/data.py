@@ -34,6 +34,7 @@ def iso(t: datetime | None) -> str | None:
 class Dataset:
     def __init__(self, encounters: list[dict], drafts: list[dict], meta: dict, source: str):
         self.meta, self.source = meta, source
+        self.error: str | None = None          # set when the data could not be loaded (live mode before setup)
         self.enc: dict[str, dict] = {}
         for e in encounters:
             e = dict(e)

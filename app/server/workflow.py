@@ -4,8 +4,8 @@ Append only: nothing is updated or deleted, so the record is its own audit trail
 time it applies to (the demo clock in mock mode, the current time live), and `recorded_ts`, when it was saved.
 A view at time T counts only actions with at <= T.
 
-MemoryStore keeps actions in process (mock mode). The Lakebase store (lakebase.py) writes the same rows to
-the native tables handoff_field_edit, handoff_attestation, handoff_signoff and handoff_ack.
+MemoryStore keeps actions in process (mock mode). The Lakebase store (lakebase.py) writes the same rows to the
+table app.handoff_action, one row per action with its kind and details.
 """
 from __future__ import annotations
 

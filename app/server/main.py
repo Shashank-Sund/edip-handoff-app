@@ -34,16 +34,27 @@ if config.MODE == "live":
 else:
     STORE = MemoryStore()
     VIEWS = Views(load_fixtures(config.FIXTURES), STORE)
-DS = VIEWS.ds                     # the data at start up; views always read VIEWS.ds (live mode reloads it)
-PERSONAS = demo_personas(DS.meta.get("units", []))
 ROLE_MAP = json.loads(config.ROLE_MAP or "{}")
-DEFAULT_AT = ts(config.CLOCK) if config.CLOCK else DS.busiest()
+_derived: dict = {}
+
+
+def _current():
+    """Personas and the default replay time follow the data, which live mode loads (and reloads) after start up."""
+    ds = VIEWS.ds
+    if _derived.get("ds") is not ds:
+        _derived.update(ds=ds, personas=demo_personas(ds.meta.get("units", [])),
+                        default_at=ts(config.CLOCK) if config.CLOCK else ds.busiest())
+    return _derived["personas"], _derived["default_at"]
 
 
 def _person(request: Request) -> dict:
     email = request.headers.get("x-forwarded-email")
-    pid = (request.headers.get("x-demo-persona") if config.DEMO_PERSONAS else ROLE_MAP.get(email or "")) or "ed-rn"
-    p = next((x for x in PERSONAS if x["id"] == pid), None)
+    personas, _ = _current()
+    if config.DEMO_PERSONAS:
+        pid = request.headers.get("x-demo-persona") or "ed-rn"
+    else:
+        pid = ROLE_MAP.get(email or "", "viewer")
+    p = next((x for x in personas if x["id"] == pid), None)
     if p is None:
         raise HTTPException(400, f"unknown persona {pid}")
     if not config.DEMO_PERSONAS and email:
@@ -56,7 +67,7 @@ def _at(at: Optional[str]) -> datetime:
         return datetime.now(timezone.utc)
     ds = VIEWS.ds
     if not at:
-        return DEFAULT_AT
+        return _current()[1]
     try:
         t = ts(at)
     except ValueError:
@@ -87,11 +98,13 @@ class AckBody(BaseModel):
 @api.get("/config")
 def get_config() -> dict[str, Any]:
     ds = VIEWS.ds
+    personas, default_at = _current()
     return {"mode": config.MODE, "clock": config.CLOCK_MODE, "demo_personas": config.DEMO_PERSONAS,
+            "ready": not getattr(ds, "error", None), "detail": getattr(ds, "error", None),
             "source": ds.source, "drafts_from": ds.meta.get("drafts_from"),
             "models": ds.meta.get("models", []), "window": {"start": iso(ds.start), "end": iso(ds.end)},
-            "default_at": iso(DEFAULT_AT), "facilities": ds.meta.get("facilities", []), "units": ds.meta.get("units", []),
-            "personas": PERSONAS if config.DEMO_PERSONAS else [], "store": STORE.kind,
+            "default_at": iso(default_at), "facilities": ds.meta.get("facilities", []), "units": ds.meta.get("units", []),
+            "personas": personas if config.DEMO_PERSONAS else [], "store": STORE.kind,
             "templates": [{"id": "sbar_nurse", "name": "SBAR", "audience": "Nurse"},
                           {"id": "ipass_physician", "name": "I-PASS", "audience": "Physician"},
                           {"id": "custom_sea58", "name": "Joint Commission minimum", "audience": "Any"}]}
@@ -171,7 +184,8 @@ def post_reset() -> dict[str, str]:
 @api.get("/health")
 def health() -> dict[str, Any]:
     ds = VIEWS.ds
-    return {"status": "ok", "mode": config.MODE, "store": STORE.kind, "encounters": len(ds.enc),
+    return {"status": "ok" if not getattr(ds, "error", None) else "not ready", "detail": getattr(ds, "error", None),
+            "mode": config.MODE, "store": STORE.kind, "encounters": len(ds.enc),
             "drafts": sum(len(v) for v in ds.versions.values()), "now": iso(datetime.now(timezone.utc))}
 
 

@@ -23,16 +23,33 @@ echo "== 0/3 catalog"
 if databricks catalogs get "$catalog" >/dev/null 2>&1; then
   echo "catalog $catalog exists"
 else
-  wh="$(databricks warehouses list -o json | python3 -c 'import json,sys; w=json.load(sys.stdin); print(w[0]["id"] if w else "")')"
+  # Prefer a running warehouse, then a serverless one; any warehouse works, a stopped one just starts first.
+  wh="$(databricks warehouses list -o json | python3 -c '
+import json, sys
+ws = json.load(sys.stdin)
+ws.sort(key=lambda w: (w.get("state") != "RUNNING", not w.get("enable_serverless_compute"), w.get("name", "")))
+print(ws[0]["id"] if ws else "")')"
   if [ -z "$wh" ]; then
-    echo "No SQL warehouse to create catalog $catalog. Create the catalog in Catalog Explorer, or create a warehouse, and re-run." >&2
+    echo "No SQL warehouse to create catalog $catalog. Create the catalog in Catalog Explorer (or a warehouse) and re-run." >&2
     exit 1
   fi
-  body="$(python3 -c 'import json,sys; print(json.dumps({"warehouse_id": sys.argv[1], "wait_timeout": "50s",
-    "statement": f"CREATE CATALOG IF NOT EXISTS `{sys.argv[2]}` COMMENT \"ED to inpatient handoff reference app\""}))' "$wh" "$catalog")"
-  state="$(databricks api post /api/2.0/sql/statements --json "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["status"]["state"], d["status"].get("error", {}).get("message", ""))')"
+  location="${EDIP_CATALOG_LOCATION:-}"     # set for workspaces without Default Storage, e.g. s3://bucket/edip
+  stmt="CREATE CATALOG IF NOT EXISTS \`$catalog\`${location:+ MANAGED LOCATION '$location'} COMMENT 'ED to inpatient handoff reference app'"
+  body="$(python3 -c 'import json,sys; print(json.dumps({"warehouse_id": sys.argv[1], "statement": sys.argv[2],
+    "wait_timeout": "30s", "on_wait_timeout": "CONTINUE"}))' "$wh" "$stmt")"
+  resp="$(databricks api post /api/2.0/sql/statements --json "$body")"
+  id="$(echo "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["statement_id"])')"
+  for _ in $(seq 1 40); do
+    state="$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin)["status"]; print(d["state"], d.get("error", {}).get("message", ""))')"
+    case "$state" in PENDING*|RUNNING*) sleep 10; resp="$(databricks api get "/api/2.0/sql/statements/$id")";; *) break;; esac
+  done
   echo "CREATE CATALOG: $state"
-  case "$state" in SUCCEEDED*) ;; *) echo "Could not create catalog $catalog. Ask an admin, or deploy with --var catalog=<existing catalog>." >&2; exit 1;; esac
+  case "$state" in
+    SUCCEEDED*) ;;
+    *"storage root"*|*"MANAGED LOCATION"*|*"storage location"*)
+      echo "This workspace needs a storage location for new catalogs. Re-run with EDIP_CATALOG_LOCATION=<cloud path of an external location you can use>, or create the catalog in Catalog Explorer." >&2; exit 1;;
+    *) echo "Could not create catalog $catalog. Ask an admin for CREATE CATALOG, or deploy with --var catalog=<existing catalog>." >&2; exit 1;;
+  esac
 fi
 
 echo "== 1/3 bundle deploy"

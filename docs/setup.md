@@ -13,15 +13,16 @@ Everything on the Databricks side is one Declarative Automation Bundle (`databri
 | Job `edip-setup-<target>` | Runs everything above in order, then syncs to Lakebase | `jobs/setup_*.py` |
 | Lakebase project `<lakebase_project>` | Postgres (Lakebase Autoscaling): synced drafts and encounters, and the app's action log (schema `app`) | `databricks.yml` |
 | App `<app_name>` | FastAPI and React; reads and writes Lakebase | `app/` |
-| Job `edip-nightly-shutdown-<target>` | Stops the app and pipelines at 01:00 Pacific every night | `scripts/demo_ctl.py` |
+| Job `edip-nightly-shutdown-<target>` | Stops this deployment's app and pipeline at 01:00 Pacific every night (nothing else) | `scripts/demo_ctl.py` |
 
 ## Requirements
 
 - A Databricks workspace with Unity Catalog, serverless jobs and pipelines, Databricks Apps and Lakebase Autoscaling. Workspaces on the free trial have all of these.
 - A chat model endpoint. The default is the pay per token `databricks-gpt-oss-120b`; any chat endpoint works (`--var model=<endpoint>`).
-- Permissions: create a catalog (or use an existing one where you can create schemas), create apps, create Lakebase projects, and run jobs.
+- Permissions: `CREATE CATALOG` on the metastore (or an existing catalog where you have `USE CATALOG` and `CREATE SCHEMA`), create apps, create Lakebase projects, and run jobs. The optional Zerobus path also needs permission to create a service principal.
 - The Databricks CLI 1.23 or later, logged in: `databricks auth login --host <workspace-url> --profile <name>`, then `export DATABRICKS_CONFIG_PROFILE=<name>`.
-- A SQL warehouse, only if the catalog does not exist yet (to create it with SQL, which works with Default Storage).
+- A SQL warehouse, only if the catalog does not exist yet. With Default Storage, `CREATE CATALOG` in SQL needs nothing else; without it, give a storage location (`EDIP_CATALOG_LOCATION=s3://...` for `deploy.sh`, or `MANAGED LOCATION` in SQL).
+- One deployment per name: the app name, the Lakebase project id and the catalog are global in a workspace. If someone already deployed this app in your workspace, pick your own, for example `--var app_name=edip-handoff-ana --var lakebase_project=edip-ana --var catalog=edip_ana`.
 
 ## Option A: one command
 
@@ -30,14 +31,15 @@ git clone <this repo> && cd edip-handoff-app
 scripts/deploy.sh dev                       # or: scripts/deploy.sh dev --var catalog=my_catalog
 ```
 
-It takes about two hours, almost all of it the model writing about 430 drafts at two at a time. The model calls cost about 1 USD at list price; serverless compute about the same.
+It takes about two hours, almost all of it the model: about 430 calls (one per admit decision or meaningful change, each writing all three templates, about 1,300 drafts), two at a time. The model calls cost about 1 USD at list price; serverless compute about the same.
 
 ## Option B: step by step (CLI, or the workspace UI)
 
 **0. Catalog.** If the catalog does not exist, run in a SQL editor or notebook:
 
 ```sql
-CREATE CATALOG IF NOT EXISTS edip;
+CREATE CATALOG IF NOT EXISTS edip;                                   -- workspaces with Default Storage
+CREATE CATALOG IF NOT EXISTS edip MANAGED LOCATION 's3://<bucket>/edip'; -- otherwise
 ```
 
 (To use another name, pass `--var catalog=<name>` to every command below.)
@@ -58,7 +60,7 @@ databricks bundle run edip_setup -t dev
 
 In the UI: **Deployments > edip_setup > Run**. If one task fails, fix the cause and use **Repair run**; finished tasks are not repeated.
 
-**3. Start the app.** Builds the client, installs the server and starts it.
+**3. Start the app.** Builds the client, installs the server and starts it. Do this after step 2 finishes: before that the app starts but shows "data not loaded yet".
 
 ```bash
 databricks bundle run edip_app -t dev
@@ -79,11 +81,11 @@ The command prints the app's URL; it is also under **Compute > Apps**. Open it, 
 
 Set them per command (`--var model=databricks-claude-sonnet-5-5`) or per target in `databricks.yml`. The `cleanroom` target is an example of a second, independent copy in the same workspace.
 
-App settings (in `databricks.yml` under the app's `config.env`): `EDIP_CLOCK_MODE` (`replay` shows the synthetic week; `live` uses the current time for live feeds), `EDIP_DEMO_PERSONAS` (`true` lets anyone switch roles; `false` maps signed in users to roles with `EDIP_ROLE_MAP`).
+App settings (in `databricks.yml` under the app's `config.env`): `EDIP_SYNTHETIC_DATA` (`true` for this synthetic data; set it to `false` before any real patient data), `EDIP_CLOCK_MODE` (`replay` shows the synthetic week; `live` uses the current time; replay works only with synthetic data), `EDIP_DEMO_PERSONAS` (`true` lets anyone switch roles, synthetic data only; `false` maps signed in users to roles with `EDIP_ROLE_MAP`, and anyone not in it can only read). Before using real data, read [feature-status.md](feature-status.md).
 
 ## Check it worked
 
-- The setup run's last task prints the encounter and draft counts in Lakebase (702 encounters and about 1,300 drafts).
+- The setup run's last task prints the encounter and draft counts in Lakebase (702 encounters and about 1,300 drafts, from about 430 model calls).
 - The app's `/api/health` shows `"mode": "live"` and the same counts.
 - On the Board, the clock opens on the busiest hour; open a patient and switch personas to sign and accept a handoff.
 
@@ -99,7 +101,7 @@ App settings (in `databricks.yml` under the app's `config.env`): `EDIP_CLOCK_MOD
 databricks bundle destroy -t dev
 ```
 
-This deletes the jobs, pipeline, app and Lakebase project (Lakebase keeps a deleted project for 7 days). The catalog and its tables stay; drop them with `DROP CATALOG <catalog> CASCADE`.
+This deletes the jobs, pipeline, app and Lakebase project (Lakebase keeps a deleted project for 7 days, so reuse of the same project id may wait). The synced tables are made by the setup job, not the bundle, so delete them first: `python jobs/setup_lakebase.py --catalog <catalog> --project <project> --app <app> --delete` (or delete `gold.encounter_state_pg` and `gold.handoff_draft_pg` in Catalog Explorer). The catalog and its tables stay; drop them with `DROP CATALOG <catalog> CASCADE`.
 
 ## Troubleshooting
 
@@ -108,6 +110,7 @@ This deletes the jobs, pipeline, app and Lakebase project (Lakebase keeps a dele
 | `Catalog ... does not exist` on deploy | Step 0 was skipped. Create the catalog, then deploy again. |
 | `Metastore storage root URL does not exist` | Create the catalog with SQL (step 0), not the API; SQL uses Default Storage. |
 | Setup task `lakebase`: role for the app does not exist | The app was not deployed with its postgres resource. Run `bundle deploy` again, then Repair run. |
-| Handoff job slow, HTTP 429 in the log | Pay per token endpoints are rate limited per workspace. It retries; leave it running, or use a provisioned throughput endpoint. |
-| Model endpoint not found | Your region lacks the default model. Pass `--var model=<an endpoint in Serving>`. |
+| Handoff job slow, HTTP 429 in the log | Pay per token endpoints are rate limited per workspace. The client retries rate limited calls; a few failed points are tolerated and redone by the next run (it skips finished points). For more throughput use a provisioned throughput endpoint. |
+| Model endpoint not found (the handoff job stops at once) | Your region lacks the default model. Pass `--var model=<an endpoint in Serving>`. |
+| `app already exists` or `project already exists` on deploy | Someone deployed with the same names. Pass your own `app_name`, `lakebase_project` and `catalog`. |
 | App shows an error page | **Compute > Apps > <app> > Logs**. Most often Lakebase is not synced yet: finish the setup job. |

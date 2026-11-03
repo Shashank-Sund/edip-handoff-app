@@ -3,7 +3,8 @@
 The model reads the chart and may raise severity, never lower it below this floor: structured risk flags come
 from rules, not from model text. Criteria (shared with the evaluation's reference in ai/eval/expected.py):
 
-  unstable  an unaddressed critical result (latest value of that lab still critical), ICU level of care, or
+  unstable  an unaddressed critical result (latest value of that lab still critical), ICU level of care (or an ICU
+            destination unit before the level is charted), or
             shock range vitals (SBP under 90, SpO2 under 90, HR over 130, RR over 30, GCS under 13)
   watcher   ESI 1 or 2, step down level of care, any critical result during the visit, abnormal latest vitals
             (HR over 110 or under 50, SBP under 100, RR over 24, SpO2 under 92, temp 38.3 or higher or under 36.0),
@@ -27,7 +28,12 @@ def floor(packet):
     for x in labs:
         latest_by_name[x.get("name")] = x               # labs are ordered by result time
     unaddressed = [x for x in critical if latest_by_name.get(x.get("name")) is x]
-    level = (packet.get("destination") or {}).get("level_of_care")
+    dest = packet.get("destination") or {}
+    level = dest.get("level_of_care")
+    if not level and "ICU" in str(dest.get("pending_unit") or "").upper():
+        # At the admit decision the feeds name the destination unit before the bed request sets the level of care;
+        # a patient going to an ICU is at ICU level of care from that moment.
+        level = "ICU"
     if unaddressed:
         reasons.append("unaddressed critical " + ", ".join(f"{x['name']} {x['value']}" for x in unaddressed))
         srcs += [x["src"] for x in unaddressed]

@@ -8,15 +8,17 @@ You are deploying or changing the ED to inpatient handoff reference app. Everyth
 2. If the catalog does not exist, create it with SQL (works with Default Storage): `CREATE CATALOG IF NOT EXISTS <catalog>`. Do not use the catalogs REST API for this.
 3. `databricks bundle deploy -t <target> [--var catalog=<catalog>] [--var model=<endpoint>]`
 4. `databricks bundle run edip_setup -t <target> [same --var flags]`. About 2 hours. Tasks: `data`, `pipeline`, `handoffs`, `lakebase`. If a task fails, read its error, fix the cause, and repair the run rather than starting over.
-5. `databricks bundle run edip_app -t <target> [same --var flags]` and give the user the app URL.
-6. Verify: the `lakebase` task output reports about 702 encounters and about 1,300 drafts; the app's `/api/health` returns `"mode": "live"` with the same counts.
+5. Only after step 4 succeeds: `databricks bundle run edip_app -t <target> [same --var flags]` and give the user the app URL.
+6. Verify: the `lakebase` task output reports about 702 encounters and about 1,300 drafts; the app's `/api/health` returns `"status": "ok"`, `"mode": "live"` and the same counts.
 
 From a terminal, `scripts/deploy.sh <target> [--var ...]` does steps 2 to 5.
+
+Without a terminal (workspace UI): open the repo as a Git folder, open `databricks.yml`, choose Deploy, then in the Deployments panel run `edip_setup`, then `edip_app`. If another deployment of this app already exists in the workspace, ask the user for their own `app_name`, `lakebase_project` and `catalog` values first.
 
 ## Rules
 
 - Never put secrets, tokens, hosts or workspace ids in the repo or the bundle. The Zerobus path keeps its secret in `~/.config/edip/zerobus.env` (see `docs/zerobus.md`); it is optional.
-- All data is synthetic. Do not connect real patient data without the user's explicit request and their organization's approval.
+- All data is synthetic. Do not connect real patient data without the user's explicit request and their organization's approval; if they do, set `EDIP_SYNTHETIC_DATA=false` and review `docs/feature-status.md` with them first.
 - Do not run `databricks bundle destroy` or drop catalogs unless the user asks.
 - Writing style for docs and UI text: plain words, no em or en dashes.
 

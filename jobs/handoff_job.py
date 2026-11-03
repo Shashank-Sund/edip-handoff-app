@@ -55,13 +55,22 @@ def main():
     if a.model:
         cfg["model"] = a.model
     model = llm.client(cfg)
+    if isinstance(model, llm.ServingLLM):
+        # Fail in seconds, not after hundreds of failed calls, when the endpoint does not exist here.
+        try:
+            model.w.serving_endpoints.get(model.endpoint)
+        except Exception as exc:
+            raise RuntimeError(f"Model endpoint {model.endpoint!r} is not available in this workspace "
+                               f"({type(exc).__name__}). Pick a chat endpoint under Serving and pass it as the job's "
+                               f"model parameter (bundle: --var model=<name>).") from None
     spark = SparkSession.builder.getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     cat = a.catalog
     spark.sql(f"""CREATE TABLE IF NOT EXISTS {cat}.gold.handoff_draft (
         csn STRING, template STRING, version INT, status STRING, trigger STRING, as_of TIMESTAMP, created_ts TIMESTAMP,
         model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING, validation STRING,
-        prompt_tokens INT, completion_tokens INT, seconds DOUBLE) COMMENT 'Every generated handoff version'""")
+        prompt_tokens INT, completion_tokens INT, seconds DOUBLE) COMMENT 'Every generated handoff version'
+        TBLPROPERTIES (delta.enableChangeDataFeed = true)""")
     spark.sql(f"""CREATE TABLE IF NOT EXISTS {cat}.gold.handoff_latest (
         csn STRING NOT NULL, template STRING NOT NULL, version INT, status STRING, trigger STRING, as_of TIMESTAMP,
         created_ts TIMESTAMP, model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING,
@@ -130,7 +139,7 @@ def main():
         for i, res in enumerate(pool.map(lambda p: _guard(one, p), todo), 1):
             if isinstance(res, Exception):
                 failures += 1
-                print(f"  generation failed: {type(res).__name__}: {str(res)[:200]}")
+                print(f"  generation failed: {type(res).__name__}")      # no message text: it can quote chart content
                 continue
             out += res
             batch += res
@@ -140,7 +149,8 @@ def main():
                 print(f"  {i}/{len(todo)} points written, {time.time() - t1:.0f}s")
     flush(batch)
     if retracted:
-        ids = ",".join(f"'{c}'" for c in sorted(retracted))
+        ids = ",".join(f"'{c}'" for c in sorted(retracted) if str(c).isalnum())
+    if retracted and ids:
         spark.sql(f"UPDATE {cat}.gold.handoff_draft SET status = 'retracted' WHERE csn IN ({ids})")
     spark.sql(f"""MERGE INTO {cat}.gold.handoff_latest t USING (
             SELECT * EXCEPT (rn) FROM (SELECT *, row_number() OVER (PARTITION BY csn, template ORDER BY version DESC) rn
@@ -156,7 +166,9 @@ def main():
     tok = [(r.get("prompt_tokens") or 0, r.get("completion_tokens") or 0) for r in out[:: max(1, len(templates.templates()))]]
     print(f"generated {len(out)} drafts ({len(tok)} model calls, {failures} failed) in {time.time() - t1:.0f}s; "
           f"tokens in {sum(t[0] for t in tok)}, out {sum(t[1] for t in tok)}; retracted {len(retracted)} encounters")
-    if failures:
+    # A few failed points (rate limits, a malformed answer) are reported and retried by the next run, which skips points
+    # already drafted; more than 2% means something is wrong.
+    if failures > max(1, 0.02 * len(todo)):
         sys.exit(1)
 
 

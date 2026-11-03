@@ -40,6 +40,14 @@ Checks: `npm run typecheck`, `npm run lint`, `node scripts/screenshots.mjs <url>
 - After the patient leaves the ED the handoff is final, except for ED addenda (a late ED note or a critical result collected in the ED).
 - Every action carries the time it applies to, so the replay clock shows the board as it was.
 
-## Live mode
+## Live mode (deployed)
 
-Live mode (`EDIP_MODE=live`) reads the same shapes from Lakebase (synced `handoff_draft` and `encounter_state`) and writes actions to native tables, as the signed in user. It is set up at deploy time; see the bundle.
+The bundle (`databricks.yml`) deploys the app with `EDIP_MODE=live` and a postgres resource bound to the Lakebase project. The app then:
+
+- reads `gold.encounter_state_pg` and `gold.handoff_draft_pg` (synced from Unity Catalog by the setup job, refreshed by the handoff job) and reloads them at most once a minute;
+- writes every clinician action to `app.handoff_action` (append only: edits, attestations, sign offs and read backs, with the persona, the role and the signed in user's email), which it creates on first start;
+- authenticates to Postgres as the app's service principal with a short lived token (`EDIP_PG_ENDPOINT`); the setup job grants it read access to the synced tables.
+
+Settings (`config.env` of the app in `databricks.yml`): `EDIP_CLOCK_MODE=replay` keeps the replay clock for the synthetic week (`live` follows the current time, for real feeds); `EDIP_DEMO_PERSONAS=true` lets viewers switch roles (`false` takes the role from `EDIP_ROLE_MAP`, a JSON map of email to persona id, and shows the signed in user).
+
+The app is built from the repository root: `package.json` builds the client into `app/server/static`, `requirements.txt` installs the server, and the command is `uvicorn main:app --app-dir app/server`.

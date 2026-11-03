@@ -76,6 +76,10 @@ def main():
     if bad:
         raise RuntimeError(f"{bad} bronze tables do not match the generated world; see the row counts above")
     print("bronze loaded")
+    # New data means new drafts: the handoff job skips points it already drafted, so clear drafts of earlier data.
+    for table in ("handoff_draft", "handoff_latest"):
+        if spark.catalog.tableExists(f"{cat}.gold.{table}"):
+            sql(f"DELETE FROM {cat}.gold.{table}")
 
 
 if __name__ == "__main__":

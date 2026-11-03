@@ -4,8 +4,10 @@
   demo_ctl.py status   show apps, warehouse, pipelines, Lakebase (read only)
   demo_ctl.py up       start the warehouse and the apps
   demo_ctl.py down     stop pipelines, apps, and the warehouse
+  demo_ctl.py down --app NAME --pipeline-id ID     only this app and pipeline (what the nightly job runs, so it
+                       never touches another user's or another target's resources)
 
-Everything is found by name prefix (EDIP_PREFIX, default "edip"), so the script
+Without --app or --pipeline-id everything is found by name prefix (EDIP_PREFIX, default "edip"), so the script
 needs no IDs. Locally it uses the CLI profile in DATABRICKS_CONFIG_PROFILE.
 Inside a Databricks job it uses the job's own credentials; the nightly
 shutdown job runs "down".
@@ -29,15 +31,26 @@ def ours(name):
     return bool(name) and (name == PREFIX or name.startswith(PREFIX + "-") or name.startswith(PREFIX + "_"))
 
 
+SCOPE = {"app": None, "pipeline_id": None}      # set by --app and --pipeline-id
+
+
+def scoped():
+    return SCOPE["app"] is not None or SCOPE["pipeline_id"] is not None
+
+
 def apps(w):
+    if scoped():
+        return [w.apps.get(SCOPE["app"])] if SCOPE["app"] else []
     return [a for a in w.apps.list() if ours(a.name)]
 
 
 def warehouses(w):
-    return [x for x in w.warehouses.list() if ours(x.name)]
+    return [] if scoped() else [x for x in w.warehouses.list() if ours(x.name)]
 
 
 def pipelines(w):
+    if scoped():
+        return [w.pipelines.get(SCOPE["pipeline_id"])] if SCOPE["pipeline_id"] else []
     return [p for p in w.pipelines.list_pipelines() if ours(p.name)]
 
 
@@ -98,6 +111,12 @@ def down(w):
 
 
 def main(argv):
+    argv = list(argv)
+    for flag, key in (("--app", "app"), ("--pipeline-id", "pipeline_id")):
+        if flag in argv:
+            i = argv.index(flag)
+            SCOPE[key] = argv[i + 1]
+            del argv[i:i + 2]
     cmd = argv[0] if argv else "status"
     if cmd not in ("status", "up", "down"):
         print(__doc__)
