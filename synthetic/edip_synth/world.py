@@ -34,6 +34,14 @@ LEVEL_UNIT = {("MGH", "ICU"): "MICU", ("MGH", "STEPDOWN"): "5N", ("MGH", "TELE")
               ("LKS", "MEDSURG"): "3S", ("LKS", "OBS"): "2E"}
 OVERFLOW = {"STEPDOWN": ("ICU", "TELE"), "ICU": ("STEPDOWN",), "TELE": ("STEPDOWN", "MEDSURG"), "MEDSURG": ("TELE", "OBS"),
             "OBS": ("MEDSURG", "TELE")}
+BG_MAX_MULT = 1.0
+
+
+def bg_mult(lt):
+    """Relative rate of background (non ED) admissions by local hour: fewer overnight."""
+    return 0.4 if lt.hour < 7 else 1.0
+
+
 BG_LOS_H = {"ICU": (60, 160), "STEPDOWN": (72, 190), "TELE": (80, 200), "MEDSURG": (84, 220), "OBS": (22, 36)}
 IP_LOS_DAYS = [((1, 2), 26.1), ((3, 4), 29.8), ((5, 6), 16.2), ((7, 8), 8.6), ((9, 10), 4.6), ((11, 20), 10.4)]
 ALLERGENS = [("Penicillins", "7980", "RxNorm", 30), ("Sulfa (sulfonamide antibiotics)", "10180", "RxNorm", 15),
@@ -119,6 +127,9 @@ class Simulator:
         self._enc = {}
         self.bed_intervals = []     # (facility, unit, room, bed, start, end, kind)
         self.pcn_override_used = False
+        strat_rng = random.Random(cfg.seed + 37)
+        self._strat = [(i + strat_rng.random()) / 4000 for i in range(4000)]
+        strat_rng.shuffle(self._strat)
 
     # ------------------------------------------------------------------ helpers
     def pick_prov(self, fac, ptype, spec, rng=None):
@@ -152,19 +163,28 @@ class Simulator:
 
     # ------------------------------------------------------------------ pass 1
     def _arrivals(self, fac, n):
+        """Sample n arrivals over the window, hour by hour in UTC so the repeated 01:00 hour on the DST
+        change counts twice. Each hour is weighted by its local hour of day and day of week."""
         rng, cfg = self.rng, self.cfg
-        per_day = [n * w / sum(cfg.daily) for w in cfg.daily]
-        counts = [int(x) for x in per_day]
-        for i in sorted(range(7), key=lambda i: per_day[i] - counts[i], reverse=True)[: n - sum(counts)]:
-            counts[i] += 1
-        out = []
-        for day, c in enumerate(counts):
-            d = (cfg.window_start + timedelta(days=day)).date()
-            for _ in range(c):
-                hour = rng.choices(range(24), cfg.hourly)[0]
-                ldt = datetime(d.year, d.month, d.day, hour, rng.randrange(60), rng.randrange(60), tzinfo=TZ,
-                               fold=rng.randrange(2))
-                out.append(ldt.astimezone(UTC))
+        hours, weights = [], []
+        t = self.start
+        while t < self.end:
+            lt = local(t)
+            hours.append(t)
+            weights.append(cfg.hourly[lt.hour] * cfg.daily[lt.weekday()])
+            t += H(1)
+        # Systematic sampling: hourly counts track the curve closely while each arrival time stays random.
+        total, cum, acc = sum(weights), [], 0.0
+        for wgt in weights:
+            acc += wgt
+            cum.append(acc)
+        out, j = [], 0
+        for i in range(n):
+            target = (i + rng.random()) / n * total
+            while cum[j] < target:
+                j += 1
+            out.append(hours[j] + timedelta(seconds=rng.randrange(3600)))
+        rng.shuffle(out)
         return out
 
     def _plan(self):
@@ -177,9 +197,6 @@ class Simulator:
         # Admitted scenarios, with exactly cfg.admitted_observation observation stays.
         admits = [k for k, c in ADMIT_COUNTS.items() for _ in range(c)]
         assert len(admits) == cfg.admitted, (len(admits), cfg.admitted)
-        rng.shuffle(admits)
-        scored = sorted(range(len(admits)), key=lambda i: -(OBS_ELIGIBLE.get(admits[i], 0) * rng.random()))
-        obs_idx = set(scored[: cfg.admitted_observation])
 
         # Admitted patients skew to daytime arrivals (EMS heavy); weighted sampling without replacement.
         def key(s):
@@ -187,9 +204,34 @@ class Simulator:
             w = 1.35 if 8 <= h <= 21 else 0.7
             return rng.random() ** (1 / w)
         order = sorted(slots, key=key, reverse=True)
-        for i, (s, k) in enumerate(zip(order, admits)):
-            s["scenario"], s["disposition"] = k, "ADMIT_OBS" if i in obs_idx else "ADMIT_IP"
-        rest = order[len(admits):]
+        # Spread each scenario over both hospitals in proportion to their admit slots, so every scenario
+        # appears at each hospital (spec 12 item 13) instead of by chance.
+        n_mgh = round(len(admits) * cfg.facility_share["MGH"])
+        chosen = [s for s in order if s["facility"] == "MGH"][:n_mgh] + \
+            [s for s in order if s["facility"] == "LKS"][:len(admits) - n_mgh]
+        picked = {id(s) for s in chosen}
+        by_fac = {f: [s for s in chosen if s["facility"] == f] for f in ("MGH", "LKS")}
+        share = len(by_fac["MGH"]) / len(chosen)
+        mgh = {k: (min(c - 1, max(1, round(c * share))) if c >= 2 else round(c * share)) for k, c in ADMIT_COUNTS.items()}
+        diff = len(by_fac["MGH"]) - sum(mgh.values())
+        for k in sorted(ADMIT_COUNTS, key=lambda k: -ADMIT_COUNTS[k]):
+            if diff == 0:
+                break
+            step = 1 if diff > 0 else -1
+            if 1 <= mgh[k] + step <= ADMIT_COUNTS[k] - 1:
+                mgh[k] += step
+                diff -= step
+        pools = {"MGH": [k for k, n in mgh.items() for _ in range(n)],
+                 "LKS": [k for k, c in ADMIT_COUNTS.items() for _ in range(c - mgh[k])]}
+        for f in pools:
+            rng.shuffle(pools[f])
+            for s, k in zip(by_fac[f], pools[f]):
+                s["scenario"] = k
+        scored = sorted(chosen, key=lambda s: -(OBS_ELIGIBLE.get(s["scenario"], 0) * rng.random()))
+        obs = {id(s) for s in scored[: cfg.admitted_observation]}
+        for s in chosen:
+            s["disposition"] = "ADMIT_OBS" if id(s) in obs else "ADMIT_IP"
+        rest = [s for s in order if id(s) not in picked]
         rng.shuffle(rest)
         special = (["LWBS"] * cfg.lwbs + ["AMA"] * cfg.ama + ["LBTC"] * cfg.left_before_complete
                    + ["TRANSFER"] * cfg.transfer_out)
@@ -206,7 +248,88 @@ class Simulator:
         oth = [s for s in late if s["disposition"] == "DISCHARGE"][: cfg.returns_72h - cfg.returns_admitted]
         for s in adm + oth:
             s["return"] = True
+        self._quotas(slots)
         return slots
+
+    # ------------------------------------------------------------------ quotas
+    def _allot(self, rng, items, weights_of, targets, order):
+        """Assign each item one category so category counts equal targets exactly, preferring items whose
+        own weights favor that category (Efraimidis keys); rare categories are filled first. Items left
+        over (targets short) fall back to a draw from their own weights. Returns {id(item): category}."""
+        out, free = {}, list(items)
+        for cat in order:
+            need = targets.get(cat, 0)
+            cands = [(rng.random() ** (1 / weights_of(it)[cat]), i) for i, it in enumerate(free) if weights_of(it).get(cat, 0) > 0]
+            cands.sort(reverse=True)
+            take = {i for _, i in cands[:max(0, need)]}
+            for i in take:
+                out[id(free[i])] = cat
+            free = [it for i, it in enumerate(free) if i not in take]
+        for it in free:
+            out[id(it)] = wpick(rng, {k: v for k, v in weights_of(it).items() if v > 0})
+        return out
+
+    @staticmethod
+    def _counts(shares: dict, n: int) -> dict:
+        exact = {k: v * n / sum(shares.values()) for k, v in shares.items()}
+        out = {k: int(x) for k, x in exact.items()}
+        for k in sorted(exact, key=lambda k: exact[k] - out[k], reverse=True)[: n - sum(out.values())]:
+            out[k] += 1
+        return out
+
+    def _quotas(self, slots):
+        """Headline distributions are allocated, not sampled, so a 700 visit week matches its targets
+        regardless of seed: ESI mix, ICU share of admits, EMS share of admits and of all visits."""
+        rng, cfg = random.Random(self.cfg.seed + 31), self.cfg
+        admits = [s for s in slots if s["disposition"].startswith("ADMIT")]
+        rest = [s for s in slots if not s["disposition"].startswith("ADMIT")]
+        # ESI: admits draw from their scenario; the remaining quota goes to the other visits.
+        expect = {}
+        for s in admits:
+            w = get(s["scenario"]).esi
+            for k, v in w.items():
+                expect[k] = expect.get(k, 0) + v / sum(w.values())
+        got = self._allot(rng, admits, lambda s: get(s["scenario"]).esi, self._counts(expect, len(admits)), [1, 5, 4, 2, 3])
+        for s in admits:
+            s["esi"] = int(got[id(s)])
+        target = self._counts(cfg.esi_mix, len(slots))
+        for s in admits:
+            target[s["esi"]] -= 1
+
+        def esi_w(s):
+            w = dict(get(s["scenario"]).esi)
+            return {k: v for k, v in w.items() if k >= 3} if s["disposition"] == "LWBS" else w
+        got = self._allot(rng, rest, esi_w, target, [1, 5, 2, 4, 3])
+        for s in rest:
+            s["esi"] = int(got[id(s)])
+        # Level of care: ICU for cfg.icu_share of admits, chosen among scenarios that send patients to ICU.
+        ip = [s for s in admits if s["disposition"] == "ADMIT_IP"]
+        n_icu = round(cfg.icu_share * len(admits))
+        icu = self._allot(rng, ip, lambda s: {"ICU": get(s["scenario"]).units.get("ICU", 0), "X": 1},
+                          {"ICU": n_icu, "X": len(ip) - n_icu}, ["ICU", "X"])
+        for s in ip:
+            units = {k: v for k, v in get(s["scenario"]).units.items() if k != "ICU"} or {"STEPDOWN": 1}
+            s["level"] = "ICU" if icu[id(s)] == "ICU" else wpick(rng, units)
+        for s in admits:
+            s.setdefault("level", "OBS")
+        # Arrival mode: EMS for cfg.ems_share_admits of admits and cfg.ems_share_all of all visits.
+
+        def mode_w(s):
+            if s["esi"] == 1:
+                return {"EMS": 12, "Private vehicle": 1}
+            if s["scenario"] in ("psych_hold", "psych_d"):
+                return {"Police": 3, "EMS": 2, "Walk-in": 2}
+            return {"EMS": 1, "Walk-in": 1, "Private vehicle": 1}
+        for group, ems in ((admits, round(cfg.ems_share_admits * len(admits))),
+                           (rest, round(cfg.ems_share_all * len(slots)) - round(cfg.ems_share_admits * len(admits)))):
+            got = self._allot(rng, group, lambda s: {**mode_w(s), "OTHER": 1}, {"EMS": ems, "OTHER": len(group) - ems},
+                              ["EMS", "OTHER"])
+            for s in group:
+                m = got[id(s)]
+                if m != "EMS":
+                    w = {k: v for k, v in mode_w(s).items() if k != "EMS"}
+                    m = wpick(rng, w)
+                s["mode"] = m
 
     def _new_patient(self, person, rng):
         pat_id, mrn, epi = self.ids.patient()
@@ -234,7 +357,7 @@ class Simulator:
     def _allergies(self, p, person, rng):
         prob = self.cfg.allergy_any * (1.1 if p.sex == "F" else 0.9) * (1.1 if person.age >= 65 else 0.95)
         noted = datetime(2015 + rng.randrange(10), rng.randint(1, 12), rng.randint(1, 28), 12, tzinfo=UTC)
-        roll = rng.random()
+        roll = self._strat.pop() if self._strat else rng.random()    # stratified, so shares hold for any seed
         p.allergy_review = "Reviewed"
         if roll < 0.04:
             p.allergy_review = "Not on File"
@@ -245,6 +368,10 @@ class Simulator:
             chosen = {k for k, words in ALLERGY_CONFLICT.items() if any(w in meds for w in words)}
             blocked = set(chosen)
             for a in person.drug_allergies[:2]:
+                cls = next((k for k, words in ALLERGY_CONFLICT.items() if any(w in a["display"].lower() or
+                            (k == "Penicillins" and "penicillin" in a["display"].lower()) for w in words)), None)
+                if cls and cls in blocked:
+                    continue            # Synthea can list an allergy to a drug the patient takes; skip it
                 chosen.add(a["display"])
                 self.w.allergies.append(Allergy(self.ids.misc(), p.pat_id, a["display"], a["code"], a["system"],
                                                 a["reaction"] or "Rash", (a["severity"] or "Mild").title(), noted))
@@ -267,11 +394,30 @@ class Simulator:
         for b in bands.values():
             rng.shuffle(b)
         used = set()
+        new = [s for s in slots if not s.get("return")]
+        adm = [s for s in new if s["scenario"] in ADMIT_COUNTS]
+        oth = [s for s in new if s["scenario"] not in ADMIT_COUNTS]
+        expect = {}
+        for s in adm:
+            w = {k: v for k, v in get(s["scenario"]).age.items() if v > 0}
+            for k, v in w.items():
+                expect[k] = expect.get(k, 0) + v / sum(w.values())
+        got = self._allot(rng, adm, lambda s: {k: v for k, v in get(s["scenario"]).age.items() if v > 0},
+                          self._counts(expect, len(adm)), ["18-44", "75+", "65-74", "45-64"])
+        for s in adm:
+            s["band"] = got[id(s)]
+        target = self._counts(self.cfg.age_mix, len(new))
+        for s in adm:
+            target[s["band"]] -= 1
+        got = self._allot(rng, oth, lambda s: {k: v for k, v in get(s["scenario"]).age.items() if v > 0}, target,
+                          ["75+", "65-74", "45-64", "18-44"])
+        for s in oth:
+            s["band"] = got[id(s)]
         for s in sorted(slots, key=lambda s: 0 if s["scenario"] in ADMIT_COUNTS else 1):
             if s.get("return"):
                 continue
             scen = get(s["scenario"])
-            band = wpick(rng, {k: v for k, v in scen.age.items() if v > 0})
+            band = s["band"]
             pool = [p for p in bands.get(band, []) if p.synthea_id not in used] or \
                    [p for p in self.pop if p.synthea_id not in used]
             fit = [p for p in pool if p.snomed & set(scen.conditions)] if scen.conditions else []
@@ -288,16 +434,8 @@ class Simulator:
         s["rng_seed"] = rng.random()
         scen = get(s["scenario"])
         disp = s["disposition"]
-        esi = int(wpick(rng, scen.esi))
-        if disp in ("LWBS",):
-            esi = max(esi, 3)
+        esi, mode = s["esi"], s["mode"]
         admit = disp.startswith("ADMIT")
-        mode_w = {"EMS": 36, "Walk-in": 30, "Private vehicle": 34} if admit else {"EMS": 18, "Walk-in": 41, "Private vehicle": 41}
-        if esi == 1:
-            mode_w = {"EMS": 92, "Private vehicle": 8}
-        if scen.key in ("psych_hold", "psych_d"):
-            mode_w = {"Police": 45, "EMS": 30, "Walk-in": 25}
-        mode = wpick(rng, mode_w)
         arr = s["arrival"]
         enc = Encounter(self.ids.csn(), self.ids.har(), "", s["facility"], scen.key, scen.label, disp, mode, arr, esi,
                         rng.choice(scen.complaints), [list(d) for d in scen.dx])
@@ -355,13 +493,13 @@ class Simulator:
             if scen.key in ("stroke", "nstemi"):
                 dec = lgn(rng, 120, 220, lo=cfg.decision_floor_min)
             elif esi <= 2 and scen.key in ("sepsis_uti", "sepsis_pna", "ugib", "dka", "chf", "trauma_other"):
-                dec = lgn(rng, 170, 300, lo=cfg.decision_floor_min, hi=600)      # sick patients are dispositioned sooner
+                dec = lgn(rng, 190, 345, lo=cfg.decision_floor_min, hi=600)      # sick patients are dispositioned sooner
             else:
                 dec = lgn(rng, *cfg.arrival_to_decision, lo=cfg.decision_floor_min, hi=720)
             enc.decision_at = max(arr + M(dec), enc.provider_at + M(rng.uniform(40, 80)))
             enc.bed_request_at = enc.decision_at + M(rng.uniform(3, 20))
             enc.class_change_at = max(enc.decision_at + M(lgn(rng, 25, 90, lo=5)), enc.bed_request_at + M(rng.uniform(1, 10)))
-            level = "OBS" if disp == "ADMIT_OBS" else wpick(rng, scen.units)
+            level = s["level"]
             enc.level_of_care = level
             enc.unit = LEVEL_UNIT[(fac, level)]
             dept = self.dept[(fac, enc.unit)]
@@ -503,7 +641,9 @@ class Simulator:
             for e, status in zip(encs, quota):
                 e._planned_code_status = status
         # Spec item 20: exactly one documented penicillin allergy override (pip tazo in a septic patient).
-        septic = [e for e in admits if e.scenario == "sepsis_uti" and e.arrival_at < self.end - H(12)]
+        on_pcn = lambda e: any(w in m["display"].lower() for m in self.pats[e.pat_id].home_meds  # noqa: E731
+                               for w in ALLERGY_CONFLICT["Penicillins"])
+        septic = [e for e in admits if e.scenario == "sepsis_uti" and e.arrival_at < self.end - H(12) and not on_pcn(e)]
         if septic:
             e = septic[0]
             e._force_piptazo = True
@@ -542,6 +682,8 @@ class Simulator:
 
         # Requests: ED admits plus background admissions (OR, direct admits, transfers in).
         reqs = []
+        hrs = int((self.sim_end - self.start).total_seconds() // 3600)
+        self._bg_mean_mult = sum(bg_mult(local(self.start + H(i))) for i in range(hrs)) / hrs
         ed_admits = [e for e in self.encs if e.disposition.startswith("ADMIT")]
         ed_per_unit = {}
         for e in ed_admits:
@@ -556,15 +698,15 @@ class Simulator:
             target_bed_hours = cfg.target_occupancy * d.beds * horizon_h
             ed_bed_hours = ed_per_unit.get((d.facility, d.code), 0)
             rate = max(0.02, (target_bed_hours - ed_bed_hours) / mean_los / horizon_h)   # admissions per hour
+            # Background admissions (OR, direct admits, transfers in) slow down overnight.
+            mean_mult = self._bg_mean_mult
             t = self.start
             while True:
-                t += H(rng.expovariate(rate))
+                t += H(rng.expovariate(rate * BG_MAX_MULT / mean_mult))
                 if t > self.sim_end:
                     break
-                lt = local(t)
-                if lt.hour < 7 and rng.random() < 0.6:   # fewer background admits overnight
-                    continue
-                reqs.append(("bg", t, d, None))
+                if rng.random() < bg_mult(local(t)) / BG_MAX_MULT:
+                    reqs.append(("bg", t, d, None))
         for e in ed_admits:
             base = lgn(rng, *self.cfg.bed_request_to_assigned, lo=5, hi=1400)
             if e.isolation:
@@ -701,6 +843,7 @@ class Simulator:
         stop = e.departure_at or self.sim_end
         horizon = (e.departure_at + H(self.cfg.inpatient_horizon_h)) if (admit and e.departure_at) else stop
         e._latest = {}
+        e._hist = []
         if e.provider_at:
             self._orders(e, pat, scen, rng, horizon)
         meds_given = self._meds(e, pat, scen, rng, horizon) if e.provider_at else []
@@ -807,7 +950,7 @@ class Simulator:
                     times.append((t, "inpatient"))
         o2_on = None
         if scen.o2 and track.get("spo2", (99, 99))[0] < 93:     # margin for charting noise around 92
-            o2_on = (e.provider_at or e.triage_at) + M(rng.uniform(3, 15))
+            o2_on = e.triage_at + M(rng.uniform(3, 15))      # triage nurse starts oxygen for hypoxia by protocol
             flow = round(u(rng, scen.o2[1]))
         o2_off = None
         line = 0
@@ -830,7 +973,7 @@ class Simulator:
             temp = round(min(41.5, max(34.5, val("temp", 0.12))), 1) if (i % 2 == 0 or phase == "triage") else None
             o2 = o2_on is not None and t >= o2_on and o2_off is None
             spo2_base, spo2_tgt = track["spo2"]
-            spo2 = spo2_base + (spo2_tgt - spo2_base) * (r if (o2 or o2_off or not scen.o2) else r * 0.3) + rng.gauss(0, 1)
+            spo2 = spo2_base + (spo2_tgt - spo2_base) * (r if (o2 or o2_off or not scen.o2) else r * 0.6) + rng.gauss(0, 1)
             spo2 = int(round(min(100, max(70, spo2))))
             if o2 and phase in ("boarding", "inpatient") and t > o2_on + H(6) and spo2 >= 94 and rng.random() < 0.35:
                 flow -= 1                                 # wean toward room air once at target
@@ -841,7 +984,10 @@ class Simulator:
             in_ed = e.departure_at is None or t < e.departure_at or not e.disposition.startswith("ADMIT")
             user = e.ed_nurse if in_ed else e.unit_nurse
             dept = e._ed_dept if in_ed else e.unit_dept_id
-            late_entry = M(rng.uniform(30, 70)) if rng.random() < 0.08 else M(rng.uniform(0, 12))
+            if phase == "triage":
+                late_entry = M(rng.uniform(0, 3))       # charted at the triage desk
+            else:
+                late_entry = M(rng.uniform(30, 70)) if rng.random() < 0.08 else M(rng.uniform(0, 12))
             v = Vital(e.csn, line, t, t + late_entry, user, dept, hr, sbp, dbp, round((sbp + 2 * dbp) / 3), rr, temp, spo2,
                       "Nasal cannula" if o2 else "Room air", float(flow) if o2 else None, pain, gcs)
             self.w.vitals.append(v)
@@ -891,6 +1037,10 @@ class Simulator:
         return ""
 
     def _panel_results(self, e, pat, scen, order, panel, collected, resulted, override=None):
+        # Every draw after the first follows the prior values; an explicit override wins.
+        chained = self._chain(e, None, collected, self.rng)
+        chained.update(override or {})
+        override = chained or None
         comps = PANELS[panel][2]
         vals = {}
         for c in comps:
@@ -913,6 +1063,8 @@ class Simulator:
                 x = self._fmt("NA", vals["NA"]) - self._fmt("CL", vals["CL"]) - self._fmt("CO2", vals["CO2"])
             elif c in vals:
                 x = self._fmt(c, vals[c])
+                if c == "POCGLU":
+                    x = min(x, 600)      # meters report "HI" above 600 mg/dL
             else:
                 rows.extend(self._qual(e, scen, order, line, c, collected, resulted))
                 continue
@@ -924,6 +1076,7 @@ class Simulator:
             rows.append(Result(order.order_id, e.csn, line, c, cat[0], cat[1], str(x), float(x), cat[2], cat[3], cat[4],
                                flag, "F", collected, resulted, comment))
             e._latest[c] = rows[-1]
+            e._hist.append(rows[-1])
         return rows
 
     def _qual(self, e, scen, order, line, c, collected, resulted):
@@ -958,21 +1111,43 @@ class Simulator:
         return []
 
     def _chain(self, e, override, collected, rng):
-        """Repeat draws move from the prior value at a physiologic rate instead of a fresh draw."""
+        """Repeat draws move from the prior value at a physiologic rate instead of a fresh draw. "Prior" is
+        the latest specimen collected before this one, whatever order the draws were generated in."""
         out = dict(override or {})
-        prev = e._latest
-        hrs = lambda k: max(0.5, (collected - prev[k].observed_at).total_seconds() / 3600)  # noqa: E731
+        prev = {}
+        for r in getattr(e, "_hist", ()):
+            if r.numeric is not None and r.observed_at < collected and (r.lab not in prev or r.observed_at >= prev[r.lab].observed_at):
+                prev[r.lab] = r
+        hrs = lambda k: max(0.05, (collected - prev[k].observed_at).total_seconds() / 3600)  # noqa: E731
 
         def put(k, v):
             out[k] = (v, v)
         if e.scenario == "dka" and "GLU" in prev:
-            put("GLU", max(150, prev["GLU"].numeric - rng.uniform(50, 75) * hrs("GLU")))
+            # One rate per patient, so draws generated in different passes stay mutually consistent.
+            if not hasattr(e, "_dka_rates"):
+                e._dka_rates = {"GLU": rng.uniform(50, 75), "CO2": rng.uniform(1.0, 2.0), "K": rng.uniform(0.2, 0.4),
+                                "VPH": rng.uniform(0.02, 0.04), "VHCO3": rng.uniform(1.0, 2.0)}
+            rate = e._dka_rates
+            put("GLU", max(150, prev["GLU"].numeric - rate["GLU"] * hrs("GLU")))
             if "CO2" in prev:
-                put("CO2", min(22, prev["CO2"].numeric + rng.uniform(1.0, 2.0) * hrs("CO2")))
+                put("CO2", min(22, prev["CO2"].numeric + rate["CO2"] * hrs("CO2")))
             if "K" in prev:
-                put("K", max(3.4, prev["K"].numeric - rng.uniform(0.2, 0.4) * hrs("K")))
-        if e.scenario == "ugib" and "HGB" in prev:
-            put("HGB", prev["HGB"].numeric - rng.uniform(0.5, 1.5))
+                put("K", max(3.4, prev["K"].numeric - rate["K"] * hrs("K")))
+            # Acidosis resolves on insulin and fluids: venous pH up about 0.03 per hour, bicarbonate as CO2.
+            if "VPH" in prev:
+                put("VPH", min(7.36, prev["VPH"].numeric + rate["VPH"] * hrs("VPH")))
+            if "VHCO3" in prev:
+                put("VHCO3", min(22, prev["VHCO3"].numeric + rate["VHCO3"] * hrs("VHCO3")))
+        if "HGB" in prev:
+            # About 1 g/dL per unit of packed red cells ordered since the prior draw.
+            units = sum(1 for o in self.w.orders if o.csn == e.csn and o.order_type == "Blood Product"
+                        and prev["HGB"].observed_at < o.ordered_at < collected)
+            h = prev["HGB"].numeric + units * rng.uniform(0.8, 1.1)
+            if e.scenario == "ugib":
+                # Falls while the bleed is active, then levels off after PPI and endoscopy.
+                h = h - rng.uniform(0.3, 1.2) if h > 7.6 else max(h, 6.8) + rng.uniform(-0.2, 0.3)
+            if units or e.scenario == "ugib":
+                put("HGB", h)
         if "TROP" in prev:
             f = rng.uniform(2, 6) if e.scenario in ("nstemi", "stemi_transfer") else rng.uniform(0.9, 1.15)
             put("TROP", prev["TROP"].numeric * f)
@@ -1021,21 +1196,23 @@ class Simulator:
             disp, proc, comps, tat = PANELS[p]
             o = self._add_order(e, "Lab", proc, disp, "", t0 + M(rng.uniform(0, 6)), prov)
             o.accession = self.ids.accession()
-            o.collected_at = o.ordered_at + M(lgn(rng, 8 if e.esi <= 2 else 15, 25 if e.esi <= 2 else 45, lo=1))
+            o.collected_at = o.ordered_at + M(lgn(rng, 8 if e.esi <= 2 else 15, 25 if e.esi <= 2 else 45, lo=1,
+                                                  hi=45 if e.esi <= 2 else 90))
             resulted = o.collected_at + M(lgn(rng, *tat, lo=tat[0] * 0.4))
             rows = self._panel_results(e, pat, scen, o, p, o.collected_at, resulted)
             self.w.results.extend(rows)
-            first_result[p] = resulted
+            first_result[p] = o.collected_at
         for p, after, override in scen.repeats:
             if p not in first_result:
                 continue
-            at = first_result[p] + M(after * rng.uniform(0.8, 1.3))
+            at = first_result[p] + M(after * rng.uniform(0.9, 1.2))   # protocols time repeats from the first draw
             o = self._add_order(e, "Lab", PANELS[p][1], PANELS[p][0], "", at, prov, "Timed")
             o.accession = self.ids.accession()
             o.collected_at = at + M(rng.uniform(2, 20))
             resulted = o.collected_at + M(lgn(rng, *PANELS[p][3], lo=5))
-            self.w.results.extend(self._panel_results(e, pat, scen, o, p, o.collected_at, resulted,
-                                                      self._chain(e, override, o.collected_at, rng)))
+            planned = dict(override)
+            planned.update(self._chain(e, None, o.collected_at, rng))   # the trend wins over the scenario's repeat range
+            self.w.results.extend(self._panel_results(e, pat, scen, o, p, o.collected_at, resulted, planned))
         low_hgb = [r for r in self.w.results if r.csn == e.csn and r.lab == "HGB" and r.numeric is not None and r.numeric < 7]
         if low_hgb:
             self._add_order(e, "Blood Product", "BLD0001", "Transfuse packed red blood cells, 1 unit", "",
@@ -1086,11 +1263,7 @@ class Simulator:
                         resulted = draw + M(lgn(rng, *PANELS[p][3], lo=10))
                         trend = None
                         if e.scenario == "ugib":
-                            last = e._latest.get("HGB")
-                            units = sum(1 for o in self.w.orders if o.csn == e.csn and o.order_type == "Blood Product"
-                                        and last and last.resulted_at < o.ordered_at < draw)
-                            base = (last.numeric + units * 1.0 - rng.uniform(0, 0.6)) if last else rng.uniform(7.0, 9.5)
-                            trend = {"HGB": (base, base)}
+                            trend = {}          # the chained trend (falls, then levels off) applies
                         if e.scenario == "dka":
                             trend = {"GLU": (140, 220), "CO2": (19, 24), "K": (3.6, 4.4)}
                         self.w.results.extend(self._panel_results(e, pat, get(e.scenario), o, p, draw, resulted,
@@ -1155,7 +1328,8 @@ class Simulator:
             first = verified + M(rng.uniform(3, 25))
             bcx = [o.collected_at for o in self.w.orders if o.csn == e.csn and o.code == "LAB0040" and o.collected_at]
             if bcx and any(w in name for w in ("cefTRIAXone", "azithromycin", "piperacillin", "vancomycin", "cefepime")):
-                first = max(first, min(bcx) + M(rng.uniform(2, 10)))   # cultures before antibiotics
+                # Cultures before antibiotics, but antibiotics are not held more than about 45 min for them (SSC).
+                first = max(first, min(min(bcx) + M(rng.uniform(2, 10)), first + M(45)))
             line = 1
             if name.startswith("heparin"):     # 60 units/kg bolus (max 4000) before the infusion, aPTT at 6 h
                 bolus = str(min(4000, int(round(60 * e.weight_kg / 100) * 100)))
@@ -1211,7 +1385,7 @@ class Simulator:
             t = verified + M(delay + rng.uniform(5, 60))
             line = 0
             while t < horizon:
-                if not prn or rng.random() < 0.45:
+                if not prn or rng.random() < 0.6:
                     line += 1
                     in_ed = not e.departure_at or t < e.departure_at
                     self.w.mar.append(MarAdmin(mo.order_med_id, e.csn, line, "New Bag" if m.kind == "infusion" else "Given", t, t,
@@ -1278,6 +1452,9 @@ class Simulator:
             created = e.triage_at + M(rng.uniform(1, 6))
             signed = created + M(rng.uniform(1, 8) if rng.random() < 0.98 else rng.uniform(20, 90))
             tri_v = min(e._vit, key=lambda v: v.taken_at) if e._vit else None
+            if tri_v:
+                created = max(created, tri_v.entered_at + M(rng.uniform(0.5, 3)))
+                signed = max(signed, created + M(rng.uniform(1, 5)))
             self._add_note(e, "ED Triage Notes", "84249-2", e.ed_nurse, created, e.triage_at, signed,
                            N.triage(e, pat, scen, tri_v, allergies))
         if not e.provider_at:
@@ -1362,6 +1539,8 @@ class Simulator:
 
         a_at = e.arrival_at
         rec_delay = min(rng.uniform(0.3, 3), max(0.05, (e.triage_at - a_at) / M(1) - 0.1))
+        if a_at < self.end:          # a registration in progress at the window end is still recorded inside it
+            rec_delay = min(rec_delay, max(0.01, (self.end - a_at) / M(1) - 0.01))
         add("arrival", a_at, recorded=getattr(e, "_arrival_recorded", None) or a_at + M(rec_delay),
             ed_name="Patient Arrived in ED",
             ed_at=e.arrival_at, arrival_mode=e.arrival_mode)
@@ -1460,7 +1639,7 @@ class Simulator:
         for line, (name, at, user, ev) in enumerate(sorted(tracked + ed_only, key=lambda x: x[1]), 1):
             rec = at + M(rng.uniform(0, 3))
             if ev is not None:
-                rec = max(rec, ev.recorded_at)   # a tracking event is filed with its ADT event
+                rec = max(at, ev.recorded_at)    # a tracking event is filed with its ADT event
             self.w.ed_events.append(EdEvent(e.csn, line, name, at, rec, user or e.ed_nurse, ev.event_id if ev else ""))
 
     # ------------------------------------------------------------------ remaining truth faults
@@ -1483,16 +1662,29 @@ class Simulator:
                        "Encounter marked canceled; boarding list excludes it")
         admits = [e for e in self.encs if e.disposition.startswith("ADMIT") and e.departure_at and e.departure_at < self.end]
         # F17: critical result shortly before or after transfer, after a handoff would be signed.
-        for e in rng.sample(admits, min(8, len(admits))):
+        injected = 0
+        for e in rng.sample(admits, len(admits)):
+            if injected == 8:
+                break
             pat, scen = self.pats[e.pat_id], get(e.scenario)
-            code, val = rng.choice([("K", rng.uniform(6.3, 6.9)), ("LACT", rng.uniform(4.2, 6.5)), ("HGB", rng.uniform(5.4, 5.9)),
-                                    ("K", rng.uniform(2.3, 2.7))])
             resulted = e.departure_at + M(rng.uniform(-30, 90))
+            collected = resulted - M(rng.uniform(30, 50))
+            # Choose an analyte with no other draw in the next 6 hours, so the critical value and its response
+            # are the continuation of the trend rather than contradicting draws generated earlier.
+            options = [("K", rng.uniform(6.3, 6.9)), ("LACT", rng.uniform(4.2, 6.5)), ("HGB", rng.uniform(5.4, 5.9)),
+                       ("K", rng.uniform(2.3, 2.7))]
+            rng.shuffle(options)
+            busy = {r.lab for r in self.w.results if r.csn == e.csn and collected - H(1) < r.observed_at < collected + H(6)}
+            options = [opt for opt in options if opt[0] not in busy and not (opt[0] == "HGB" and e.scenario == "ugib")]
+            if not options:
+                continue
+            code, val = options[0]
+            injected += 1
             panel = {"K": "BMP", "LACT": "LACT", "HGB": "CBC"}[code]
-            o = self._add_order(e, "Lab", PANELS[panel][1], PANELS[panel][0], "", resulted - M(rng.uniform(50, 80)),
+            o = self._add_order(e, "Lab", PANELS[panel][1], PANELS[panel][0], "", collected - M(rng.uniform(15, 30)),
                                 e.admitting_prov, "STAT")
             o.accession = self.ids.accession()
-            o.collected_at = resulted - M(rng.uniform(30, 50))
+            o.collected_at = collected
             rows = self._panel_results(e, pat, scen, o, panel, o.collected_at, resulted, {code: (val, val)})
             self.w.results.extend(rows)
             self._critical_response(e, pat, scen, code, val, resulted, rng)
@@ -1501,17 +1693,23 @@ class Simulator:
             self.fault("F17", e.csn, "results", resulted, f"Critical {LABS[code][1]} resulted near ED departure",
                        "Changed since signed badge; completeness rule forces acknowledgement")
         # Every critical lab value on an admitted patient after the decision is acted on.
-        handled = {(r.csn, r.lab) for r in self.w.results if "Repeat requested" in r.comment or "Post transfusion" in r.comment}
-        for r in list(self.w.results):
-            e = self._enc.get(r.csn)
-            if (r.flag in ("HH", "LL") and (r.numeric is not None or r.lab == "BCX") and e and e.disposition.startswith("ADMIT") and e.decision_at
-                    and r.resulted_at >= e.decision_at and r.lab in ("K", "LACT", "HGB", "GLU", "NA", "INR", "BCX")
-                    and (r.csn, r.lab, r.resulted_at) not in self._f17_keys and (r.csn, r.lab, r.resulted_at) not in handled):
-                handled.add((r.csn, r.lab, r.resulted_at))
-                self._critical_response(e, self.pats[e.pat_id], get(e.scenario), r.lab, r.numeric, r.resulted_at, rng)
+        handled = set()
+        for _round in range(10):  # a repeat can itself be critical; respond until none is left
+            fresh = False
+            for r in list(self.w.results):
+                e = self._enc.get(r.csn)
+                if (r.flag in ("HH", "LL") and (r.numeric is not None or r.lab == "BCX") and e and e.disposition.startswith("ADMIT") and e.decision_at
+                        and r.resulted_at >= e.decision_at
+                        and (r.csn, r.lab, r.resulted_at) not in self._f17_keys and (r.csn, r.lab, r.resulted_at) not in handled):
+                    handled.add((r.csn, r.lab, r.resulted_at))
+                    self._critical_response(e, self.pats[e.pat_id], get(e.scenario), r.lab, r.numeric, r.resulted_at, rng)
+                    fresh = True
+            if not fresh:
+                break
         # F19: corrected hemoglobin 30 min after final.
         hgb = [r for r in self.w.results if r.lab == "HGB" and r.status == "F" and r.resulted_at < self.end - H(2)
-               and self._enc[r.csn].scenario != "ugib"]      # a correction must not read as a bleed or a transfusion
+               and self._enc[r.csn].scenario != "ugib" and not r.flag.startswith(("HH", "LL"))
+               and 8.0 <= r.numeric <= 16.0]   # a correction must not read as a bleed, a transfusion or a new critical
         for r in rng.sample(hgb, min(4, len(hgb))):
             x = round(r.numeric + rng.choice([-1.5, 1.5]), 1)
             self.w.results.append(Result(r.order_id, r.csn, r.line, r.lab, r.loinc, r.name, str(x), x, r.units, r.ref_low,
@@ -1544,9 +1742,21 @@ class Simulator:
                 o.accession = self.ids.accession()
                 o.collected_at = act + M(rng.uniform(10, 40))
             return
-        if code in ("GLU", "NA", "INR"):
-            panel = {"GLU": "POCGLU", "NA": "BMP", "INR": "COAG"}[code]
-            self._timed_lab(e, pat, scen, panel, act, None, prov, "STAT", "Repeat after critical value.")
+        if code not in ("K", "LACT", "HGB", "GLU", "POCGLU", "NA", "INR"):
+            # Any other critical analyte: repeat its panel; the chained trend carries the treatment response.
+            panel = next((p for p, (_, _, comps, _) in PANELS.items() if code in comps and p not in ("CMP",)), None)
+            if panel:
+                # Acid base criticals in DKA resolve over hours, so the gas is rechecked every 1 to 2 hours.
+                when = resulted + M(rng.uniform(60, 110)) if code in ("VPH", "VHCO3", "VPCO2", "CO2") else act
+                self._timed_lab(e, pat, scen, panel, when, None, prov, "STAT", "Repeat after critical value.")
+            return
+        if code in ("GLU", "POCGLU", "NA", "INR"):
+            panel = {"GLU": "POCGLU", "POCGLU": "POCGLU", "NA": "BMP", "INR": "COAG"}[code]
+            nxt = {"GLU": max(150, val - rng.uniform(60, 120)), "POCGLU": min(590, max(150, val - rng.uniform(60, 120))),
+                   "NA": val + rng.uniform(2, 4) if val < 130 else val - rng.uniform(2, 4),
+                   "INR": max(1.2, val - rng.uniform(0.3, 0.8))}[code]
+            lab = "POCGLU" if panel == "POCGLU" else code
+            self._timed_lab(e, pat, scen, panel, act, {lab: (nxt, nxt)}, prov, "STAT", "Repeat after critical value.")
             return
         if code == "K" and val > 6 and e.scenario in ("aki", "dka") and "F17" not in e.flags:
             for med in (INSULIN_PUSH, DEXTROSE_50):
@@ -1567,7 +1777,8 @@ class Simulator:
             recheck = {"K": (3.1, 3.6)}
         elif code == "HGB":
             self._add_order(e, "Blood Product", "BLD0001", "Transfuse packed red blood cells, 1 unit", "", act, prov)
-            self._timed_lab(e, pat, scen, "CBC", act + H(rng.uniform(1.5, 2.5)), {"HGB": (6.9, 7.9)}, prov, "STAT",
+            post = val + rng.uniform(0.7, 1.1)
+            self._timed_lab(e, pat, scen, "CBC", act + H(rng.uniform(1.0, 2.0)), {"HGB": (post, post)}, prov, "STAT",
                             "Post transfusion.")
             return
         else:
@@ -1621,7 +1832,18 @@ class Simulator:
         end = self.end
         w = self.w
         w.adt = [a for a in w.adt if a.recorded_at <= end]
+        seen = {a.csn for a in w.adt}
+        gone = {e.csn for e in self.encs if e.csn not in seen}
+        if gone:
+            self.encs = [e for e in self.encs if e.csn not in gone]
+            for name in ("ed_events", "orders", "results", "med_orders", "mar", "vitals", "notes", "bed_requests",
+                         "code_status"):
+                setattr(w, name, [x for x in getattr(w, name) if x.csn not in gone])
         w.ed_events = [x for x in w.ed_events if x.recorded_at <= end]
+        lines = {}
+        for x in sorted(w.ed_events, key=lambda x: (x.csn, x.line)):   # line numbers are assigned when filed
+            lines[x.csn] = lines.get(x.csn, 0) + 1
+            x.line = lines[x.csn]
         w.results = [r for r in w.results if r.resulted_at <= end]
         w.mar = [m for m in w.mar if m.taken_at <= end]
         w.med_orders = [m for m in w.med_orders if m.ordered_at <= end]

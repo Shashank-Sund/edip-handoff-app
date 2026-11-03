@@ -94,7 +94,6 @@ class Renderer:
         self.class_variant = {}
         self.a08_flood = set(self.plan.get("F01_a08_flood", []))
         self.empty_a08 = set(self.plan.get("F04_empty_a08", []))
-        self.unvalidated = {tuple(x) for x in self.plan.get("F24_unvalidated_device_values", [])}
         self.html_notes = set(self.plan.get("F27_encoding_quirks", []))
         self.mixed_panels = set(self.plan.get("F28_mixed_status_panel", []))
 
@@ -467,7 +466,7 @@ class Renderer:
         for v in sorted(self.t["vitals"], key=lambda v: (v["entered_at"], v["csn"], v["line"])):
             p, e, extra, fac = self._context(v["csn"], v["entered_at"])
             nurse = self.prac(v["user_id"])
-            unvalidated = (v["csn"], v["line"]) in self.unvalidated
+            unvalidated = not v["validated"]          # F24 lives in truth; rendered as preliminary device values
             obs = R.vital_observations(self.ids, v, R.ref(p), R.ref(e), R.ref(nurse), unvalidated)
             dr = R.diagnostic_report(self.ids, {}, ("vit", v["csn"], v["line"]), "preliminary" if unvalidated else "final",
                                      {"coding": [R.coding(R.system_for(self.src(fac), "FLO"), "VS", "Vital signs")],
@@ -475,12 +474,8 @@ class Renderer:
                                      v["taken_at"], category=R.cc(R.TERM + "observation-category", "vital-signs", "Vital Signs"))
             # Only sites with a flowsheet ORU interface carry the HL7 lineage extensions (site profile knob).
             hl7 = self.cfg["site_profile"][fac]["flowsheet_oru"]
-            ev = self.emit(f"vit/{v['csn']}/{v['line']}", v["csn"], fac, "result-created", "R01" if hl7 else None,
-                           "flo" if hl7 else None, v["entered_at"], [dr, p, e] + obs + [nurse] + extra, [dr])
-            if unvalidated:
-                self.fault("F24", v["csn"], v["entered_at"], self.log_id(ev),
-                           "Device vitals delivered as preliminary Observations, never validated in the flowsheet",
-                           "Pipeline distinguishes validated from unvalidated vitals")
+            self.emit(f"vit/{v['csn']}/{v['line']}", v["csn"], fac, "result-created", "R01" if hl7 else None,
+                      "flo" if hl7 else None, v["entered_at"], [dr, p, e] + obs + [nurse] + extra, [dr])
 
     # ------------------------------------------------------------ medications
     def render_medications(self):
@@ -536,31 +531,8 @@ class Renderer:
             if ev["model"] == "PatientAdmin":
                 by_csn[ev["csn"]].append(ev)
         base = list(self.events)
-        # F03: content duplicate with a new control id and a new log id (a second message with the same payload).
-        n_adt = max((int(v["control"]) for v in base if v["iface"] == "adt"), default=IFACE_BASE["adt"] - 1) + 1
-        for ev in base:
-            if ev["model"] == "PatientAdmin" and not ev["variant"] and rng.random() < self.plan["F03_content_duplicate_rate"]:
-                dup = {**ev, "variant": "dup", "control": str(n_adt), "dt": ev["dt"] + timedelta(seconds=rng.uniform(1, 30))}
-                dup["ms"] = self.ids.millis(ev["key"], "dup")
-                dup["delivery"] = dup["dt"] + timedelta(seconds=rng.uniform(2, 60))
-                n_adt += 1
-                self.events.append(dup)
-                self.fault("F03", ev["csn"], iso(dup["dt"]), self.log_id(dup),
-                           f"Content duplicate of control id {ev['control']} under control id {dup['control']}",
-                           "Content hash dedupe; keep the first")
-        # F08: stale location replay, the last A08 before the unit transfer delivered again after it.
-        for csn in self.plan.get("F08_stale_location_replay", []):
-            evs = sorted(by_csn.get(csn, []), key=lambda x: x["dt"])
-            tr = [x for x in evs if x["code"] == "A02"]
-            if not tr:
-                continue
-            before = [x for x in evs if x["dt"] < tr[-1]["dt"] and not x["variant"]]
-            stale = ([x for x in before if x["code"] == "A08"] or before)[-1]
-            rep = {**stale, "variant": "replay", "delivery": tr[-1]["delivery"] + timedelta(seconds=rng.uniform(30, 300))}
-            self.events.append(rep)
-            self.fault("F08", csn, iso(rep["dt"]), self.log_id(rep),
-                       f"Replay of control id {stale['control']} (ED bay) delivered after the transfer to the unit",
-                       "Location must not revert; compare EventDateTime against the last applied event")
+        # Delivery shifts first (F05, F06), on the originals only; copies made afterwards inherit them,
+        # so no retry or duplicate of a delayed arrival can slip in ahead of the result.
         # F05: the class change (and anything between it and the move) reaches the destination after the transfer.
         for csn in self.plan.get("F05_out_of_order", []):
             evs = sorted(by_csn.get(csn, []), key=lambda x: x["dt"])
@@ -592,6 +564,31 @@ class Renderer:
                 x["delivery"] = res["delivery"] + timedelta(seconds=delay + 0.7 * k)
             self.fault("F06", csn, iso(res["dt"]), self.log_id(res),
                        f"Result delivered {delay:.0f} s before the arrival event", "Hold or late join; the result must not be dropped")
+        # F03: content duplicate with a new control id and a new log id (a second message with the same payload).
+        n_adt = max((int(v["control"]) for v in base if v["iface"] == "adt"), default=IFACE_BASE["adt"] - 1) + 1
+        for ev in base:
+            if ev["model"] == "PatientAdmin" and not ev["variant"] and rng.random() < self.plan["F03_content_duplicate_rate"]:
+                dup = {**ev, "variant": "dup", "control": str(n_adt), "dt": ev["dt"] + timedelta(seconds=rng.uniform(1, 30))}
+                dup["ms"] = self.ids.millis(ev["key"], "dup")
+                dup["delivery"] = ev["delivery"] + timedelta(seconds=rng.uniform(2, 60))
+                n_adt += 1
+                self.events.append(dup)
+                self.fault("F03", ev["csn"], iso(dup["dt"]), self.log_id(dup),
+                           f"Content duplicate of control id {ev['control']} under control id {dup['control']}",
+                           "Content hash dedupe; keep the first")
+        # F08: stale location replay, the last A08 before the unit transfer delivered again after it.
+        for csn in self.plan.get("F08_stale_location_replay", []):
+            evs = sorted(by_csn.get(csn, []), key=lambda x: x["dt"])
+            tr = [x for x in evs if x["code"] == "A02"]
+            if not tr:
+                continue
+            before = [x for x in evs if x["dt"] < tr[-1]["dt"] and not x["variant"]]
+            stale = ([x for x in before if x["code"] == "A08"] or before)[-1]
+            rep = {**stale, "variant": "replay", "delivery": tr[-1]["delivery"] + timedelta(seconds=rng.uniform(30, 300))}
+            self.events.append(rep)
+            self.fault("F08", csn, iso(rep["dt"]), self.log_id(rep),
+                       f"Replay of control id {stale['control']} (ED bay) delivered after the transfer to the unit",
+                       "Location must not revert; compare EventDateTime against the last applied event")
         # F02: Redox retry, same log ID with a new AttemptID, 5 to 90 s later.
         for ev in list(self.events):
             if ev["model"] in ("PatientAdmin", "Result") and ev["iface"] in ("adt", "oru") \

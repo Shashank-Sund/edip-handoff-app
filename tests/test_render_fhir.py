@@ -241,7 +241,7 @@ def test_delivery_order_is_monotonic_and_faults_are_delivered(feed):
     deliveries = [r["delivery_ts"] for r in rows]
     assert deliveries == sorted(deliveries)
     ids = {r["event_id"] for r in rows}
-    allowed = {"F01", "F02", "F03", "F04", "F05", "F06", "F08", "F24", "F27", "F28", "F30"}
+    allowed = {"F01", "F02", "F03", "F04", "F05", "F06", "F08", "F27", "F28", "F30"}
     assert {m["fault_id"] for m in manifest} == allowed
     for m in manifest:
         assert m["event_id"] in ids and m["level"] == "render" and m["stream"] == "fhir", m
@@ -269,8 +269,9 @@ def test_delivery_order_is_monotonic_and_faults_are_delivered(feed):
             assert any(x["delivery_ts"] > transfer["delivery_ts"] for x in cls)
         if m["fault_id"] == "F06":
             result = by_id[m["event_id"]][0]
-            arrival = [x for x in rows if csn_of(x) == m["csn"] and x["event_type"] == "patient-arrived"]
-            assert arrival and arrival[0]["delivery_ts"] > result["delivery_ts"]
+            adt = [x for x in rows if csn_of(x) == m["csn"] and x["data_model"] == "FHIR.Event.PatientAdmin"
+                   and x["event_datetime"] <= result["event_datetime"]]
+            assert adt and all(x["delivery_ts"] > result["delivery_ts"] for x in adt)   # copies and retries too
         if m["fault_id"] == "F04":
             assert not resources(by_id[m["event_id"]][0], "Encounter")
         if m["fault_id"] == "F28":

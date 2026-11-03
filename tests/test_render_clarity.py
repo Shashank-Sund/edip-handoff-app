@@ -72,7 +72,12 @@ def midnight_utc(name):
 
 def test_snapshots_cover_the_window_but_not_day_seven(rendered):
     names = rendered["summary"]["snapshots"]
-    assert names == [f"2026-10-{d}" for d in range(26, 32)] + ["2026-11-01"]
+    cfg = rendered["truth"]["config"]
+    start = datetime.fromisoformat(cfg["window_start"]).astimezone(TZ)
+    end = start + timedelta(days=cfg["days"])
+    first = datetime(start.year, start.month, start.day, tzinfo=TZ)
+    want = [m.strftime("%Y-%m-%d") for m in (first + timedelta(days=i) for i in range(cfg["days"] + 1)) if m <= end]
+    assert names == want and len(names) >= 7
     truth = rendered["truth"]
     last = rendered["snaps"][names[-1]]
     cut = midnight_utc(names[-1])

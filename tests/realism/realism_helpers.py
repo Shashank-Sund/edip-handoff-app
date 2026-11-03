@@ -72,9 +72,15 @@ def binom_sd_pts(p_pct, n):
     return 100.0 * math.sqrt(p * (1 - p) / n)
 
 
+# Per world checks widen spec intervals by SD_K binomial standard deviations: with about 70 checks run on
+# several seeds, one sd would fail a perfect generator about 30 percent of the time per check, while 2.5 sd
+# keeps false alarms near 1 percent. Metrics dominated by the tails of 120 admits are pooled across seeds.
+SD_K = 2.5
+
+
 def widened(lo, hi, n):
-    """Spec interval (percent) widened by one binomial sd at its center for n samples."""
-    sd = binom_sd_pts((lo + hi) / 2, n)
+    """Spec interval (percent) widened by SD_K binomial sd at its center for n samples."""
+    sd = SD_K * binom_sd_pts((lo + hi) / 2, n)
     return lo - sd, hi + sd
 
 

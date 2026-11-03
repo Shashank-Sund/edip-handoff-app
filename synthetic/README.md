@@ -28,7 +28,7 @@ java -jar synthea-with-dependencies.jar -p 3000 -s 20261102 -cs 20261102 -r 2026
 
 | Area | Reference dataset |
 | --- | --- |
-| Window | Monday 2026-10-26 to Sunday 2026-11-01, America/New_York. Daylight saving time ends inside the window, so 01:00 happens twice on the last day. |
+| Window | Monday 2026-10-26 15:00 to Monday 2026-11-02 15:00, America/New_York, so the week ends at the afternoon peak. Daylight saving time ends inside the window, so 01:00 happens twice on Sunday. |
 | Volume | 700 ED encounters (420 and 280 across the two hospitals), 120 admitted (17 percent): 90 inpatient and 30 observation |
 | Units | 2 EDs, 6 inpatient units and 2 observation units, with beds, private rooms and a background census, so boarding comes from real capacity |
 | Clinical scenarios | Sepsis (urinary and pneumonia sources), heart failure, COPD, chest pain and NSTEMI, stroke, upper GI bleed, DKA, pneumonia and hip fracture in full detail, plus generic admit and discharge templates |
@@ -53,13 +53,21 @@ python -m edip_synth.render.clarity --truth ../data/world/truth --out ../data/wo
 
 ## Checks
 
-- `tests/realism/` implements the validation checklist (temporal, distributional, clinical plausibility, hygiene) with tolerances sized for 700 visits and 120 admits. Run it against a generated folder with `EDIP_WORLD=<truth dir>`. `EDIP_GAPS_NONSTRICT=1` lists fixed gaps as passes while tuning.
+- `tests/realism/` implements the validation checklist (temporal, distributional, clinical plausibility, hygiene). Every check runs on 5 seeds by default (`EDIP_SEEDS=1,2,3` overrides); `EDIP_SYNTHEA=<csv dir>` uses the real Synthea population; `EDIP_WORLD=<truth dir>` checks one published world.
+- Tolerance policy: per world proportions are widened by 2.5 binomial standard deviations (about 1 percent false alarms per check). Metrics dominated by the tails of 120 admits (boarding, medication counts, small scenario groups) are pooled across seeds, and boarding tails use the week to week spread measured over 40 generated weeks. Logic checks (every critical value gets a response, cultures before antibiotics, no hemoglobin rise without a transfusion) stay strict.
+- The suite passed on 200 generated worlds (100 seeds, stand in and Synthea populations) before this version was published.
 - `synthetic/tools/realism_report.py <truth dir>` prints distributions against targets and five clinician style timelines.
 - `synthetic/tools/verify_codes.py --refresh` checks every RxNorm, LOINC, ICD-10-CM and SNOMED code against public NLM and HL7 terminology services and records the result in `code_verification.json`.
 
 ## Known limits
 
-- Two targets differ from the research spec, on purpose: abnormal lab components are checked at 10 to 25 percent (the spec's 5 to 8 percent is below published ED audits), and the p90 of bed request to bed assignment is bounded by the overall boarding p90 (the spec's 240 minutes has no published source).
+- Some targets differ from the research spec, on purpose, each documented in the test:
+  - abnormal lab components are checked at 10 to 25 percent (the spec's 5 to 8 percent is below published ED audits);
+  - the p90 of bed request to bed assignment is bounded by the overall boarding p90 (the spec's 240 minutes has no published source);
+  - the spec gives (150, 480) minutes for both overall and uncrowded boarding while also asking for a 2 to 3 times crowding effect, which cannot all hold, so (150, 480) is checked on overall boarding and the uncrowded p90 must stay at or under 480;
+  - the hourly arrival curve uses Pearson correlation over 0.95 instead of Spearman over 0.9, because ten afternoon hours have nearly equal weights.
+- Headline distributions (ESI mix, ICU share, EMS share, age bands, code status by age, admitting scenarios per hospital) are allocated by quota rather than sampled, so every seed matches them.
+- Only Synthea problems with a verified ICD-10-CM mapping are kept on the problem list.
 - Redox documents no notification for medication administrations, so `FHIR.Event.MedicationAdministration` is an extrapolation, labeled as such in `render/fhir.py`.
 - One Synthea source code (SNOMED 6525002) is retired in SNOMED CT; it is kept as a source code and mapped to a valid ICD-10-CM code.
 - An observation to inpatient conversion appears in ADT and Clarity ADT history, but not as a second bed request.

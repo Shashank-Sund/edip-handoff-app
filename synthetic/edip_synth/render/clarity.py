@@ -416,9 +416,11 @@ class Truth:
         self.t = t
         self.cfg = t["config"]
         start = datetime.fromisoformat(self.cfg["window_start"]).astimezone(TZ)
-        self.midnights = [datetime(start.year, start.month, start.day, tzinfo=TZ) + timedelta(days=i)
-                          for i in range(self.cfg["days"])]
-        self.end = (self.midnights[0] + timedelta(days=self.cfg["days"])).astimezone(UTC)
+        end = start + timedelta(days=self.cfg["days"])          # local wall clock, across the DST change
+        # Nightly extracts: every local midnight from the start date up to the window end.
+        first = datetime(start.year, start.month, start.day, tzinfo=TZ)
+        self.midnights = [m for m in (first + timedelta(days=i) for i in range(self.cfg["days"] + 1)) if m <= end]
+        self.end = end.astimezone(UTC)
         self.pats = {p["pat_id"]: p for p in parse(t["patients"], "merged_at")}
         self.encs = {e["csn"]: e for e in parse(t["encounters"], "arrival_at", "triage_at", "roomed_at", "provider_at",
                                                 "decision_at", "bed_request_at", "bed_assigned_at", "departure_at",

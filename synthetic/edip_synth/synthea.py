@@ -105,7 +105,8 @@ def load(csv_dir: Path) -> list:
                                  r["MARITAL"] or "S", r["ADDRESS"], r["CITY"], r["ZIP"], ssn)
     for r in csv.DictReader(open(csv_dir / "conditions.csv", newline="")):
         p = people.get(r["PATIENT"])
-        if p and not r["STOP"] and _keep_condition(r["CODE"], r["DESCRIPTION"]):
+        # Epic problem list entries are diagnosis coded, so only problems with a verified ICD-10-CM mapping are kept.
+        if p and not r["STOP"] and _keep_condition(r["CODE"], r["DESCRIPTION"]) and r["CODE"] in _CHRONIC_ICD10:
             if r["CODE"] not in p.snomed:
                 p.problems.append({"snomed": r["CODE"], "icd10": _CHRONIC_ICD10.get(r["CODE"]),
                                    "display": r["DESCRIPTION"].replace(" (disorder)", "").replace(" (finding)", "")
