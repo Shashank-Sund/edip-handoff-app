@@ -9,7 +9,7 @@ Turns the silver tables into draft handoffs for three templates: nurse SBAR, phy
 3. **One model call writes the narrative elements** that all three templates share: illness severity and why, working diagnosis, ED course, mental status and safety, action list with owners, contingency plan, and anticipated disposition. Every statement must cite packet source ids (`edip_ai/prompts.py`).
 4. **Validation before anyone sees it** (`edip_ai/validate.py`):
    - unknown source ids are removed and counted;
-   - numbers stated as facts must appear in the cited sources (thresholds and instructions such as "if SBP under 90" are exempt);
+   - numbers stated as facts must appear in the cited sources; they compare by value (82 matches a charted 82.0), and a decimal may be a charted value rounded to the stated precision (lactate 2.6 for 2.62). Thresholds and instructions ("if SBP over 180/105", "q2h"), clock times and expected durations ("48-72 h") are exempt. What remains is flagged for the clinician, not removed: in practice these are totals the model computed, such as fluid volume summed across boluses;
    - severity must be stable, watcher or unstable;
    - a truncated answer is retried once with a larger budget.
 5. **Completeness rules** from the template YAML (`edip_ai/rules.py`):
@@ -44,6 +44,35 @@ You can also pass the model for one run: `databricks bundle run handoff_generato
 ## Rate limits and throughput
 
 Pay-per-token model endpoints are rate limited per workspace. On the trial workspace used to build this app, `databricks-gpt-oss-120b` completed about 6 handoff calls a minute and answered extra concurrent requests with HTTP 429. The job therefore defaults to 2 concurrent calls, writes results every 20 generation points, and skips points already stored, so a rerun resumes. A production deployment that needs more throughput should use provisioned throughput for the model, or a hosted endpoint with higher limits.
+
+## Verified on the reference week
+
+`databricks-gpt-oss-120b`, all 596 generation points of the reference week (118 admitted encounters, 1,788 drafts), scored against the synthetic truth with `ai/eval/run_eval.py` (Mode B, drafts exported with `ai/eval/export_drafts.py`):
+
+| Measure | Result |
+| --- | --- |
+| Deterministic elements correct (allergies, code status, isolation, vitals, critical labs, pending results, ED medications, destination) | 1.0 |
+| Missed critical items (critical results, pending results, allergies, code status, isolation) | 0 |
+| Contradictions, invented medications, invented labs | 0 |
+| Narrative statements citing a real source | 99.8% |
+| Unknown source ids per model call (removed by the validator) | 0.41 |
+| Numbers flagged for the clinician, per template | 25: fluid volumes the model summed across boluses, and two approximations ("about 100") |
+| Illness severity agreement with the reference (rule floor plus model) | 0.99; no unstable patient called stable or watcher |
+| Model calls failed | 0 |
+
+Severity agreement was 0.33 before the rule floor, because the model tended to call patients one level lower than the reference. Completeness scores stay below 1 by design: sender identity, read back and some soft elements are completed in the app.
+
+When the floor raises severity, E07 keeps the model's text after the rule's reasons (for example "Unstable by rule: spo2 89." followed by the model's "Stable: vitals stable..."). The app shows the rule reasons and the model's own call (`model_value`) as separate, labeled parts.
+
+## Cost
+
+Measured from `system.billing.usage` and `system.serving.endpoint_usage` on the trial workspace, at list prices:
+
+- model tokens: about 0.15 USD per million input and 0.60 USD per million output tokens for `databricks-gpt-oss-120b`; one generation point (all three templates) uses about 2,650 input and 1,550 output tokens, about 0.0013 USD;
+- job compute (serverless): about 0.35 USD per hour while the job runs;
+- the full reference week backfill: about 0.79 USD of tokens plus 0.53 USD of compute, 90 minutes at 2 concurrent calls.
+
+Live, at about 80 generation points a day for this volume, the model costs about 0.10 USD a day. A hosted model costs more per token; scale the token counts above by its price.
 
 ## Local runs
 

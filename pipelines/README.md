@@ -18,7 +18,8 @@ gold.boarding_list
 
 - **One contract for both feeds.** `parse_hl7.py` and `parse_fhir.py` are plain Python (standard library) and return the same records. CI reconciles each parser with the generator's truth and with each other, so the two feeds always agree on unit, room, bed, class and event kind.
 - **Order comes from event time, not arrival.** `encounter_state` sequences by (effective time, recorded time). Late, backdated and out-of-order messages (F05, F07, F08) land correctly, and empty fields never overwrite values.
-- **Duplicates.** Retransmits and Redox retries collapse on the message key. Clinical records that arrive on both feeds collapse on content, with timestamps truncated to the second, because HL7 carries seconds and FHIR milliseconds. A handoff starts and retracts once per encounter, which also absorbs the hour of ambiguity when an HL7 feed without UTC offsets sends a time inside the repeated DST hour.
+- **Duplicates.** Retransmits and Redox retries collapse on the message key. Clinical records that arrive on both feeds collapse on content, with timestamps truncated to the second, because HL7 carries seconds and FHIR milliseconds. A handoff starts and retracts once per encounter.
+- **Daylight saving time.** Some HL7 feeds send local times without a UTC offset, and when DST ends 01:00 to 01:59 happens twice. The parser takes the later reading (standard time) when the message arrived within an hour of it: MSH-7 is checked against the engine receipt time, and fields inside the message against MSH-7. Otherwise it takes the earlier reading. Real time ADT, results and medication events resolve exactly. A value sent more than an hour after the repeated hour (a note created at 01:30 and signed the next morning) cannot be resolved from the message and takes the earlier reading.
 - **Nothing is dropped silently.** Messages that cannot be applied, such as the empty visit updates (F04), go to `silver.quarantine` with a reason.
 
 ## Run
