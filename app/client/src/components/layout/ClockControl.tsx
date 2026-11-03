@@ -5,13 +5,14 @@ import { WithTooltip } from '@/components/ui/tooltip';
 import { useApp } from '@/hooks/useApp';
 import { api } from '@/lib/api';
 import { clock, day } from '@/lib/format';
+import { HelpButton } from '@/components/guide/HelpButton';
 
 const HOUR = 3600000;
 
 /** Replay clock: the mock data is a reference week, so the app can be viewed at any moment of it. */
 export function ClockControl() {
   const { config, at, setAt, playing, setPlaying, bump } = useApp();
-  if (config.mode === 'live') {
+  if (config.clock === 'live') {
     return (
       <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
         <span className="size-2 rounded-full bg-sev-stable motion-safe:animate-pulse" aria-hidden />
@@ -74,17 +75,19 @@ export function ClockControl() {
             <Button variant="ghost" size="sm" onClick={() => setAt(config.default_at)}>
               Busiest hour
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                await api.reset();
-                bump();
-              }}
-            >
-              <RotateCcw />
-              Clear my actions
-            </Button>
+            {config.mode === 'mock' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  await api.reset();
+                  bump();
+                }}
+              >
+                <RotateCcw />
+                Clear my actions
+              </Button>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -98,6 +101,7 @@ export function ClockControl() {
           {playing ? <Pause /> : <Play />}
         </Button>
       </WithTooltip>
+      <HelpButton topic="topbar.clock" label="What is this clock?" className="hidden sm:inline-grid" />
     </div>
   );
 }

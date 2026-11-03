@@ -1,24 +1,80 @@
-# Declarative Automation Bundle for the ED to inpatient handoff reference app.
-# The workspace comes from your CLI profile (for example DATABRICKS_CONFIG_PROFILE=edip), so no host is stored here.
-#   databricks bundle deploy -t dev
-#   databricks bundle run edip_pipeline -t dev
+# Declarative Automation Bundle for the ED to inpatient handoff reference app: everything on the Databricks side.
+# The workspace comes from your CLI profile (DATABRICKS_CONFIG_PROFILE), so no host is stored here.
+#
+#   databricks bundle deploy -t dev                 # Lakebase project, pipeline, jobs, app (no data yet)
+#   databricks bundle run edip_setup -t dev         # data: catalog, synthetic feeds, pipeline, handoffs, Lakebase
+#   databricks bundle run edip_app -t dev           # build and start the app
+#
+# Or run scripts/deploy.sh <target>, which does the three steps. Full guide: docs/setup.md.
 bundle:
   name: edip-handoff-app
 
 variables:
   catalog:
-    description: Unity Catalog catalog that holds bronze, silver and gold
+    description: Unity Catalog catalog for bronze, silver, gold and the synthetic truth (created by setup if missing)
     default: edip
+  lakebase_project:
+    description: Lakebase Autoscaling project id (lowercase letters, digits and hyphens)
+    default: edip
+  app_name:
+    description: Databricks App name (unique in the workspace; lowercase letters, digits and hyphens)
+    default: edip-handoff
+  model:
+    description: Chat model serving endpoint that writes the handoff narrative
+    default: databricks-gpt-oss-120b
+  population:
+    description: synthea (the committed reference population), standin (built in), or a path in the workspace
+    default: synthea
+  fhir_mode:
+    description: batch (load FHIR events during setup) or zerobus (leave them to the Zerobus replayer, docs/zerobus.md)
+    default: batch
 
 targets:
   dev:
     mode: development
     default: true
 
+  # A second, independent copy in the same workspace: proves a deploy from an empty catalog works.
+  cleanroom:
+    mode: development
+    variables:
+      catalog: edip_cleanroom
+      lakebase_project: edip-cleanroom
+      app_name: edip-handoff-cleanroom
+
 resources:
+  postgres_projects:
+    lakebase:
+      project_id: ${var.lakebase_project}
+      display_name: ED handoff (${bundle.target})
+      pg_version: 17
+      custom_tags: [{key: project, value: edip}]
+
+  apps:
+    edip_app:
+      name: ${var.app_name}
+      description: ED to inpatient handoffs drafted from live feeds, reviewed, signed and acknowledged (synthetic data)
+      # The app is built from the repo root: package.json builds app/client into app/server/static and
+      # requirements.txt installs the server. The templates in ai/templates are read from the same copy.
+      source_code_path: .
+      config:
+        command: [uvicorn, main:app, --app-dir, app/server]
+        env:
+          - {name: EDIP_MODE, value: live}
+          - {name: EDIP_CLOCK_MODE, value: replay}
+          - {name: EDIP_DEMO_PERSONAS, value: "true"}
+          - {name: EDIP_PG_ENDPOINT, value: "projects/${var.lakebase_project}/branches/production/endpoints/primary"}
+      resources:
+        - name: lakebase
+          description: Synced handoff drafts and the app's action log
+          postgres:
+            branch: ${resources.postgres_projects.lakebase.name}/branches/production
+            database: ${resources.postgres_projects.lakebase.name}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE
+
   pipelines:
     edip_pipeline:
-      name: edip-pipeline
+      name: edip-pipeline-${bundle.target}
       catalog: ${var.catalog}
       schema: silver
       serverless: true
@@ -32,18 +88,54 @@ resources:
             path: ./pipelines/edip_pipeline.py
 
   jobs:
-    handoff_generator:
-      name: edip-handoff-generator
+    edip_setup:
+      name: edip-setup-${bundle.target}
+      description: One time (or repeatable) setup. Generates the synthetic week, loads bronze, runs the pipeline,
+        drafts every handoff with the model, and syncs the app's tables to Lakebase. About 2 hours; the model calls
+        cost about 1 USD at list price.
       tags: {project: edip}
       max_concurrent_runs: 1
-      parameters:
-        - {name: limit, default: "0"}
-        - {name: model, default: ""}
       environments:
         - environment_key: default
           spec:
             environment_version: "2"
-            dependencies: ["pyyaml>=6", "databricks-sdk>=0.50"]
+            dependencies: ["pyyaml>=6", "databricks-sdk>=0.81", "psycopg[binary]>=3.1"]
+      tasks:
+        - task_key: data
+          environment_key: default
+          spark_python_task:
+            python_file: ./jobs/setup_data.py
+            parameters: [--catalog, "${var.catalog}", --code-path, "${workspace.file_path}",
+                         --population, "${var.population}", --fhir, "${var.fhir_mode}"]
+        - task_key: pipeline
+          depends_on: [{task_key: data}]
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.edip_pipeline.id}
+            full_refresh: true
+        - task_key: handoffs
+          depends_on: [{task_key: pipeline}]
+          run_job_task:
+            job_id: ${resources.jobs.handoff_generator.id}
+        - task_key: lakebase
+          depends_on: [{task_key: handoffs}]
+          environment_key: default
+          spark_python_task:
+            python_file: ./jobs/setup_lakebase.py
+            parameters: [--catalog, "${var.catalog}", --project, "${var.lakebase_project}",
+                         --app, "${resources.apps.edip_app.name}"]
+
+    handoff_generator:
+      name: edip-handoff-generator-${bundle.target}
+      tags: {project: edip}
+      max_concurrent_runs: 1
+      parameters:
+        - {name: limit, default: "0"}
+        - {name: model, default: "${var.model}"}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies: ["pyyaml>=6", "databricks-sdk>=0.81"]
       tasks:
         - task_key: generate
           environment_key: default
@@ -53,7 +145,7 @@ resources:
                          --model, "{{job.parameters.model}}"]
 
     nightly_shutdown:
-      name: edip-nightly-shutdown
+      name: edip-nightly-shutdown-${bundle.target}
       tags: {project: edip}
       schedule: {quartz_cron_expression: "0 0 1 * * ?", timezone_id: America/Los_Angeles, pause_status: UNPAUSED}
       max_concurrent_runs: 1
@@ -62,7 +154,7 @@ resources:
         - environment_key: default
           spec:
             environment_version: "2"
-            dependencies: ["databricks-sdk>=0.50"]
+            dependencies: ["databricks-sdk>=0.81"]
       tasks:
         - task_key: demo_down
           environment_key: default

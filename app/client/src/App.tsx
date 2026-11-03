@@ -8,7 +8,7 @@ import Board from '@/pages/Board';
 const Handoff = lazy(() => import('@/pages/Handoff'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Templates = lazy(() => import('@/pages/Templates'));
-const About = lazy(() => import('@/pages/About'));
+const Guide = lazy(() => import('@/pages/Guide'));
 
 function Routes() {
   const path = usePath();
@@ -16,7 +16,7 @@ function Routes() {
   if (h) return <Handoff key={h.csn} csn={h.csn} />;
   if (path.startsWith('/analytics')) return <Analytics />;
   if (path.startsWith('/templates')) return <Templates />;
-  if (path.startsWith('/about')) return <About />;
+  if (path.startsWith('/guide') || path.startsWith('/about')) return <Guide />;
   return <Board />;
 }
 

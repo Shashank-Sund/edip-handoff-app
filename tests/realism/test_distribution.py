@@ -91,11 +91,11 @@ def test_admitting_diagnosis_mix(view):
     per_site = Counter((e.scenario, e.facility) for e in view.admits)
     for key, want in ADMIT_COUNTS.items():
         if key in SCENARIOS and want >= 6:
-            assert per_site[(key, "MGH")] and per_site[(key, "LKS")], key
-    for fac in ("MGH", "LKS"):
+            assert per_site[(key, "SGH")] and per_site[(key, "LKS")], key
+    for fac in ("SGH", "LKS"):
         assert sum(1 for key in SCENARIOS if per_site[(key, fac)]) >= 6, fac
-    mgh = pct(sum(e.facility == "MGH" for e in view.admits), len(view.admits))
-    assert 50 <= mgh <= 70, mgh
+    sgh = pct(sum(e.facility == "SGH" for e in view.admits), len(view.admits))
+    assert 50 <= sgh <= 70, sgh
 
 
 # ---------------------------------------------------------------- 14. lab ordering patterns

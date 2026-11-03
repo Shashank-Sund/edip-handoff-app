@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Pill, SeverityBadge } from '@/components/common/badges';
 import { SourceChip, SourceList } from './Evidence';
+import { HelpButton } from '@/components/guide/HelpButton';
 import { LEVEL_LABEL, bed, clock, dateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CaseTemplate, Element, Narrative, NarrativeItem, Rule } from '@/lib/types';
@@ -453,10 +454,12 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold">{e.label}</h4>
+          {e.id === 'E07' && <HelpButton topic="handoff.severity" label="About severity" className="size-6" />}
           {changed && <Pill tone="warn">Changed</Pill>}
         </div>
         <div className="flex items-center gap-2">
           {e.kind === 'narrative' && <ModelMark n={e.narrative ?? {}} />}
+          {e.kind === 'narrative' && e.id === 'E11' && <HelpButton topic="handoff.items" label="Chips and highlights" className="size-6" />}
           {editable && !editing && (
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs opacity-80 group-hover:opacity-100" onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
               <Pencil className="size-3.5" />

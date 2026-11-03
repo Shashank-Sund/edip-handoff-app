@@ -7,6 +7,7 @@ mock mode, the signed in user in live mode.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -24,29 +25,43 @@ from workflow import MemoryStore
 app = FastAPI(title="ED to inpatient handoff", docs_url="/api/docs", openapi_url="/api/openapi.json")
 api = APIRouter(prefix="/api")
 
-DS = load_fixtures(config.FIXTURES)
-STORE = MemoryStore()
-VIEWS = Views(DS, STORE)
+if config.MODE == "live":
+    from lakebase import LakebaseStore, Reloading
+
+    SOURCE = Reloading()
+    STORE = LakebaseStore()
+    VIEWS = Views(SOURCE.get, STORE)
+else:
+    STORE = MemoryStore()
+    VIEWS = Views(load_fixtures(config.FIXTURES), STORE)
+DS = VIEWS.ds                     # the data at start up; views always read VIEWS.ds (live mode reloads it)
 PERSONAS = demo_personas(DS.meta.get("units", []))
+ROLE_MAP = json.loads(config.ROLE_MAP or "{}")
 DEFAULT_AT = ts(config.CLOCK) if config.CLOCK else DS.busiest()
 
 
 def _person(request: Request) -> dict:
-    pid = request.headers.get("x-demo-persona") or "ed-rn"
+    email = request.headers.get("x-forwarded-email")
+    pid = (request.headers.get("x-demo-persona") if config.DEMO_PERSONAS else ROLE_MAP.get(email or "")) or "ed-rn"
     p = next((x for x in PERSONAS if x["id"] == pid), None)
     if p is None:
         raise HTTPException(400, f"unknown persona {pid}")
-    return p
+    if not config.DEMO_PERSONAS and email:
+        p = {**p, "name": request.headers.get("x-forwarded-preferred-username") or email}
+    return {**p, "user_email": email}
 
 
 def _at(at: Optional[str]) -> datetime:
+    if config.CLOCK_MODE == "live":
+        return datetime.now(timezone.utc)
+    ds = VIEWS.ds
     if not at:
         return DEFAULT_AT
     try:
         t = ts(at)
     except ValueError:
         raise HTTPException(400, "at must be an ISO time")
-    return min(max(t, DS.start), DS.end)
+    return min(max(t, ds.start), ds.end)
 
 
 class EditBody(BaseModel):
@@ -71,10 +86,12 @@ class AckBody(BaseModel):
 
 @api.get("/config")
 def get_config() -> dict[str, Any]:
-    return {"mode": config.MODE, "source": DS.source, "drafts_from": DS.meta.get("drafts_from"),
-            "models": DS.meta.get("models", []), "window": {"start": iso(DS.start), "end": iso(DS.end)},
-            "default_at": iso(DEFAULT_AT), "facilities": DS.meta.get("facilities", []), "units": DS.meta.get("units", []),
-            "personas": PERSONAS, "store": STORE.kind,
+    ds = VIEWS.ds
+    return {"mode": config.MODE, "clock": config.CLOCK_MODE, "demo_personas": config.DEMO_PERSONAS,
+            "source": ds.source, "drafts_from": ds.meta.get("drafts_from"),
+            "models": ds.meta.get("models", []), "window": {"start": iso(ds.start), "end": iso(ds.end)},
+            "default_at": iso(DEFAULT_AT), "facilities": ds.meta.get("facilities", []), "units": ds.meta.get("units", []),
+            "personas": PERSONAS if config.DEMO_PERSONAS else [], "store": STORE.kind,
             "templates": [{"id": "sbar_nurse", "name": "SBAR", "audience": "Nurse"},
                           {"id": "ipass_physician", "name": "I-PASS", "audience": "Physician"},
                           {"id": "custom_sea58", "name": "Joint Commission minimum", "audience": "Any"}]}
@@ -138,6 +155,11 @@ def post_ack(csn: str, template: str, body: AckBody, request: Request, at: Optio
     return _act("ack", csn, template, request, at, body.model_dump())
 
 
+@api.get("/me")
+def get_me(request: Request) -> dict[str, Any]:
+    return _person(request)
+
+
 @api.post("/demo/reset")
 def post_reset() -> dict[str, str]:
     if config.MODE != "mock":
@@ -148,8 +170,9 @@ def post_reset() -> dict[str, str]:
 
 @api.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "mode": config.MODE, "store": STORE.kind, "encounters": len(DS.enc),
-            "drafts": sum(len(v) for v in DS.versions.values()), "now": iso(datetime.now(timezone.utc))}
+    ds = VIEWS.ds
+    return {"status": "ok", "mode": config.MODE, "store": STORE.kind, "encounters": len(ds.enc),
+            "drafts": sum(len(v) for v in ds.versions.values()), "now": iso(datetime.now(timezone.utc))}
 
 
 app.include_router(api)

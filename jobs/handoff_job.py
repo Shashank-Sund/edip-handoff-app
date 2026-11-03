@@ -44,7 +44,7 @@ def main():
     ap.add_argument("--workers", type=int, default=2,
                     help="concurrent model calls; pay per token endpoints rate limit per workspace (HTTP 429)")
     ap.add_argument("--flush-every", type=int, default=20)
-    ap.add_argument("--sync-tables", default="gold.encounter_state_pg,gold.handoff_latest_pg",
+    ap.add_argument("--sync-tables", default="gold.encounter_state_pg,gold.handoff_draft_pg",
                     help="Lakebase synced tables (Triggered) to refresh at the end; empty to skip")
     a = ap.parse_args()
     sys.path[:0] = [f"{a.code_path}/ai", f"{a.code_path}/pipelines"]

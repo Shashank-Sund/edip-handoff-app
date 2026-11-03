@@ -23,7 +23,7 @@ class Config:
     # Volumes (about 100 ED visits a day across two EDs; 17 percent admitted,
     # close to the national 11.5 to 19 percent).
     encounters: int = 700
-    facility_share: dict = field(default_factory=lambda: {"MGH": 0.6, "LKS": 0.4})
+    facility_share: dict = field(default_factory=lambda: {"SGH": 0.6, "LKS": 0.4})
     admitted_inpatient: int = 90
     admitted_observation: int = 30
     obs_to_inpatient: int = 3
@@ -77,7 +77,7 @@ class Config:
 
     # Site profile knobs the renderers read (section 13 of the spec).
     site_profile: dict = field(default_factory=lambda: {
-        "MGH": {"hl7_version": "2.5.1", "class_change": "A06", "a14": True,
+        "SGH": {"hl7_version": "2.5.1", "class_change": "A06", "a14": True,
                 "z_segments": True, "msh7_offset": True, "flowsheet_oru": True},
         "LKS": {"hl7_version": "2.3", "class_change": "A08", "a14": False,
                 "z_segments": False, "msh7_offset": False, "flowsheet_oru": False},

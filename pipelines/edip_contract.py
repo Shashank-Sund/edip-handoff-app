@@ -16,7 +16,7 @@ ADT = {
     "source": "fhir or hl7",
     "msg_key": "unique per delivered message: Redox Logs[0].ID, or MSH-3|MSH-4|MSH-10 for HL7",
     "content_hash": "hash of the clinical content, identical for content duplicates (F01, F03)",
-    "facility": "MGH or LKS",
+    "facility": "SGH or LKS",
     "csn": "encounter id (PV1-19 / Encounter.identifier VN)",
     "mrn": "medical record number used on the message (retired MRN before a merge)",
     "kind": "one of ADT_KINDS",

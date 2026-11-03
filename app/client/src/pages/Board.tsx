@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Layout } from '@/components/layout/Layout';
 import { Pill, ProgressRing, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { Stat } from '@/components/common/Stat';
+import { HelpButton } from '@/components/guide/HelpButton';
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/common/states';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
@@ -121,7 +122,7 @@ export default function Board() {
   const k = data.kpis;
   const ack = persona.can_ack.length > 0;
   return (
-    <Layout title={title} crumbs={`${scope} · ${persona.name}`}>
+    <Layout title={title} crumbs={`${scope} · ${persona.name}`} help="board">
       <div className="space-y-5 sm:space-y-6">
         <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Stat label="Boarding now" value={k.boarding} icon={<BedDouble />} hint={k.median_boarding_min != null ? `Median ${duration(k.median_boarding_min)} since admit decision` : 'No one is boarding'} />
@@ -168,9 +169,12 @@ export default function Board() {
                 </div>
               )}
             </div>
-            <div className="relative sm:w-72">
+            <div className="flex items-center gap-1.5">
+            <div className="relative flex-1 sm:w-72">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, MRN, unit" className="pl-8" aria-label="Search patients" />
+            </div>
+            <HelpButton topic="board.columns" label="How to read the board" />
             </div>
           </div>
 

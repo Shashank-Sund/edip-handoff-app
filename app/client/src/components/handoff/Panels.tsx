@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { ProgressRing, StateBadge } from '@/components/common/badges';
 import { TimeChart } from '@/components/charts/TimeChart';
+import { HelpButton } from '@/components/guide/HelpButton';
 import { clock, dateTime, pct, triggerLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CaseDetail, CaseTemplate, Draft, Persona, Rule } from '@/lib/types';
@@ -89,7 +90,12 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
       title={canAck ? 'Handoff status' : 'Sign off'}
       icon={<PenLine />}
       description={`Version ${tpl.row.version}, drafted ${dateTime(tpl.row.as_of)}`}
-      action={<StateBadge state={wf.state} changed={wf.changed_since_signed} />}
+      action={
+        <span className="flex items-center gap-1">
+          <StateBadge state={wf.state} changed={wf.changed_since_signed} />
+          <HelpButton topic={canAck ? 'handoff.ack' : 'handoff.sign'} label="How sign off works" />
+        </span>
+      }
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -153,7 +159,7 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
   const wf = tpl.workflow;
   if (wf.state === 'draft' || wf.state === 'drafting') {
     return (
-      <Section title="Acknowledge" icon={<CheckCheck />}>
+      <Section title="Acknowledge" icon={<CheckCheck />} action={<HelpButton topic="handoff.ack" label="How accepting works" />}>
         <p className="text-sm text-muted-foreground">Waiting for the ED clinician to sign. You can read the draft now; it may still change.</p>
       </Section>
     );
@@ -169,7 +175,7 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
     );
   }
   return (
-    <Section title={wf.changed_since_acknowledged ? 'Acknowledge the update' : 'Acknowledge'} icon={<CheckCheck />} description="Read back in your own words: the patient, the key risk and what you will do first.">
+    <Section title={wf.changed_since_acknowledged ? 'Acknowledge the update' : 'Acknowledge'} icon={<CheckCheck />} description="Read back in your own words: the patient, the key risk and what you will do first." action={<HelpButton topic="handoff.ack" label="How accepting works" />}>
       <form
         className="space-y-2"
         onSubmit={(e) => {
@@ -210,7 +216,7 @@ export function ChangesCard({ tpl }: { tpl: CaseTemplate }) {
   const chart = c.elements.filter((e) => e.kind !== 'narrative');
   const text = c.elements.filter((e) => e.kind === 'narrative');
   return (
-    <Section title="What changed" icon={<GitCompareArrows />} description={`Since ${c.since === 'signed' ? 'the signed' : 'the previous'} version ${c.version}`}>
+    <Section title="What changed" icon={<GitCompareArrows />} action={<HelpButton topic="handoff.context" />} description={`Since ${c.since === 'signed' ? 'the signed' : 'the previous'} version ${c.version}`}>
       {c.elements.length === 0 ? (
         <p className="text-sm text-muted-foreground">No differences in content.</p>
       ) : (
@@ -256,7 +262,7 @@ export function VitalsCard({ draft }: { draft: Draft }) {
   const v = draft.trend?.vitals ?? [];
   const pick = (k: keyof (typeof v)[number]) => v.map((x) => ({ t: x.taken_ts, v: x[k] as number | undefined }));
   return (
-    <Section title="Vital signs" icon={<History />} description={`${v.length} set${v.length === 1 ? '' : 's'} in the ED${v.length ? `, latest ${clock(v.at(-1)!.taken_ts)}` : ''}`}>
+    <Section title="Vital signs" icon={<History />} action={<HelpButton topic="handoff.context" label="How to read the chart" />} description={`${v.length} set${v.length === 1 ? '' : 's'} in the ED${v.length ? `, latest ${clock(v.at(-1)!.taken_ts)}` : ''}`}>
       <TimeChart
         ariaLabel="Vital signs over the ED stay"
         height={240}
@@ -277,7 +283,7 @@ export function LabsCard({ draft }: { draft: Draft }) {
   const labs = Object.entries(draft.trend?.labs ?? {}).sort((a, b) => b[1].length - a[1].length);
   if (!labs.length) return null;
   return (
-    <Section title="Lab trends" icon={<History />} description="Results that were ever abnormal, final values">
+    <Section title="Lab trends" icon={<History />} action={<HelpButton topic="handoff.context" />} description="Results that were ever abnormal, final values">
       <ul className="grid grid-cols-2 gap-2.5">
         {labs.slice(0, 8).map(([name, pts]) => {
           const last = pts.at(-1)!;
@@ -326,7 +332,7 @@ export function HistoryCard({ tpl, activity, template }: { tpl: CaseTemplate; ac
     ...acts.map((a) => ({ at: a.at, title: `${ACTION[a.kind] ?? a.kind} by ${a.by}`, detail: a.detail ? `${a.detail}` : `version ${a.version}`, kind: a.kind })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
   return (
-    <Section title="History" icon={<History />} description={`${tpl.versions.length} version${tpl.versions.length > 1 ? 's' : ''} drafted by ${tpl.row.model}`}>
+    <Section title="History" icon={<History />} action={<HelpButton topic="handoff.context" />} description={`${tpl.versions.length} version${tpl.versions.length > 1 ? 's' : ''} drafted by ${tpl.row.model}`}>
       <ol className="relative space-y-3 border-l pl-4">
         {events.slice(0, 12).map((e, i) => (
           <li key={i} className="relative">

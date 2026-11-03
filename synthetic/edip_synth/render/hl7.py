@@ -724,10 +724,10 @@ class Renderer:
 
     def inject_envelope_faults(self):
         rng = rng_for(self.plan, "hl7-envelope")
-        mgh = [m for m in self.msgs if m.interface == "ADT" and self.profile[m.fac]["msh7_offset"] and not m.faults
+        sgh = [m for m in self.msgs if m.interface == "ADT" and self.profile[m.fac]["msh7_offset"] and not m.faults
                and m.at.astimezone(TZ).utcoffset() == timedelta(hours=-4)]
         for _ in range(int(self.plan.get("F25_offset_mix", {}).get("inconsistent_messages", 0))):
-            m = rng.choice(mgh)
+            m = rng.choice(sgh)
             m.bad_offset = True
             m.faults.append("F25")
             self.fault("F25", m.csn, m.at, "MSH-7 carries -0500 while local time is EDT (-0400): one hour off after normalization",

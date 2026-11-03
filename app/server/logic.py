@@ -151,8 +151,13 @@ def diff(old: dict | None, new: dict) -> list[dict]:
 
 # ---------------------------------------------------------------------------------------------------- views
 class Views:
-    def __init__(self, ds: Dataset, store):
-        self.ds, self.store = ds, store
+    def __init__(self, ds, store):
+        """ds: a Dataset, or a callable returning the current one (live mode reloads it from Lakebase)."""
+        self._ds, self.store = ds, store
+
+    @property
+    def ds(self) -> Dataset:
+        return self._ds() if callable(self._ds) else self._ds
 
     def _summary(self, csn: str, at: datetime, person: dict) -> dict | None:
         e = self.ds.enc.get(csn)
@@ -318,7 +323,7 @@ class Views:
             raise ActionError("There is no draft for this template yet.")
         acts = self.store.actions(csn, at)
         row = {"csn": csn, "template": template, "version": latest["version"], "at": at, "by": person["name"],
-               "role": person["role"]}
+               "role": person["role"], "user_email": person.get("user_email")}
         if kind in ("edit", "attest", "sign"):
             if template not in SIGNS.get(person["role"], ()):
                 raise ActionError("Only the sending ED clinician for this template can change or sign it.")

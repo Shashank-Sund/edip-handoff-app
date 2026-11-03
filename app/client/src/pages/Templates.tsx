@@ -93,7 +93,7 @@ export default function Templates() {
   if (error && !data) return <Layout title="Templates"><ErrorState message={error} /></Layout>;
   if (!data) return <Layout title="Templates"><PageSkeleton /></Layout>;
   return (
-    <Layout title="Templates" crumbs="31 shared elements, three templates">
+    <Layout title="Templates" crumbs="31 shared elements, three templates" help="templates">
       <Tabs defaultValue={data[0].id}>
         <TabsList aria-label="Template">
           {data.map((t) => (

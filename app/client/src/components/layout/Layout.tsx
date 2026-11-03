@@ -8,10 +8,11 @@ import { readString, writeString } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { ClockControl } from './ClockControl';
 import { SidebarBody } from './Sidebar';
+import { HelpButton } from '@/components/guide/HelpButton';
 
 const KEY = 'edip.sidebar';
 
-export function Layout({ title, crumbs, actions, children }: { title: ReactNode; crumbs?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function Layout({ title, crumbs, actions, help, children }: { title: ReactNode; crumbs?: ReactNode; actions?: ReactNode; help?: string; children: ReactNode }) {
   const { theme, toggle } = useTheme();
   const { config } = useApp();
   const [collapsed, setCollapsed] = useState(() => readString(KEY) === 'collapsed');
@@ -40,7 +41,10 @@ export function Layout({ title, crumbs, actions, children }: { title: ReactNode;
           </Button>
           <div className="min-w-0 flex-1">
             {crumbs && <div className="hidden truncate text-xs text-muted-foreground sm:block">{crumbs}</div>}
-            <h1 className="truncate text-sm font-semibold sm:text-base">{title}</h1>
+            <div className="flex min-w-0 items-center gap-1">
+              <h1 className="truncate text-sm font-semibold sm:text-base">{title}</h1>
+              {help && <HelpButton topic={help} label="How to use this page" className="size-6" />}
+            </div>
           </div>
           {actions}
           {config.mode === 'mock' && (

@@ -46,18 +46,18 @@ class Provider:
 
 
 FACILITIES = [
-    Facility("MGH", "Metro General Hospital", "100 Harbor Way, Boston, MA 02114", luhn_npi("199900101")),
+    Facility("SGH", "Shai General Hospital", "200 Shai Way, Springfield, MA 01103", luhn_npi("199900101")),
     Facility("LKS", "Lakeside Community Hospital", "45 Lakeview Rd, Quincy, MA 02169", luhn_npi("199900202")),
 ]
 
 # (facility, code, name, level, beds, private share). Bed counts from spec 2.1.
 _UNITS = [
-    ("MGH", "ED", "MGH EMERGENCY DEPT", "ED", 20, 0.0),
-    ("MGH", "MICU", "MGH MEDICAL ICU", "ICU", 12, 1.0),
-    ("MGH", "5N", "MGH 5 NORTH STEP DOWN", "STEPDOWN", 16, 0.5),
-    ("MGH", "6W", "MGH 6 WEST TELEMETRY", "TELE", 28, 0.4),
-    ("MGH", "7E", "MGH 7 EAST MED SURG", "MEDSURG", 32, 0.3),
-    ("MGH", "4C", "MGH 4C CLINICAL DECISION UNIT", "OBS", 16, 0.2),
+    ("SGH", "ED", "SGH EMERGENCY DEPT", "ED", 20, 0.0),
+    ("SGH", "MICU", "SGH MEDICAL ICU", "ICU", 12, 1.0),
+    ("SGH", "5N", "SGH 5 NORTH STEP DOWN", "STEPDOWN", 16, 0.5),
+    ("SGH", "6W", "SGH 6 WEST TELEMETRY", "TELE", 28, 0.4),
+    ("SGH", "7E", "SGH 7 EAST MED SURG", "MEDSURG", 32, 0.3),
+    ("SGH", "4C", "SGH 4C CLINICAL DECISION UNIT", "OBS", 16, 0.2),
     ("LKS", "ED", "LKS EMERGENCY DEPT", "ED", 14, 0.0),
     ("LKS", "ICU", "LKS INTENSIVE CARE UNIT", "ICU", 8, 1.0),
     ("LKS", "3S", "LKS 3 SOUTH MED SURG", "MEDSURG", 30, 0.3),
@@ -68,7 +68,7 @@ _UNITS = [
 def build_departments(rng: random.Random) -> list:
     depts = []
     for i, (fac, code, name, level, beds, private) in enumerate(_UNITS):
-        d = Department(str(1010100 + i * 37 + (0 if fac == "MGH" else 5000)), fac, code, name, level, beds, private)
+        d = Department(str(1010100 + i * 37 + (0 if fac == "SGH" else 5000)), fac, code, name, level, beds, private)
         if level == "ED":
             d.rooms = [(f"{n:02d}", "A", False) for n in range(1, beds + 1)]
         else:
@@ -94,12 +94,12 @@ _LAST = ["Abernathy", "Brennan", "Castillo", "Delgado", "Ellison", "Fairbanks", 
 
 # (facility, type, specialty, count)
 _STAFF = [
-    ("MGH", "Physician", "Emergency Medicine", 8), ("MGH", "Resident", "Emergency Medicine", 6),
-    ("MGH", "Physician Assistant", "Emergency Medicine", 3), ("MGH", "Physician", "Hospital Medicine", 7),
-    ("MGH", "Physician", "Critical Care", 3), ("MGH", "Physician", "Cardiology", 3),
-    ("MGH", "Physician", "Neurology", 2), ("MGH", "Physician", "Orthopedics", 2),
-    ("MGH", "Physician", "Gastroenterology", 2), ("MGH", "Registered Nurse", "Emergency Medicine", 10),
-    ("MGH", "Registered Nurse", "Inpatient", 10),
+    ("SGH", "Physician", "Emergency Medicine", 8), ("SGH", "Resident", "Emergency Medicine", 6),
+    ("SGH", "Physician Assistant", "Emergency Medicine", 3), ("SGH", "Physician", "Hospital Medicine", 7),
+    ("SGH", "Physician", "Critical Care", 3), ("SGH", "Physician", "Cardiology", 3),
+    ("SGH", "Physician", "Neurology", 2), ("SGH", "Physician", "Orthopedics", 2),
+    ("SGH", "Physician", "Gastroenterology", 2), ("SGH", "Registered Nurse", "Emergency Medicine", 10),
+    ("SGH", "Registered Nurse", "Inpatient", 10),
     ("LKS", "Physician", "Emergency Medicine", 5), ("LKS", "Nurse Practitioner", "Emergency Medicine", 2),
     ("LKS", "Physician", "Hospital Medicine", 4), ("LKS", "Physician", "Critical Care", 1),
     ("LKS", "Physician", "Orthopedics", 1), ("LKS", "Registered Nurse", "Emergency Medicine", 6),

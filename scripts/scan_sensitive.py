@@ -14,6 +14,7 @@ Usage:
 Exit code 1 if anything is found.
 """
 import os
+import gzip
 import re
 import subprocess
 import sys
@@ -73,7 +74,8 @@ def scan(files, blocklist):
         if f.suffix.lower() in SKIP_SUFFIX or f.name == "scan_sensitive.py":
             continue
         try:
-            text = f.read_text(errors="ignore")
+            # Compressed files are scanned decompressed: their raw bytes can spell false matches by chance.
+            text = gzip.open(f, "rt", errors="ignore").read() if f.suffix.lower() == ".gz" else f.read_text(errors="ignore")
         except OSError:
             continue
         for n, line in enumerate(text.splitlines(), 1):

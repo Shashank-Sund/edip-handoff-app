@@ -29,8 +29,8 @@ H = lambda x: timedelta(hours=x)    # noqa: E731
 
 OBS_ELIGIBLE = {"chest_pain_ro": 0.75, "syncope": 0.7, "cellulitis": 0.6, "pyelo": 0.5, "aki": 0.5, "af_rvr": 0.5,
                 "abdominal": 0.3, "cap": 0.25, "copd": 0.2, "other_medical": 0.3, "flu_covid": 0.3}
-LEVEL_UNIT = {("MGH", "ICU"): "MICU", ("MGH", "STEPDOWN"): "5N", ("MGH", "TELE"): "6W", ("MGH", "MEDSURG"): "7E",
-              ("MGH", "OBS"): "4C", ("LKS", "ICU"): "ICU", ("LKS", "STEPDOWN"): "ICU", ("LKS", "TELE"): "3S",
+LEVEL_UNIT = {("SGH", "ICU"): "MICU", ("SGH", "STEPDOWN"): "5N", ("SGH", "TELE"): "6W", ("SGH", "MEDSURG"): "7E",
+              ("SGH", "OBS"): "4C", ("LKS", "ICU"): "ICU", ("LKS", "STEPDOWN"): "ICU", ("LKS", "TELE"): "3S",
               ("LKS", "MEDSURG"): "3S", ("LKS", "OBS"): "2E"}
 OVERFLOW = {"STEPDOWN": ("ICU", "TELE"), "ICU": ("STEPDOWN",), "TELE": ("STEPDOWN", "MEDSURG"), "MEDSURG": ("TELE", "OBS"),
             "OBS": ("MEDSURG", "TELE")}
@@ -189,8 +189,8 @@ class Simulator:
 
     def _plan(self):
         rng, cfg = self.rng, self.cfg
-        n_mgh = round(cfg.encounters * cfg.facility_share["MGH"])
-        slots = [{"facility": "MGH", "arrival": t} for t in self._arrivals("MGH", n_mgh)]
+        n_mgh = round(cfg.encounters * cfg.facility_share["SGH"])
+        slots = [{"facility": "SGH", "arrival": t} for t in self._arrivals("SGH", n_mgh)]
         slots += [{"facility": "LKS", "arrival": t} for t in self._arrivals("LKS", cfg.encounters - n_mgh)]
         rng.shuffle(slots)
 
@@ -206,23 +206,23 @@ class Simulator:
         order = sorted(slots, key=key, reverse=True)
         # Spread each scenario over both hospitals in proportion to their admit slots, so every scenario
         # appears at each hospital (spec 12 item 13) instead of by chance.
-        n_mgh = round(len(admits) * cfg.facility_share["MGH"])
-        chosen = [s for s in order if s["facility"] == "MGH"][:n_mgh] + \
+        n_mgh = round(len(admits) * cfg.facility_share["SGH"])
+        chosen = [s for s in order if s["facility"] == "SGH"][:n_mgh] + \
             [s for s in order if s["facility"] == "LKS"][:len(admits) - n_mgh]
         picked = {id(s) for s in chosen}
-        by_fac = {f: [s for s in chosen if s["facility"] == f] for f in ("MGH", "LKS")}
-        share = len(by_fac["MGH"]) / len(chosen)
-        mgh = {k: (min(c - 1, max(1, round(c * share))) if c >= 2 else round(c * share)) for k, c in ADMIT_COUNTS.items()}
-        diff = len(by_fac["MGH"]) - sum(mgh.values())
+        by_fac = {f: [s for s in chosen if s["facility"] == f] for f in ("SGH", "LKS")}
+        share = len(by_fac["SGH"]) / len(chosen)
+        sgh = {k: (min(c - 1, max(1, round(c * share))) if c >= 2 else round(c * share)) for k, c in ADMIT_COUNTS.items()}
+        diff = len(by_fac["SGH"]) - sum(sgh.values())
         for k in sorted(ADMIT_COUNTS, key=lambda k: -ADMIT_COUNTS[k]):
             if diff == 0:
                 break
             step = 1 if diff > 0 else -1
-            if 1 <= mgh[k] + step <= ADMIT_COUNTS[k] - 1:
-                mgh[k] += step
+            if 1 <= sgh[k] + step <= ADMIT_COUNTS[k] - 1:
+                sgh[k] += step
                 diff -= step
-        pools = {"MGH": [k for k, n in mgh.items() for _ in range(n)],
-                 "LKS": [k for k, c in ADMIT_COUNTS.items() for _ in range(c - mgh[k])]}
+        pools = {"SGH": [k for k, n in sgh.items() for _ in range(n)],
+                 "LKS": [k for k, c in ADMIT_COUNTS.items() for _ in range(c - sgh[k])]}
         for f in pools:
             rng.shuffle(pools[f])
             for s, k in zip(by_fac[f], pools[f]):
@@ -443,11 +443,11 @@ class Simulator:
         enc._slot = s
         fac = s["facility"]
         enc.ed_attending = self.pick_prov(fac, "Physician", "Emergency Medicine", rng).prov_id
-        if fac == "MGH" and rng.random() < 0.6:
+        if fac == "SGH" and rng.random() < 0.6:
             enc.ed_resident = self.pick_prov(fac, "Resident", "Emergency Medicine", rng).prov_id
         elif fac == "LKS" and esi >= 4 and rng.random() < 0.6:
             enc.ed_resident = self.pick_prov(fac, "Nurse Practitioner", "Emergency Medicine", rng).prov_id
-        elif fac == "MGH" and esi >= 4 and rng.random() < 0.5:
+        elif fac == "SGH" and esi >= 4 and rng.random() < 0.5:
             enc.ed_resident = self.pick_prov(fac, "Physician Assistant", "Emergency Medicine", rng).prov_id
         enc.ed_nurse = self.pick_prov(fac, "Registered Nurse", "Emergency Medicine", rng).prov_id
 
@@ -567,7 +567,7 @@ class Simulator:
             e._iso_late = e in late
         # Bed reassignment (F15): three from late isolation, three level changes.
         others = [e for e in admits if not getattr(e, "_iso_late", False) and e.level_of_care in ("TELE", "STEPDOWN", "MEDSURG")
-                  and e.facility == "MGH"]
+                  and e.facility == "SGH"]
         rng.shuffle(others)
         for e in late[:3] + others[:3]:
             e._reassign = True
@@ -816,7 +816,7 @@ class Simulator:
         return out if out >= t - H(10) else out + H(24)
 
     def _ed_bays(self):
-        for fac in ("MGH", "LKS"):
+        for fac in ("SGH", "LKS"):
             d = self.dept[(fac, "ED")]
             free = {f"{r}": self.start - H(1) for r, _, _ in d.rooms}
             hall = {f"H{i}": self.start - H(1) for i in range(1, 9)}
@@ -1813,8 +1813,8 @@ class Simulator:
             "F06_oru_before_adt_rate": 0.05,
             "F08_stale_location_replay": sorted(rng.sample(admits, 3)),
             "F24_unvalidated_device_values": sorted(rng.sample(vit, 20)),
-            "F25_offset_mix": {"MGH": "-0500 style offsets", "LKS": "no offset", "inconsistent_messages": 1},
-            "F26_z_segments": {"MGH": ["ZPV", "ZPD"], "LKS": [], "unknown_segment_messages": 1},
+            "F25_offset_mix": {"SGH": "-0500 style offsets", "LKS": "no offset", "inconsistent_messages": 1},
+            "F26_z_segments": {"SGH": ["ZPV", "ZPD"], "LKS": [], "unknown_segment_messages": 1},
             "F27_encoding_quirks": sorted(rng.sample(long_notes, 10)),
             "F28_mixed_status_panel": sorted(rng.sample(cbc, 6)),
             "F30_class_string_variants": "all",

@@ -1,0 +1,8 @@
+{
+  "name": "edip-handoff-app",
+  "private": true,
+  "description": "Build entry point for the Databricks App: the Apps runtime runs npm install, pip install -r requirements.txt, then npm run build.",
+  "scripts": {
+    "build": "npm --prefix app/client ci --no-audit --no-fund && npm --prefix app/client run build"
+  }
+}

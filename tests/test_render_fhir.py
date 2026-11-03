@@ -19,7 +19,7 @@ from edip_synth.render.common import load_truth  # noqa: E402
 from edip_synth.world import Simulator  # noqa: E402
 
 KNOWN_SYSTEMS = {"http://hl7.org/fhir/sid/us-ssn", "http://hl7.org/fhir/sid/us-npi", "urn:redox:document_kind"}
-LOCAL = re.compile(r"^urn:redox:(mgh|lks):[A-Za-z0-9_-]+$")
+LOCAL = re.compile(r"^urn:redox:(sgh|lks):[A-Za-z0-9_-]+$")
 INJECTED = {"F01", "F03", "F04", "F08"}      # extra PatientAdmin events with no truth counterpart
 ADT_CODES = {"arrival": "A04", "transfer": "A02", "discharge": "A03", "merge": "A40", "cancel_transfer": "A12",
              "cancel_discharge": "A13", "cancel_admit": "A11"}
@@ -70,7 +70,7 @@ def test_every_line_is_a_redox_cloud_delivery(feed):
         assert meta["Logs"][0]["ID"] == r["event_id"] and meta["Logs"][0]["AttemptID"] == r["attempt_id"]
         assert meta["EventDateTime"] == r["event_datetime"] and re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$", r["event_datetime"])
         assert meta["Test"] is True and r["is_test"] is True and r["landing_path"] is None
-        assert meta["Source"]["ID"] == r["source_id"] and meta["FacilityCode"] == r["facility_code"] in ("MGH", "LKS")
+        assert meta["Source"]["ID"] == r["source_id"] and meta["FacilityCode"] == r["facility_code"] in ("SGH", "LKS")
         assert b["resourceType"] == "Bundle" and b["type"] == "transaction" and b["timestamp"] == r["event_datetime"]
         assert b["entry"] and b["entry"][0]["resource"]["resourceType"] == "MessageHeader"
         assert b["entry"][0]["resource"]["eventUri"].startswith("https://fhir.redoxengine.com/EventDefinition/")

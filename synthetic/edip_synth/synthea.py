@@ -93,8 +93,32 @@ def _keep_condition(code: str, desc: str) -> bool:
     return not any(w in d for w in _DROP_WORDS)
 
 
+def save_population(people: list, path: Path) -> None:
+    """Write the slice of a Synthea population the generator uses (a few MB instead of the 2.5 GB CSV export)."""
+    import gzip
+    import json
+    from dataclasses import asdict
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        for p in people:
+            f.write(json.dumps(asdict(p) | {"birth_date": p.birth_date.isoformat()}, separators=(",", ":")) + "\n")
+
+
+def load_population(path: Path) -> list:
+    import gzip
+    import json
+    out = []
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            d = json.loads(line)
+            out.append(Person(**(d | {"birth_date": date.fromisoformat(d["birth_date"])})))
+    return out
+
+
 def load(csv_dir: Path) -> list:
+    """A Synthea CSV export folder, or a population file written by save_population (.json.gz)."""
     csv_dir = Path(csv_dir)
+    if csv_dir.is_file():
+        return load_population(csv_dir)
     people = {}
     for r in csv.DictReader(open(csv_dir / "patients.csv", newline="")):
         if r["DEATHDATE"]:

@@ -13,7 +13,9 @@ from .world import Simulator
 def main():
     ap = argparse.ArgumentParser(description="Generate the synthetic ED to inpatient world (truth tables).")
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--synthea", type=Path, help="Synthea CSV folder; omit to use the built in stand in population")
+    ap.add_argument("--synthea", type=Path, help="Synthea CSV folder or population file (.json.gz); omit to use the "
+                                                 "built in stand in population")
+    ap.add_argument("--save-population", type=Path, help="also write the Synthea population slice to this .json.gz")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--encounters", type=int)
     a = ap.parse_args()
@@ -24,6 +26,8 @@ def main():
         cfg = replace(cfg, encounters=a.encounters)
     t = time.time()
     pop = synthea.load(a.synthea) if a.synthea else synthea.stand_in(3000, cfg.seed)
+    if a.save_population:
+        synthea.save_population(pop, a.save_population)
     world = Simulator(cfg, pop).run()
     s = write(world, a.out)
     print(f"wrote {a.out} in {time.time() - t:.1f}s: {s['encounters']} encounters, {s['admitted']} admitted, "

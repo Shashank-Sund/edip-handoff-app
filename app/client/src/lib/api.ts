@@ -1,4 +1,4 @@
-import type { Analytics, AppConfig, Board, CaseDetail, TemplateDef } from './types';
+import type { Analytics, AppConfig, Board, CaseDetail, Persona, TemplateDef } from './types';
 
 /** An error the server explains in plain words (HTTP 409 for rules, 404 for scope). */
 export class ApiError extends Error {
@@ -42,6 +42,7 @@ async function call<T>(path: string, init?: RequestInit & { at?: string }): Prom
 
 export const api = {
   config: () => call<AppConfig>('/api/config'),
+  me: () => call<Persona>('/api/me'),
   templates: () => call<TemplateDef[]>('/api/templates'),
   board: (at: string) => call<Board>('/api/board', { at }),
   case: (csn: string, at: string) => call<CaseDetail>(`/api/handoffs/${csn}`, { at }),

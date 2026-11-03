@@ -224,14 +224,14 @@ def test_notes_reconcile_with_truth(world):
 
 
 def test_unknown_segments_and_garbage_do_not_crash():
-    msg = ("MSH|^~\\&|EPIC|MGH|RHAPSODY|MGH|20261026101500-0400|U1|ADT^A08^ADT_A01|1|T|2.5.1\r"
+    msg = ("MSH|^~\\&|EPIC|SGH|RHAPSODY|SGH|20261026101500-0400|U1|ADT^A08^ADT_A01|1|T|2.5.1\r"
            "EVN||20261026101500-0400\rPID|1||1^^^MRN^MR||Nuñez^Ana^^^^^L||19700101|F\r"
-           "PV1|1|O|ED^12^A^MGH|||||||EMR|||||||||40011200001^^^EPI^CSN\rZZZ|whatever|x\rQQQ\r")
+           "PV1|1|O|ED^12^A^SGH|||||||EMR|||||||||40011200001^^^EPI^CSN\rZZZ|whatever|x\rQQQ\r")
     out = parse_hl7(msg)
     a = out["adt"][0]
     assert a["patient_class"] == "OBS" and a["kind"] == "update" and a["patient_name"] == "Nuñez, Ana" and not out["quarantine"]
     assert parse_hl7("garbage")["quarantine"][0]["reason"] == "no MSH segment"
-    assert parse_hl7("MSH|^~\\&|EPIC|MGH|||20261026101500||ORU^R01|9|T|2.3\rPID|1\rPV1|1\r")["quarantine"]
+    assert parse_hl7("MSH|^~\\&|EPIC|SGH|||20261026101500||ORU^R01|9|T|2.3\rPID|1\rPV1|1\r")["quarantine"]
 
 
 def test_repeated_dst_hour_resolves_against_receipt_time():

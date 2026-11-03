@@ -965,7 +965,7 @@ class Snapshot:
     # ---- orders and results
     def orders(self, e, pat_id, fac):
         tr, csn = self.tr, e["csn"]
-        lab_id = 100 if fac == "MGH" else 200
+        lab_id = 100 if fac == "SGH" else 200
         for o in tr.by_csn["orders"][csn]:
             if not self.b4(o["ordered_at"]):
                 continue

@@ -20,7 +20,7 @@ from eval import expected as X  # noqa: E402
 from eval import run_eval  # noqa: E402
 from eval import score as S  # noqa: E402
 
-LIMIT = 15      # encounters; the whole module runs in well under 30 s
+LIMIT = 25      # encounters (enough that the sample includes critical results); the module runs in under 30 s
 
 
 @pytest.fixture(scope="module")

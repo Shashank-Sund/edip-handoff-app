@@ -32,6 +32,8 @@ export interface Unit {
 
 export interface AppConfig {
   mode: 'mock' | 'live';
+  clock: 'replay' | 'live';
+  demo_personas: boolean;
   source: string;
   drafts_from: string;
   models: string[];

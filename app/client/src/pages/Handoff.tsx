@@ -7,6 +7,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { ErrorState, PageSkeleton } from '@/components/common/states';
 import { EvidenceProvider } from '@/components/handoff/Evidence';
+import { HelpButton } from '@/components/guide/HelpButton';
 import { ElementView } from '@/components/handoff/ElementView';
 import { AckPanel, ChangesCard, HistoryCard, LabsCard, SignPanel, VitalsCard } from '@/components/handoff/Panels';
 import { useApp } from '@/hooks/useApp';
@@ -131,7 +132,7 @@ export default function Handoff({ csn }: { csn: string }) {
   const onEdit = (element: string, body: { text?: string; items?: NarrativeItem[] }) => run('edit', { element, ...body }, 'Saved');
 
   return (
-    <Layout title={s.patient.name} crumbs={back}>
+    <Layout title={s.patient.name} crumbs={back} help="handoff">
       <EvidenceProvider evidence={tpl.draft.evidence ?? {}}>
         <div className="space-y-5">
           <Banner s={s} />
@@ -156,7 +157,9 @@ export default function Handoff({ csn }: { csn: string }) {
                   );
                 })}
               </TabsList>
-              <p className="text-xs text-muted-foreground">
+              <HelpButton topic="handoff.tabs" label="About the tabs" className="-ml-2 hidden sm:inline-grid" />
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                <HelpButton topic="handoff.tabs" label="About the tabs" className="size-6 sm:hidden" />
                 Version {tpl.row.version}, drafted {dateTime(tpl.row.as_of)} after {triggerLabel(tpl.row.trigger).toLowerCase()}
                 {tpl.row.status === 'addendum' && <span className="ml-1 font-medium text-flag">addendum</span>}
               </p>

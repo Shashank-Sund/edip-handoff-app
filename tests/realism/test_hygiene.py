@@ -30,7 +30,7 @@ def test_phones_addresses_and_names_are_fictional(view):
         assert re.fullmatch(r"617-555-01\d\d", p.emergency_contact["phone"]), p.emergency_contact
         assert p.state == "MA" and re.fullmatch(r"02\d{3}", p.zip), (p.city, p.zip)
     for f in view.w.facilities:
-        assert f.name in ("Metro General Hospital", "Lakeside Community Hospital"), f.name
+        assert f.name in ("Shai General Hospital", "Lakeside Community Hospital"), f.name
     for prov in view.w.providers:
         assert prov.first in _FIRST and prov.last in _LAST, (prov.first, prov.last)
         assert re.fullmatch(r"E\d{6}", prov.prov_id) and re.fullmatch(r"[A-Z]{1,4}[A-Z]\d\d", prov.user_id), prov

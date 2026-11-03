@@ -6,6 +6,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Stat } from '@/components/common/Stat';
 import { ErrorState, PageSkeleton } from '@/components/common/states';
 import { TimeChart } from '@/components/charts/TimeChart';
+import { HelpButton } from '@/components/guide/HelpButton';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
 import { api } from '@/lib/api';
@@ -17,11 +18,14 @@ const unitConfig: ChartConfig = {
 };
 const histConfig: ChartConfig = { n: { label: 'Handoffs', color: 'var(--series-3)' } };
 
-function Panel({ title, description, children, className }: { title: string; description?: string; children: React.ReactNode; className?: string }) {
+function Panel({ title, description, children, className, help }: { title: string; description?: string; children: React.ReactNode; className?: string; help?: string }) {
   return (
     <Card className={className}>
       <CardHeader className="pb-2 sm:pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          {title}
+          {help && <HelpButton topic={help} label="How to read this chart" className="-my-1" />}
+        </CardTitle>
         {description && <CardDescription className="text-xs">{description}</CardDescription>}
       </CardHeader>
       <CardContent>{children}</CardContent>
@@ -40,7 +44,7 @@ export default function Analytics() {
   const total = Object.values(sev).reduce((a, b) => a + b, 0);
   const peak = data.series.reduce((m, p) => (p.boarding > m.boarding ? p : m), data.series[0] ?? { boarding: 0, t: at, ed: 0 });
   return (
-    <Layout title={title} crumbs={`The reference week through ${dateTime(at)}`}>
+    <Layout title={title} crumbs={`The reference week through ${dateTime(at)}`} help="analytics">
       <div className="space-y-5 sm:space-y-6">
         <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Stat label="Admitted from the ED" value={data.admitted} icon={<BedDouble />} hint="Transferred to an inpatient or observation bed" />
@@ -49,7 +53,7 @@ export default function Analytics() {
           <Stat label="Model calls" value={data.model_calls} icon={<Bot />} hint={`${data.drafts} drafts across 3 templates; ${data.addenda} addenda after transfer`} />
         </section>
 
-        <Panel title="ED census and boarding" description="Patients in the ED and patients boarding (admit decision made, still in the ED), hourly.">
+        <Panel help="analytics.census" title="ED census and boarding" description="Patients in the ED and patients boarding (admit decision made, still in the ED), hourly.">
           <TimeChart
             ariaLabel="ED census and boarding by hour"
             height={300}
@@ -66,7 +70,7 @@ export default function Analytics() {
         </Panel>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Panel title="Boarding time by destination" description="Admit decision to leaving the ED, patients transferred so far.">
+          <Panel help="analytics.units" title="Boarding time by destination" description="Admit decision to leaving the ED, patients transferred so far.">
             {units.length ? (
               <>
                 <ChartContainer config={unitConfig} className="h-64">
@@ -86,7 +90,7 @@ export default function Analytics() {
             )}
           </Panel>
 
-          <Panel title="What blocked sign off at transfer" description="Required items missing from the model draft, so the clinician had to attest or write them.">
+          <Panel help="analytics.blocked" title="What blocked sign off at transfer" description="Required items missing from the model draft, so the clinician had to attest or write them.">
             {data.blocking_at_transfer.length ? (
               <ul className="space-y-3 pt-2">
                 {data.blocking_at_transfer.map((b) => {
@@ -112,7 +116,7 @@ export default function Analytics() {
             )}
           </Panel>
 
-          <Panel title="Completeness at transfer" description="Share of the template's rules the model draft met on its own.">
+          <Panel help="analytics.quality" title="Completeness at transfer" description="Share of the template's rules the model draft met on its own.">
             <ChartContainer config={histConfig} className="h-56">
               <BarChart data={data.completeness_at_transfer.histogram} margin={{ left: 4, right: 8, top: 8 }}>
                 <CartesianGrid vertical={false} />
@@ -124,7 +128,7 @@ export default function Analytics() {
             </ChartContainer>
           </Panel>
 
-          <Panel title="Illness severity at transfer" description="Final draft severity: rule floor raised by the model when it judged higher.">
+          <Panel help="analytics.quality" title="Illness severity at transfer" description="Final draft severity: rule floor raised by the model when it judged higher.">
             {total ? (
               <div className="space-y-5 pt-3">
                 <div className="flex h-4 overflow-hidden rounded-full bg-muted" role="img" aria-label={(['stable', 'watcher', 'unstable'] as const).map((k) => `${k} ${sev[k] ?? 0}`).join(', ')}>

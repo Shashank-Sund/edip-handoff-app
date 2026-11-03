@@ -72,7 +72,7 @@ def test_every_event_parses_to_something(parsed):
     for r in parsed["records"]["adt"]:
         assert r["kind"] in edip_contract.ADT_KINDS and r["patient_class"] in ("E", "I", "OBS")
         assert r["effective_ts"].tzinfo is not None and r["recorded_ts"].tzinfo is not None
-        assert r["facility"] in ("MGH", "LKS") and len(r["csn"]) == 11 and len(r["mrn"]) == 8
+        assert r["facility"] in ("SGH", "LKS") and len(r["csn"]) == 11 and len(r["mrn"]) == 8
 
 
 def test_adt_reconciles_with_truth_after_dedupe(parsed):

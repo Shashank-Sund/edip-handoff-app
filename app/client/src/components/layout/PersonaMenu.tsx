@@ -22,6 +22,19 @@ export function PersonaMenu({ collapsed }: { collapsed: boolean }) {
     ['Receiving units', config.personas.filter((p) => p.role === 'unit_nurse')],
   ];
   const scope = persona.unit ? `${persona.facility} ${persona.unit}` : persona.role_label;
+  if (!config.demo_personas) {
+    return (
+      <div className={cn('flex items-center gap-2.5 p-1.5', collapsed && 'justify-center')} title={`${persona.name}, ${scope}`}>
+        <Avatar p={persona} />
+        {!collapsed && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{persona.name}</span>
+            <span className="block truncate text-xs text-muted-foreground">{scope}</span>
+          </span>
+        )}
+      </div>
+    );
+  }
   return (
     <Dropdown>
       <DropdownTrigger

@@ -27,7 +27,7 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
   const [personaId, setPersonaId] = useState(() =>
     config.personas.some((p) => p.id === initial) ? (initial as string) : config.personas[0].id,
   );
-  const [at, setAtState] = useState(config.mode === 'live' ? new Date().toISOString() : config.default_at);
+  const [at, setAtState] = useState(config.clock === 'live' ? new Date().toISOString() : config.default_at);
   const [playing, setPlaying] = useState(false);
   const [version, setVersion] = useState(0);
   const persona = config.personas.find((p) => p.id === personaId) ?? config.personas[0];
@@ -50,7 +50,7 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
 
   // Replay: advance the clock while playing; live: follow the wall clock.
   useEffect(() => {
-    if (config.mode === 'live') {
+    if (config.clock === 'live') {
       const id = window.setInterval(() => setAtState(new Date().toISOString()), 20000);
       return () => window.clearInterval(id);
     }
@@ -63,7 +63,7 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
       });
     }, STEP_MS);
     return () => window.clearInterval(id);
-  }, [playing, config.mode, clamp]);
+  }, [playing, config.clock, clamp]);
 
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const value = useMemo(
@@ -84,7 +84,10 @@ export function useConfig() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.config().then(setConfig, (e: Error) => setError(e.message));
+    api
+      .config()
+      .then(async (c) => (c.personas.length ? c : { ...c, personas: [await api.me()] }))
+      .then(setConfig, (e: Error) => setError(e.message));
   }, []);
   return { config, error };
 }

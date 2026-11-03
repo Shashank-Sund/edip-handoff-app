@@ -170,7 +170,7 @@ class Renderer:
         org = self.orgs[fac]
         rows = sorted(self.adt[csn], key=lambda a: a["seq"])
         # F30: patient class display strings vary by site, and 10 percent of visits use a third spelling.
-        variant = 0 if fac == "MGH" else 1
+        variant = 0 if fac == "SGH" else 1
         if self.rng.random() < 0.10:
             variant = self.rng.choice([2, 3])
         self.class_variant[csn] = variant
