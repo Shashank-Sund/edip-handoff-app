@@ -27,8 +27,9 @@ export default tseslint.config(
     rules: { 'react-refresh/only-export-components': 'off' },
   },
   {
-    files: ['mock-api/**/*.mjs', 'scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs'],
     extends: [js.configs.recommended],
-    languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: globals.node },
+    // page.evaluate callbacks run in the browser.
+    languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: { ...globals.node, ...globals.browser } },
   },
 );
