@@ -53,6 +53,7 @@ function Behind() {
             </a>{' '}
             Lightweight Charts and Recharts; components adapted from shadcn/ui on Radix UI; icons from Lucide. Templates draw on Joint Commission Sentinel Event Alert 58, IHI SBAR, I-PASS and its ED adaptation, SBAR-DR and PREP-4Cs.
           </p>
+          <p className="text-xs text-muted-foreground">TradingView Lightweight Charts™ Copyright (с) 2025 TradingView, Inc. https://www.tradingview.com/</p>
         </Card>
       </div>
     </section>

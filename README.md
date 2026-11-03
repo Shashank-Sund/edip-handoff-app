@@ -2,6 +2,13 @@
 
 When the emergency department decides to admit a patient, this app drafts the handoff from the chart, as an SBAR for nurses, an I-PASS for physicians and a short Joint Commission minimum. The ED clinician reviews, edits and signs it; the receiving unit accepts it with a read back. Every statement the model writes cites the chart record it came from. All data is synthetic.
 
+![The ED boarding board: patients waiting for a bed, severity, destination, handoff state and completeness](docs/images/board.png)
+
+| A handoff, ready to review and sign | Analytics for the week |
+| --- | --- |
+| ![SBAR handoff with sign off checklist](docs/images/handoff.png) | ![ED census and boarding chart](docs/images/analytics.png) |
+| ![I-PASS for the physician, dark theme](docs/images/handoff-physician-dark.png) | ![The board at phone width](docs/images/board-phone.png) |
+
 ## Deploy it
 
 ```bash
@@ -47,4 +54,6 @@ Hospital feeds (synthetic): HL7 v2, Redox FHIR (batch or Zerobus), Clarity night
 
 ## Data and licenses
 
-Patients come from [Synthea](https://github.com/synthetichealth/synthea) (a 3,000 person population slice is committed in `synthetic/population/`); the ED visits, feeds and faults are generated on top. The hospitals (Shai General Hospital, Lakeside Community Hospital), people and identifiers are invented. Chart libraries: TradingView Lightweight Charts and Recharts.
+Patients come from [Synthea](https://github.com/synthetichealth/synthea) (a 3,000 person population slice is committed in `synthetic/population/`); the ED visits, feeds and faults are generated on top. The hospitals (Shai General Hospital, Lakeside Community Hospital), people and identifiers are invented. Chart libraries: [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/) and Recharts (see `NOTICE`).
+
+This project is licensed under the Apache License 2.0 (`LICENSE`).
