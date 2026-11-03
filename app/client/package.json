@@ -7,6 +7,7 @@
     "node": ">=20.6.0"
   },
   "scripts": {
+    "preinstall": "node -e \"const [a,b]=process.versions.node.split('.').map(Number);if(a<20||(a===20&&b<6)){console.error('This app needs Node.js 20 or later (22 recommended); you have '+process.version+'. Install it from https://nodejs.org or with nvm (nvm use reads .nvmrc).');process.exit(1)}\"",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:demo": "tsc -b && VITE_DEMO=static vite build",

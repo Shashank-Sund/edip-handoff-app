@@ -1,72 +1,95 @@
-# Set up in your own workspace
+# Deploy to your Databricks workspace
 
-Everything on the Databricks side is one Declarative Automation Bundle (`databricks.yml`). A deploy gives you the same app, data, pipeline, jobs and database as the reference workspace, from an empty catalog.
+This guide takes you from a fresh clone to the running app in your own workspace. You type three commands; the rest runs by itself for about 90 minutes and costs about 1 to 2 USD. Everything is synthetic data, so nothing here touches real patients.
 
-## What gets deployed
+**In a hurry?** Steps 1 to 3 are all you need. The rest of the page is reference.
 
-| Piece | What it is | Where |
+## 1. Check you have what you need (5 minutes)
+
+| You need | How to check | If not |
 | --- | --- | --- |
-| Catalog and schemas | `bronze` (raw feeds), `silver` (parsed), `gold` (drafts), `synthetic_truth` (the generator's answer key) | `<catalog>` (default `edip`) |
-| Synthetic data | One week, 700 ED visits, 120 admissions, two invented hospitals, rendered as HL7 v2, Redox FHIR and Clarity tables | `<catalog>.bronze.*`, volume `<catalog>.bronze.landing` |
-| Pipeline `edip-pipeline-<target>` | Lakeflow declarative pipeline, serverless, triggered: bronze to silver and gold | `pipelines/` |
-| Job `edip-handoff-generator-<target>` | Writes a draft handoff at every admit decision and meaningful change, with a model | `jobs/handoff_job.py`, `ai/` |
-| Job `edip-setup-<target>` | Runs everything above in order, then syncs to Lakebase | `jobs/setup_*.py` |
-| Lakebase project `<lakebase_project>` | Postgres (Lakebase Autoscaling): synced drafts and encounters, and the app's action log (schema `app`) | `databricks.yml` |
-| App `<app_name>` | FastAPI and React; reads and writes Lakebase | `app/` |
-| Job `edip-nightly-shutdown-<target>` | Stops this deployment's app and pipeline at 01:00 Pacific every night (nothing else) | `scripts/demo_ctl.py` |
+| A Databricks workspace with Unity Catalog, serverless compute, Databricks Apps and Lakebase | The left menu shows **Catalog**, **Compute > Apps** and **Lakebase** (or **Compute > Database**) | A free trial workspace has all of these |
+| Permission to create a catalog, apps, Lakebase projects and jobs | Workspace admins have it; ask yours otherwise | Ask an admin, or use an existing catalog (step 3, "Your own names") |
+| The Databricks CLI, version 1.23 or later | `databricks --version` | macOS: `brew tap databricks/tap && brew install databricks`. Others: [install the CLI](https://docs.databricks.com/dev-tools/cli/install.html) |
+| Python 3 and git | `python3 --version`, `git --version` | Install from python.org and git-scm.com |
+| A chat model in Serving | **Serving** lists `databricks-gpt-oss-120b` | Any chat endpoint works; note its name for step 3 |
 
-## Requirements
-
-- A Databricks workspace with Unity Catalog, serverless jobs and pipelines, Databricks Apps and Lakebase Autoscaling. Workspaces on the free trial have all of these.
-- A chat model endpoint. The default is the pay per token `databricks-gpt-oss-120b`; any chat endpoint works (`--var model=<endpoint>`).
-- Permissions: `CREATE CATALOG` on the metastore (or an existing catalog where you have `USE CATALOG` and `CREATE SCHEMA`), create apps, create Lakebase projects, and run jobs. The optional Zerobus path also needs permission to create a service principal.
-- The Databricks CLI 1.23 or later, logged in: `databricks auth login --host <workspace-url> --profile <name>`, then `export DATABRICKS_CONFIG_PROFILE=<name>`.
-- A SQL warehouse, only if the catalog does not exist yet. With Default Storage, `CREATE CATALOG` in SQL needs nothing else; without it, give a storage location (`EDIP_CATALOG_LOCATION=s3://...` for `deploy.sh`, or `MANAGED LOCATION` in SQL).
-- One deployment per name: the app name, the Lakebase project id and the catalog are global in a workspace. If someone already deployed this app in your workspace, pick your own, for example `--var app_name=edip-handoff-ana --var lakebase_project=edip-ana --var catalog=edip_ana`.
-
-## Option A: one command
+## 2. Log in and get the code (2 minutes)
 
 ```bash
-git clone <this repo> && cd edip-handoff-app
-scripts/deploy.sh dev                       # or: scripts/deploy.sh dev --var catalog=my_catalog
+databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile edip
+export DATABRICKS_CONFIG_PROFILE=edip
+git clone https://github.com/Shashank-Sund/edip-handoff-app.git
+cd edip-handoff-app
 ```
 
-It takes about two hours, almost all of it the model: about 430 calls (one per admit decision or meaningful change, each writing all three templates, about 1,300 drafts), two at a time. The model calls cost about 1 USD at list price; serverless compute about the same.
+The login opens your browser; sign in and come back. `export` tells every later command which workspace to use (run it again in any new terminal).
 
-## Option B: step by step (CLI, or the workspace UI)
+## 3. Deploy (one command, about 90 minutes)
 
-**0. Catalog.** If the catalog does not exist, run in a SQL editor or notebook:
-
-```sql
-CREATE CATALOG IF NOT EXISTS edip;                                   -- workspaces with Default Storage
-CREATE CATALOG IF NOT EXISTS edip MANAGED LOCATION 's3://<bucket>/edip'; -- otherwise
-```
-
-(To use another name, pass `--var catalog=<name>` to every command below.)
-
-**1. Deploy the bundle.** Creates the Lakebase project, the pipeline, the jobs and the app (no data yet).
+First a 10 second check that finds problems before anything runs or costs money:
 
 ```bash
-databricks bundle deploy -t dev
+scripts/deploy.sh dev --check
 ```
 
-In the workspace UI: open the repo as a Git folder, open `databricks.yml`, choose **Deploy**.
-
-**2. Run the setup job.** Generates the data, runs the pipeline with a full refresh, drafts every handoff, and creates the Lakebase synced tables and the app's read access.
+It ends with `Preflight passed`, or with `STOP:` and what to do. Then deploy:
 
 ```bash
-databricks bundle run edip_setup -t dev
+scripts/deploy.sh dev
 ```
 
-In the UI: **Deployments > edip_setup > Run**. If one task fails, fix the cause and use **Repair run**; finished tasks are not repeated.
+If your workspace does not have `databricks-gpt-oss-120b`, add `--var model=<your endpoint>` to both commands.
 
-**3. Start the app.** Builds the client, installs the server and starts it. Do this after step 2 finishes: before that the app starts but shows "data not loaded yet".
+**What you will see:**
+
+1. `0/3 catalog`: creates the catalog `edip` (seconds).
+2. `1/3 bundle deploy`: creates the database, pipeline, jobs and app (about a minute).
+3. `2/3 setup job`: prints a **Run URL** and then waits. Open the URL to watch four tasks turn green: `data` (about 7 minutes), `pipeline` (about 4), `handoffs` (about 75, the model writes every handoff) and `lakebase` (about 3). You can close the terminal: the job keeps running in Databricks. If you do, start the app yourself when it finishes (step 4 of the step by step section below).
+4. `3/3 app`: builds and starts the app and prints its URL (a few minutes).
+
+**Open the URL**, then read **How to use** in the app's left menu. It walks you through your first five minutes.
+
+### Your own names (shared workspaces)
+
+The app name, the Lakebase project and the catalog must be unique in a workspace. If someone already deployed this app in yours, or you want to use an existing catalog, pick your own and pass them to every command:
 
 ```bash
-databricks bundle run edip_app -t dev
+scripts/deploy.sh dev --var app_name=edip-handoff-ana --var lakebase_project=edip-ana --var catalog=edip_ana
 ```
 
-The command prints the app's URL; it is also under **Compute > Apps**. Open it, then read **How to use** in the app.
+## Check it worked
+
+- The job's last task, `lakebase`, ends with `702 encounters, 1320 drafts in Lakebase` (about 1,300 drafts).
+- The app opens on the **Board** with patients waiting for a bed. Open one, sign it, switch roles to the receiving unit in the menu at the bottom left, and accept it.
+- `<app URL>/api/health` shows `"status": "ok"` and `"mode": "live"`.
+
+## Other ways to deploy
+
+### Step by step (the same as the script)
+
+```bash
+# 0. Catalog (skip if it exists). In a SQL editor or with the CLI:
+#    CREATE CATALOG IF NOT EXISTS edip;
+#    (Workspaces without Default Storage: add MANAGED LOCATION 's3://<bucket>/edip')
+databricks bundle deploy -t dev                 # 1. resources, no data yet
+databricks bundle run edip_setup -t dev         # 2. data, pipeline, drafts, Lakebase (about 90 minutes)
+databricks bundle run edip_app -t dev           # 3. start the app; prints its URL
+```
+
+Add the same `--var` flags to each command if you use any. Start the app only after step 2 finishes; before that it opens but shows "data not loaded yet".
+
+### From the workspace, without a terminal
+
+1. **Workspace > Create > Git folder**, paste `https://github.com/Shashank-Sund/edip-handoff-app`, create it.
+2. Create the catalog: open a SQL editor and run `CREATE CATALOG IF NOT EXISTS edip;`.
+3. In the Git folder, open `databricks.yml` and choose **Deploy** (the deployments panel on the left).
+4. In the same panel, run **edip_setup** and wait for it to finish (about 90 minutes; **Jobs** shows the progress).
+5. Run **edip_app**. The app's URL is under **Compute > Apps**.
+
+### With an AI assistant
+
+Open the repo in Genie Code, Claude Code or similar and say "deploy this app". `AGENTS.md` tells the assistant the steps and what to confirm with you first.
 
 ## Settings
 
@@ -75,43 +98,45 @@ The command prints the app's URL; it is also under **Compute > Apps**. Open it, 
 | `catalog` | `edip` | Catalog for all tables |
 | `lakebase_project` | `edip` | Lakebase project id |
 | `app_name` | `edip-handoff` | App name, unique in the workspace |
-| `model` | `databricks-gpt-oss-120b` | Chat endpoint for the narrative |
+| `model` | `databricks-gpt-oss-120b` | Chat endpoint that writes the narrative |
 | `population` | `synthea` | `synthea`: the committed Synthea population (the reference dataset); `standin`: the built in population |
 | `fhir_mode` | `batch` | `batch`: load FHIR events during setup; `zerobus`: stream them yourself ([zerobus.md](zerobus.md)) |
 
-Set them per command (`--var model=databricks-claude-sonnet-5-5`) or per target in `databricks.yml`. The `cleanroom` target is an example of a second, independent copy in the same workspace.
+Pass them per command (`--var model=databricks-claude-sonnet-5-5`) or set them per target in `databricks.yml`. The `cleanroom` target is an example of a second, independent copy in the same workspace.
 
-App settings (in `databricks.yml` under the app's `config.env`): `EDIP_SYNTHETIC_DATA` (`true` for this synthetic data; set it to `false` before any real patient data), `EDIP_CLOCK_MODE` (`replay` shows the synthetic week; `live` uses the current time; replay works only with synthetic data), `EDIP_DEMO_PERSONAS` (`true` lets anyone switch roles, synthetic data only; `false` maps signed in users to roles with `EDIP_ROLE_MAP`, and anyone not in it can only read). Before using real data, read [feature-status.md](feature-status.md).
+App settings live in `databricks.yml` under the app's `config.env`:
 
-## Check it worked
-
-- The setup run's last task prints the encounter and draft counts in Lakebase (702 encounters and about 1,300 drafts, from about 430 model calls).
-- The app's `/api/health` shows `"mode": "live"` and the same counts.
-- On the Board, the clock opens on the busiest hour; open a patient and switch personas to sign and accept a handoff.
+- `EDIP_SYNTHETIC_DATA`: `true` for this synthetic data. Set it to `false` before any real patient data, and read [feature-status.md](feature-status.md) first.
+- `EDIP_CLOCK_MODE`: `replay` shows the synthetic week with a clock you can move; `live` uses the current time (for real feeds).
+- `EDIP_DEMO_PERSONAS`: `true` lets anyone switch roles (synthetic data only). `false` maps signed in users to roles with `EDIP_ROLE_MAP`; anyone not in the map can only read.
 
 ## Day to day
 
-- **Costs.** Everything scales to zero except a running app. `python scripts/demo_ctl.py status|up|down` lists, starts or stops this project's apps, pipelines and warehouses; the nightly job runs `down` at 01:00.
-- **Regenerate drafts** (for example after changing a template or the model): run `edip-handoff-generator-<target>`. It skips drafts that already exist; delete `gold.handoff_draft` rows first to redo them. It refreshes Lakebase when it finishes.
-- **Live updates** (optional): the handoff job has a trigger on `<catalog>.silver.handoff_events`, paused by default so a deploy never starts model calls by itself. With new data arriving (for example through Zerobus, [zerobus.md](zerobus.md)) and the pipeline running, unpause it under **Jobs > edip-handoff-generator-<target> > Schedules and triggers**: the job then drafts only the new admit decisions and changes, at most every 5 minutes, and refreshes Lakebase. Set the app's `EDIP_CLOCK_MODE` to `live` to show the current time instead of the replayed week. Pause it again to stop model spend.
+- **Costs.** Everything scales to zero except a running app. A job stops this deployment's app and pipeline at 01:00 Pacific every night. To start it again: `databricks apps start edip-handoff` (or **Compute > Apps > edip-handoff > Start**); `databricks apps stop edip-handoff` stops it.
+- **Redraft handoffs** (after changing a template or the model): run the job `edip-handoff-generator-dev`. It skips drafts that exist, so delete the rows in `gold.handoff_draft` first to redo them. It refreshes Lakebase when it finishes.
+- **Live updates.** The handoff job has a trigger on `<catalog>.silver.handoff_events`, paused so a deploy never starts model calls by itself. With new data arriving (for example through Zerobus) and the pipeline running, unpause it under **Jobs > edip-handoff-generator-dev > Schedules and triggers**: it then drafts only new admit decisions and changes, at most every 5 minutes. Set `EDIP_CLOCK_MODE` to `live` too. Pause it again to stop model spend.
 - **Change the code**: `databricks bundle deploy -t dev`, then `databricks bundle run edip_app -t dev` for app changes.
+- In the workspace, jobs and pipelines of the `dev` target show with a `[dev <your name>]` prefix; that is normal for development targets.
 
 ## Remove it
 
 ```bash
-databricks bundle destroy -t dev
+scripts/remove.sh dev                  # app, database, jobs, pipeline; keeps the catalog and its tables
+scripts/remove.sh dev --drop-catalog   # also deletes the catalog edip and all its tables
 ```
 
-This deletes the jobs, pipeline, app and Lakebase project (Lakebase keeps a deleted project for 7 days, so reuse of the same project id may wait). The synced tables are made by the setup job, not the bundle, so delete them first: `python jobs/setup_lakebase.py --catalog <catalog> --project <project> --app <app> --delete` (or delete `gold.encounter_state_pg` and `gold.handoff_draft_pg` in Catalog Explorer). The catalog and its tables stay; drop them with `DROP CATALOG <catalog> CASCADE`.
+Pass the same `--var` flags you deployed with. It lists what it will delete and asks you to type `yes`. Lakebase keeps a deleted project for 7 days, so to deploy again right away use another `--var lakebase_project=...`.
 
 ## Troubleshooting
 
-| Symptom | Cause and fix |
+| What you see | Cause and fix |
 | --- | --- |
-| `Catalog ... does not exist` on deploy | Step 0 was skipped. Create the catalog, then deploy again. |
-| `Metastore storage root URL does not exist` | Create the catalog with SQL (step 0), not the API; SQL uses Default Storage. |
-| Setup task `lakebase`: role for the app does not exist | The app was not deployed with its postgres resource. Run `bundle deploy` again, then Repair run. |
-| Handoff job slow, HTTP 429 in the log | Pay per token endpoints are rate limited per workspace. The client retries rate limited calls; a few failed points are tolerated and redone by the next run (it skips finished points). For more throughput use a provisioned throughput endpoint. |
-| Model endpoint not found (the handoff job stops at once) | Your region lacks the default model. Pass `--var model=<an endpoint in Serving>`. |
-| `app already exists` or `project already exists` on deploy | Someone deployed with the same names. Pass your own `app_name`, `lakebase_project` and `catalog`. |
-| App shows an error page | **Compute > Apps > <app> > Logs**. Most often Lakebase is not synced yet: finish the setup job. |
+| `STOP: ...` from `deploy.sh` | The preflight found a problem; the message says what to do. Nothing was created. |
+| `Catalog ... does not exist` on deploy | The catalog step was skipped. Create it (step 0 above), then deploy again. |
+| `Metastore storage root URL does not exist` | Create the catalog with SQL, not the API; SQL uses Default Storage. Without Default Storage, give a location: `EDIP_CATALOG_LOCATION=s3://... scripts/deploy.sh dev`. |
+| `app already exists` or `project already exists` | Someone used the same names. Pass your own (step 3, "Your own names"). |
+| Setup task `lakebase`: role for the app does not exist | The app was not deployed with its database binding. Run `databricks bundle deploy -t dev` again, then **Repair run** on the job. |
+| A setup task failed | Open the Run URL, read the task's error, fix the cause and choose **Repair run**: finished tasks are not repeated. |
+| Handoff task slow, HTTP 429 in its log | Pay per token endpoints are rate limited. The job retries and tolerates a few failures; the next run redoes them. For more speed use a provisioned throughput endpoint. |
+| App shows "data not loaded yet" | The setup job has not finished. The app checks again every 30 seconds. |
+| App shows an error page | **Compute > Apps > <app> > Logs**. |

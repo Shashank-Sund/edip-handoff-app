@@ -4,20 +4,37 @@
 #   scripts/deploy.sh [target] [--var name=value ...]
 #   scripts/deploy.sh dev
 #   scripts/deploy.sh dev --var catalog=my_catalog --var app_name=my-handoff
+#   scripts/deploy.sh dev --check        # only the preflight checks (seconds, no compute)
 #
 # Needs the Databricks CLI (1.23 or later) logged in to the workspace (DATABRICKS_CONFIG_PROFILE or a default
 # profile). Steps: 0 create the catalog if missing (SQL, so Default Storage works), 1 deploy the bundle,
-# 2 run the setup job (about 2 hours: data, pipeline, model drafts, Lakebase sync), 3 build and start the app.
+# 2 run the setup job (about 90 minutes: data, pipeline, model drafts, Lakebase sync), 3 build and start the app.
 # Safe to re-run: every step is idempotent; step 2 regenerates the data and the drafts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 target="${1:-dev}"
 [ $# -gt 0 ] && shift
-extra=("$@")
+check_only=false; extra=()
+for arg in "$@"; do if [ "$arg" = "--check" ]; then check_only=true; else extra+=("$arg"); fi; done
 
-catalog="$(databricks bundle validate -t "$target" "${extra[@]+"${extra[@]}"}" -o json |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["variables"]["catalog"]["value"])')"
-echo "== target $target, catalog $catalog"
+# Preflight: stop in seconds, before any compute, with the fix for each problem.
+fail() { echo "STOP: $*" >&2; exit 1; }
+command -v databricks >/dev/null || fail "the Databricks CLI is not installed. Install it: https://docs.databricks.com/dev-tools/cli/install.html (macOS: brew tap databricks/tap && brew install databricks)"
+command -v python3 >/dev/null || fail "python3 is not installed (any Python 3 works for this script)."
+cli="$(databricks --version | sed -E 's/[^0-9]*([0-9]+)\.([0-9]+).*/\1 \2/')"
+read -r major minor <<<"$cli"
+{ [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 23 ]; }; } ||
+  fail "Databricks CLI $(databricks --version) is too old; 1.23 or later is needed. Upgrade it (macOS: brew upgrade databricks)."
+me="$(databricks current-user me -o json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["userName"])' 2>/dev/null)" ||
+  fail "the CLI is not logged in to a workspace. Run: databricks auth login --host <workspace URL> --profile <name>, then export DATABRICKS_CONFIG_PROFILE=<name>"
+vars="$(databricks bundle validate -t "$target" "${extra[@]+"${extra[@]}"}" -o json)" ||
+  fail "the bundle does not validate (see the message above). Check the target name and the --var flags."
+var() { echo "$vars" | python3 -c 'import json,sys; print(json.load(sys.stdin)["variables"][sys.argv[1]]["value"])' "$1"; }
+catalog="$(var catalog)"; model="$(var model)"; app="$(var app_name)"
+databricks serving-endpoints get "$model" >/dev/null 2>&1 ||
+  fail "the model endpoint $model is not in this workspace (Serving lists the ones you have). Re-run with --var model=<a chat endpoint from Serving>."
+echo "== target $target as $me: catalog $catalog, app $app, model $model"
+if $check_only; then echo "Preflight passed. Run the same command without --check to deploy."; exit 0; fi
 
 echo "== 0/3 catalog"
 if databricks catalogs get "$catalog" >/dev/null 2>&1; then
@@ -55,7 +72,7 @@ fi
 echo "== 1/3 bundle deploy"
 databricks bundle deploy -t "$target" "${extra[@]+"${extra[@]}"}"
 
-echo "== 2/3 setup job (about 2 hours)"
+echo "== 2/3 setup job (about 90 minutes; the Run URL below shows progress, and the job keeps running if you close this terminal)"
 databricks bundle run edip_setup -t "$target" "${extra[@]+"${extra[@]}"}"
 
 echo "== 3/3 app"

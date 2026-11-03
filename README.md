@@ -13,17 +13,22 @@ When the emergency department decides to admit a patient, this app drafts the ha
 
 ## Deploy it
 
+Needs the Databricks CLI 1.23 or later, logged in to your workspace, and Python 3. From a clone of this repo:
+
 ```bash
 export DATABRICKS_CONFIG_PROFILE=<your profile>
-scripts/deploy.sh dev
+scripts/deploy.sh dev --check     # 10 seconds: checks the CLI, login and model, creates nothing
+scripts/deploy.sh dev             # about 90 minutes, about 1 to 2 USD
 ```
 
-One bundle deploys the Lakebase database, the pipeline, the jobs and the app, then generates a synthetic week, drafts every handoff and starts the app (about two hours, about 2 USD). Step by step, requirements and settings: [docs/setup.md](docs/setup.md). AI agents: [AGENTS.md](AGENTS.md).
+One bundle deploys the Lakebase database, the pipeline, the jobs and the app, then generates a synthetic week, drafts every handoff and starts the app. A first time guide, other ways to deploy (workspace UI, AI assistant), settings and troubleshooting: [docs/setup.md](docs/setup.md). AI agents: [AGENTS.md](AGENTS.md).
 
 ## Try it without Databricks
 
+Needs Python 3.11 or later and Node.js 22 (20.19 or later also works; check with `node --version`; with nvm, `nvm use` reads `.nvmrc`). About 5 minutes.
+
 ```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cd synthetic && ../.venv/bin/python -m edip_synth --out out/world --synthea population/synthea_3000.json.gz && cd ..
 for f in hl7 fhir clarity; do (cd synthetic && ../.venv/bin/python -m edip_synth.render.$f --truth out/world/truth --out out/world); done
 .venv/bin/python app/fixtures/build.py
