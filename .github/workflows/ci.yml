@@ -16,3 +16,19 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Unit tests (local only, no Databricks credentials)
         run: pytest -q
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/client/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx vite build --outDir dist

@@ -1,0 +1,157 @@
+import { Activity, BedDouble, Bot, FileCheck2 } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartContainer, ChartLegend, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
+import { Layout } from '@/components/layout/Layout';
+import { Stat } from '@/components/common/Stat';
+import { ErrorState, PageSkeleton } from '@/components/common/states';
+import { TimeChart } from '@/components/charts/TimeChart';
+import { useApp } from '@/hooks/useApp';
+import { useLoad } from '@/hooks/useLoad';
+import { api } from '@/lib/api';
+import { dateTime, duration, pct } from '@/lib/format';
+
+const unitConfig: ChartConfig = {
+  median_min: { label: 'Median', color: 'var(--series-1)' },
+  p90_min: { label: '90th percentile', color: 'var(--series-1)' },
+};
+const histConfig: ChartConfig = { n: { label: 'Handoffs', color: 'var(--series-3)' } };
+
+function Panel({ title, description, children, className }: { title: string; description?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <Card className={className}>
+      <CardHeader className="pb-2 sm:pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        {description && <CardDescription className="text-xs">{description}</CardDescription>}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+export default function Analytics() {
+  const { at, version } = useApp();
+  const { data, error } = useLoad(() => api.analytics(at), [at, version]);
+  const title = 'Analytics';
+  if (error && !data) return <Layout title={title}><ErrorState message={error} /></Layout>;
+  if (!data) return <Layout title={title}><PageSkeleton /></Layout>;
+  const sev = data.severity_at_transfer;
+  const units = data.units.filter((u) => u.n > 0);
+  const total = Object.values(sev).reduce((a, b) => a + b, 0);
+  const peak = data.series.reduce((m, p) => (p.boarding > m.boarding ? p : m), data.series[0] ?? { boarding: 0, t: at, ed: 0 });
+  return (
+    <Layout title={title} crumbs={`The reference week through ${dateTime(at)}`}>
+      <div className="space-y-5 sm:space-y-6">
+        <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <Stat label="Admitted from the ED" value={data.admitted} icon={<BedDouble />} hint="Transferred to an inpatient or observation bed" />
+          <Stat label="Peak boarding" value={peak.boarding} icon={<Activity />} hint={peak.boarding ? `at ${dateTime(peak.t)}` : 'No boarding yet'} />
+          <Stat label="Median completeness" value={pct(data.completeness_at_transfer.median)} icon={<FileCheck2 />} hint="Model draft at transfer, before clinician edits" />
+          <Stat label="Model calls" value={data.model_calls} icon={<Bot />} hint={`${data.drafts} drafts across 3 templates; ${data.addenda} addenda after transfer`} />
+        </section>
+
+        <Panel title="ED census and boarding" description="Patients in the ED and patients boarding (admit decision made, still in the ED), hourly.">
+          <TimeChart
+            ariaLabel="ED census and boarding by hour"
+            height={300}
+            lines={[
+              { key: 'ed', label: 'In the ED', color: 'var(--series-1)', area: true, data: data.series.map((p) => ({ t: p.t, v: p.ed })), points: false, format: (v) => String(Math.round(v)) },
+              { key: 'boarding', label: 'Boarding', color: 'var(--series-2)', data: data.series.map((p) => ({ t: p.t, v: p.boarding })), points: false, format: (v) => String(Math.round(v)) },
+            ]}
+          />
+          <p className="mt-3 text-xs text-muted-foreground">
+            {data.series.length
+              ? `Over ${Math.round(data.series.length / 24)} days the ED held up to ${Math.max(...data.series.map((p) => p.ed))} patients at once, and up to ${peak.boarding} were boarding.`
+              : 'The week has not started yet.'}
+          </p>
+        </Panel>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Panel title="Boarding time by destination" description="Admit decision to leaving the ED, patients transferred so far.">
+            {units.length ? (
+              <>
+                <ChartContainer config={unitConfig} className="h-64">
+                  <BarChart data={units} margin={{ left: 4, right: 8, top: 8 }} barGap={2}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="unit" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
+                    <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => `${Math.round(v / 60)} h`} />
+                    <ChartTooltip cursor content={<ChartTooltipContent formatter={(v) => duration(v)} labelFormatter={(l, p) => `${l} (${(p[0]?.payload as { n: number })?.n ?? 0} patients)`} />} />
+                    <Bar dataKey="median_min" fill="var(--color-median_min)" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                    <Bar dataKey="p90_min" fill="var(--color-p90_min)" fillOpacity={0.35} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                  </BarChart>
+                </ChartContainer>
+                <ChartLegend keys={['median_min', 'p90_min']} config={unitConfig} className="mt-2" />
+              </>
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">No transfers yet.</p>
+            )}
+          </Panel>
+
+          <Panel title="What blocked sign off at transfer" description="Required items missing from the model draft, so the clinician had to attest or write them.">
+            {data.blocking_at_transfer.length ? (
+              <ul className="space-y-3 pt-2">
+                {data.blocking_at_transfer.map((b) => {
+                  const max = data.blocking_at_transfer[0].n || 1;
+                  return (
+                    <li key={b.label} className="grid grid-cols-[9rem_1fr_2.5rem] items-center gap-3 text-sm">
+                      <span className="truncate text-muted-foreground" title={b.label}>
+                        {b.label}
+                      </span>
+                      <span className="h-2.5 rounded-full bg-muted" aria-hidden>
+                        <span className="block h-2.5 rounded-full bg-[var(--series-4)]" style={{ width: `${(b.n / max) * 100}%` }} />
+                      </span>
+                      <span className="text-right font-medium tabular-nums">{b.n}</span>
+                    </li>
+                  );
+                })}
+                <li className="pt-1 text-xs text-muted-foreground">
+                  Out of {data.admitted} transfers. Most are documentation gaps the clinician closes with one tap (for example "No known allergies confirmed"); stale vitals need a recheck.
+                </li>
+              </ul>
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">No transfers yet.</p>
+            )}
+          </Panel>
+
+          <Panel title="Completeness at transfer" description="Share of the template's rules the model draft met on its own.">
+            <ChartContainer config={histConfig} className="h-56">
+              <BarChart data={data.completeness_at_transfer.histogram} margin={{ left: 4, right: 8, top: 8 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="bin" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
+                <YAxis tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+                <ChartTooltip cursor content={<ChartTooltipContent hideIndicator />} />
+                <Bar dataKey="n" fill="var(--color-n)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+              </BarChart>
+            </ChartContainer>
+          </Panel>
+
+          <Panel title="Illness severity at transfer" description="Final draft severity: rule floor raised by the model when it judged higher.">
+            {total ? (
+              <div className="space-y-5 pt-3">
+                <div className="flex h-4 overflow-hidden rounded-full bg-muted" role="img" aria-label={(['stable', 'watcher', 'unstable'] as const).map((k) => `${k} ${sev[k] ?? 0}`).join(', ')}>
+                  {(['stable', 'watcher', 'unstable'] as const).map((k) => (
+                    <div key={k} className="h-full border-r-2 border-card last:border-r-0" style={{ width: `${((sev[k] ?? 0) / total) * 100}%`, background: `var(--sev-${k})` }} />
+                  ))}
+                </div>
+                <dl className="grid grid-cols-3 gap-3">
+                  {(['stable', 'watcher', 'unstable'] as const).map((k) => (
+                    <div key={k} className="rounded-lg border px-3 py-3">
+                      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="size-2 rounded-full" style={{ background: `var(--sev-${k})` }} aria-hidden />
+                        {k[0].toUpperCase() + k.slice(1)}
+                      </dt>
+                      <dd className="mt-1 text-2xl font-semibold tabular-nums">{sev[k] ?? 0}</dd>
+                      <dd className="text-xs text-muted-foreground tabular-nums">{pct((sev[k] ?? 0) / total)} of transfers</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-xs text-muted-foreground">Severity is never lower than the rule floor (critical results, ICU level, shock range vitals, ESI 1 or 2); the model can only raise it.</p>
+              </div>
+            ) : (
+              <p className="py-10 text-center text-sm text-muted-foreground">No transfers yet.</p>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </Layout>
+  );
+}

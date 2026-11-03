@@ -1,0 +1,230 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens follow the shadcn/ui CSS variable convention (MIT licensed,
+ * https://github.com/shadcn-ui/ui). Neutral zinc surfaces with one clinical
+ * blue accent. Severity and workflow colors are separate tokens and are never
+ * the only signal: every chip also carries an icon and a word.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 286);
+  --foreground: oklch(0.21 0.006 285.885);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.006 285.885);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.006 285.885);
+  --primary: oklch(0.5 0.14 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.955 0.002 286.375);
+  --muted-foreground: oklch(0.5 0.016 285.938);
+  --accent: oklch(0.955 0.01 250);
+  --accent-foreground: oklch(0.3 0.08 250);
+  --destructive: oklch(0.55 0.22 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.915 0.004 286.32);
+  --input: oklch(0.88 0.004 286.32);
+  --ring: oklch(0.55 0.14 250);
+  --shadow-card: 0 1px 2px 0 oklch(0.2 0.01 286 / 0.05), 0 1px 3px 0 oklch(0.2 0.01 286 / 0.04);
+  /*
+   * Chart tokens. Categorical slots in a fixed order (validated for CVD separation on
+   * adjacent pairs in both themes); the benchmark is a neutral gray. Diverging scales
+   * run red (negative) through a neutral gray to blue (positive).
+   */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  --series-bench: #8b8a94;
+  --chart-grid: oklch(0.94 0.003 286);
+  --chart-axis: oklch(0.55 0.012 286);
+  --chart-sma50: oklch(0.45 0.01 286);
+  --chart-sma200: oklch(0.62 0.01 286);
+  --chart-volume: oklch(0.82 0.008 286);
+  --chart-highlight: oklch(0.6 0.2 27 / 0.1);
+  --up: #0ca30c;
+  --down: #d03b3b;
+  --positive: oklch(0.5 0.14 150);
+  --negative: oklch(0.52 0.19 27);
+  --div-pos: #1c5cab;
+  --div-neg: #c53030;
+  --div-mid: #f0efec;
+  --sidebar: oklch(0.975 0.003 286);
+  --sev-stable: oklch(0.52 0.13 155);
+  --sev-watcher: oklch(0.6 0.14 70);
+  --sev-unstable: oklch(0.55 0.2 27);
+  --state-draft: oklch(0.55 0.012 286);
+  --state-signed: oklch(0.5 0.14 250);
+  --state-ack: oklch(0.52 0.13 155);
+  --flag: oklch(0.62 0.15 70);
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(0.16 0.005 285.823);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.2 0.006 285.885);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.22 0.006 285.885);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.72 0.12 250);
+  --primary-foreground: oklch(0.2 0.05 250);
+  --secondary: oklch(0.27 0.006 286.033);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.25 0.006 286.033);
+  --muted-foreground: oklch(0.72 0.015 286.067);
+  --accent: oklch(0.29 0.03 250);
+  --accent-foreground: oklch(0.92 0.04 250);
+  --destructive: oklch(0.7 0.19 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.68 0.12 250);
+  --shadow-card: 0 1px 2px 0 oklch(0 0 0 / 0.3);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-bench: #8e8d98;
+  --chart-grid: oklch(1 0 0 / 7%);
+  --chart-axis: oklch(0.7 0.012 286);
+  --chart-sma50: oklch(0.85 0.01 286);
+  --chart-sma200: oklch(0.65 0.01 286);
+  --chart-volume: oklch(0.38 0.008 286);
+  --chart-highlight: oklch(0.7 0.19 22 / 0.09);
+  --up: #0ca30c;
+  --down: #e66767;
+  --positive: oklch(0.76 0.15 150);
+  --negative: oklch(0.74 0.15 22);
+  --div-pos: #256abf;
+  --div-neg: #b83232;
+  --div-mid: #303036;
+  --sidebar: oklch(0.18 0.005 285.823);
+  --sev-stable: oklch(0.76 0.13 155);
+  --sev-watcher: oklch(0.8 0.13 80);
+  --sev-unstable: oklch(0.72 0.16 25);
+  --state-draft: oklch(0.72 0.015 286);
+  --state-signed: oklch(0.74 0.12 250);
+  --state-ack: oklch(0.76 0.13 155);
+  --flag: oklch(0.8 0.13 80);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sev-stable: var(--sev-stable);
+  --color-sev-watcher: var(--sev-watcher);
+  --color-sev-unstable: var(--sev-unstable);
+  --color-state-draft: var(--state-draft);
+  --color-state-signed: var(--state-signed);
+  --color-state-ack: var(--state-ack);
+  --color-flag: var(--flag);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --shadow-card: var(--shadow-card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.75;
+  }
+}
+
+/* Motion: only animate when the user has not asked for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes enter-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes enter-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  .animate-enter {
+    animation: enter-rise 260ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  .animate-fade {
+    animation: enter-fade 200ms ease-out both;
+  }
+  .popover-content[data-state='open'] {
+    animation: enter-fade 120ms ease-out;
+  }
+  .sheet-overlay[data-state='open'] {
+    animation: enter-fade 160ms ease-out;
+  }
+  @keyframes sheet-in-right {
+    from {
+      transform: translateX(16px);
+      opacity: 0;
+    }
+  }
+  @keyframes sheet-in-left {
+    from {
+      transform: translateX(-16px);
+      opacity: 0;
+    }
+  }
+  .sheet-content[data-side='right'][data-state='open'] {
+    animation: sheet-in-right 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .sheet-content[data-side='left'][data-state='open'] {
+    animation: sheet-in-left 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .tooltip-content[data-state='delayed-open'] {
+    animation: enter-fade 120ms ease-out;
+  }
+}
