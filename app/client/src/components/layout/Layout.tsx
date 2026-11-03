@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ClockControl } from './ClockControl';
 import { SidebarBody } from './Sidebar';
 import { HelpButton } from '@/components/guide/HelpButton';
+import { DemoBanner } from '@/demo/Banner';
 
 const KEY = 'edip.sidebar';
 
@@ -35,6 +36,7 @@ export function Layout({ title, crumbs, actions, help, children }: { title: Reac
         </SheetContent>
       </Sheet>
       <div className={cn('flex min-h-dvh flex-col transition-[padding] duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-60')}>
+        {__STATIC_DEMO__ && <DemoBanner />}
         <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-6">
           <Button variant="ghost" size="icon-sm" className="-ml-1 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu />

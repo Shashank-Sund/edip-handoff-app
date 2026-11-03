@@ -2,6 +2,8 @@
 
 When the emergency department decides to admit a patient, this app drafts the handoff from the chart, as an SBAR for nurses, an I-PASS for physicians and a short Joint Commission minimum. The ED clinician reviews, edits and signs it; the receiving unit accepts it with a read back. Every statement the model writes cites the chart record it came from. All data is synthetic.
 
+**Live demo:** [d16hyap5wh4fcn.cloudfront.net](https://d16hyap5wh4fcn.cloudfront.net). It runs entirely in your browser on the reference week's real model drafts (no Databricks, nothing sent anywhere); switch roles in the menu at the bottom left, sign as the ED and accept as the unit. Changes reset on reload.
+
 ![The ED boarding board: patients waiting for a bed, severity, destination, handoff state and completeness](docs/images/board.png)
 
 | A handoff, ready to review and sign | Analytics for the week |

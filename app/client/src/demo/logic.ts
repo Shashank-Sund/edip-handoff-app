@@ -1,0 +1,406 @@
+/**
+ * Port of app/server/logic.py: views computed from the read model and the clinician actions at a time `at`.
+ *
+ *   board(at, person)        patients with a handoff: boarding now, or arrived on the unit in the last 12 hours
+ *   case(csn, at, person)    one patient: every template's effective draft, its rules after resolution,
+ *                            workflow state, versions, changes
+ *   analytics(at)            census, boarding times, handoff timing and completeness across the week so far
+ *   act(...)                 validates and records an edit, attestation, sign off or acknowledgement
+ *
+ * Keep it in step with logic.py: app/fixtures/parity.py and src/demo/parity.test.ts compare the two.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { Dataset, Row } from './data';
+import { ACKS, SIGNS, sees } from './personas';
+import { cmpStr, get, HOUR, iso, isDict, median, or, pyEq, pyLen, pyRound, pyStr, strip, truthy } from './py';
+import type { Action, MemoryStore } from './workflow';
+
+const ARRIVED_WINDOW = 12 * HOUR;
+const STALE_ATTEST = ['Rechecked at bedside, unchanged'];
+const SEVERITY_RANK: Record<string, number> = { stable: 0, watcher: 1, unstable: 2 };
+
+/** A request the rules do not allow; the message is shown to the user as is. */
+export class ActionError extends Error {}
+
+// ---------------------------------------------------------------------------------------------- helpers
+function age(birth: string | null, at: number): number | null {
+  if (!birth) return null;
+  const [y, m, d] = String(birth).slice(0, 10).split('-').map(Number);
+  const t = new Date(at);
+  const [ay, am, ad] = [t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()];
+  return ay - y - (am < m || (am === m && ad < d) ? 1 : 0);
+}
+
+function elements(draft: any): Map<string, any> {
+  const out = new Map<string, any>();
+  for (const s of draft?.sections ?? []) for (const e of s.elements) out.set(e.id, e);
+  return out;
+}
+
+const STRIPPED = new Set(['src', 'sources', 'confidence', 'unsupported_numbers', 'weakly_supported_numbers', 'minutes_in_ed',
+  'minutes_boarding', 'latest_age_min']);
+
+function stripMeta(v: any): any {
+  if (isDict(v)) {
+    const out: any = {};
+    for (const [k, x] of Object.entries(v)) if (!STRIPPED.has(k)) out[k] = stripMeta(x);
+    return out;
+  }
+  if (Array.isArray(v)) return v.map(stripMeta);
+  return v;
+}
+
+function content(e: any): any {
+  if (e.kind === 'narrative') {
+    const n = or(get(e, 'narrative'), {}) as any;
+    if (Array.isArray(get(n, 'items'))) return n.items.map((i: any) => ({ text: get(i, 'text'), owner: get(i, 'owner'), due: get(i, 'due') }));
+    return e.id === 'E07' ? { value: get(n, 'value'), text: get(n, 'text') } : get(n, 'text');
+  }
+  return stripMeta(get(e, 'data'));
+}
+
+/** Python's sort by (at, recorded_ts) then a dict keyed by key(a): the latest wins, first seen order. */
+function latestBy(acts: Action[], kind: string, key: (a: Action) => string): Map<string, Action> {
+  const out = new Map<string, Action>();
+  const sorted = acts.filter((a) => a.kind === kind).sort((a, b) => a.at - b.at || a.recorded_ts - b.recorded_ts || a.seq - b.seq);
+  for (const a of sorted) out.set(key(a), a);
+  return out;
+}
+
+function clone<T>(v: T): T {
+  return structuredClone(v);
+}
+
+// ------------------------------------------------------------------------------------------ effective draft
+/**
+ * The draft as the clinician sees it: edits applied over model text, rules resolved by attestations and edits.
+ * Edits and attestations carry forward to newer versions of the same template, flagged when the model's text
+ * changed underneath an edit.
+ */
+export function effective(row: Row, acts: Action[]): any {
+  const t = row.template;
+  const mine = acts.filter((a) => a.template === t);
+  const edits = latestBy(mine, 'edit', (a) => a.element);
+  const attests = latestBy(mine, 'attest', (a) => a.rule);
+  const d = clone(row.draft);
+  const els = elements(d);
+  for (const [eid, a] of edits) {
+    const e = els.get(eid);
+    if (!truthy(e) || e.kind !== 'narrative') continue;
+    if (!('narrative' in e)) e.narrative = {};
+    const n = or(e.narrative, {}) as any;
+    e.narrative = n;
+    const model = { text: get(n, 'text'), items: get(n, 'items') };
+    if (get(a, 'items') !== null) {
+      n.items = a.items.map((i: any) => ({
+        text: i.text === undefined ? '' : i.text, owner: get(i, 'owner'), due: get(i, 'due'), sources: [], edited: true,
+      }));
+    } else {
+      n.text = or(get(a, 'text'), '');
+    }
+    n.edited = { by: a.by, at: iso(a.at), version: a.version, model_changed: a.version !== row.version && !pyEq(model, get(a, 'model_before')) };
+    n.model_text = model;
+  }
+  for (const r of d.rules ?? []) {
+    const e = els.get(r.element) ?? null;
+    if (r.status === 'stale') r.attest_options = STALE_ATTEST;
+    if (r.status === 'attest' || r.status === 'missing' || r.status === 'stale') {
+      const a = attests.get(r.rule);
+      const n = e ? (or(get(e, 'narrative'), {}) as any) : null;
+      if (a && r.status !== 'missing') {
+        r.resolution = { kind: 'attested', option: a.option, by: a.by, at: iso(a.at), version: a.version };
+      } else if (truthy(e) && e.kind === 'narrative' && truthy(get(n, 'edited')) &&
+        (truthy(strip(or(get(e.narrative, 'text'), '') as string)) || truthy(get(e.narrative, 'items')))) {
+        r.resolution = { kind: 'edited', by: e.narrative.edited.by };
+      }
+    }
+  }
+  for (const e of els.values()) { // element rules mirror the template level results
+    for (const r of get(e, 'rules') ?? []) {
+      const match = d.rules.find((x: any) => x.rule === r.rule);
+      if (match) Object.assign(r, match);
+    }
+  }
+  const judged = d.rules.filter((r: any) => r.status !== 'deferred');
+  const ok = judged.filter((r: any) => r.status === 'pass' || truthy(get(r, 'resolution')));
+  const blocking = judged
+    .filter((r: any) => (r.level === 'hard' || r.level === 'stale') && r.status !== 'pass' && !truthy(get(r, 'resolution')))
+    .map((r: any) => r.rule);
+  d.completeness = { score: pyRound(ok.length / Math.max(1, judged.length), 3), blocking, model_score: row.draft.completeness.score };
+  return d;
+}
+
+/** draft, signed or acknowledged; with who and when, and whether a newer version arrived since. */
+export function workflow(row: Row | null, acts: Action[]): any {
+  if (row === null) return { state: 'drafting' };
+  const t = row.template;
+  const byAt = (a: Action, b: Action) => a.at - b.at;
+  const signs = acts.filter((a) => a.kind === 'sign' && a.template === t).sort(byAt);
+  const acks = acts.filter((a) => a.kind === 'ack' && a.template === t).sort(byAt);
+  const out: any = { state: 'draft', version: row.version };
+  if (signs.length) {
+    const s = signs[signs.length - 1];
+    Object.assign(out, { state: 'signed', signed: { by: s.by, role: s.role, callback: get(s, 'callback'), at: iso(s.at), version: s.version } });
+    out.changed_since_signed = row.version > s.version;
+    const later = acks.filter((a) => a.at >= s.at);
+    if (later.length) {
+      const k = later[later.length - 1];
+      Object.assign(out, {
+        state: 'acknowledged',
+        acknowledged: { by: k.by, at: iso(k.at), version: k.version, readback: get(k, 'readback'), questions: get(k, 'questions') },
+      });
+      out.changed_since_acknowledged = row.version > k.version;
+    }
+  }
+  return out;
+}
+
+export function diff(old: any, next: any): any[] {
+  if (old === null || old === undefined) return [];
+  const a = elements(old), b = elements(next);
+  const out: any[] = [];
+  for (const [eid, e] of b) {
+    const before = a.has(eid) ? content(a.get(eid)) : null;
+    const after = content(e);
+    if (!pyEq(before, after)) out.push({ id: eid, label: e.label, kind: e.kind, before, after });
+  }
+  return out;
+}
+
+const pick = (o: any, keys: string[]) => Object.fromEntries(keys.map((k) => [k, get(o, k)]));
+
+// -------------------------------------------------------------------------------------------------- views
+export class Views {
+  constructor(readonly ds: Dataset, readonly store: MemoryStore) {}
+
+  private summary(csn: string, at: number, person: any): any {
+    const e = this.ds.enc.get(csn);
+    if (!e || e.admit_decision_ts === null || e.admit_decision_ts > at) return null;
+    const latest = this.ds.latestAt(csn, at);
+    const dep = e.ed_departure_ts !== null && e.ed_departure_ts <= at ? e.ed_departure_ts : null;
+    if (dep !== null && at - dep > ARRIVED_WINDOW) return null;
+    if (!latest.size) return null; // the first draft is not written yet
+    const anyRow = latest.values().next().value as Row;
+    const phase = anyRow.status === 'retracted' ? 'canceled' : dep !== null ? 'arrived' : 'boarding';
+    const els = elements(anyRow.draft);
+    const dest = or(get(or(els.get('E04') ?? null, {}), 'data'), {}) as any;
+    if (!sees(person, e.facility, or(get(dest, 'pending_unit'), dep !== null ? get(dest, 'unit') : null))) return null;
+    const acts = this.store.actions(csn, at);
+    const templates: any = {};
+    for (const [tid, row] of latest) {
+      const eff = effective(row, acts);
+      templates[tid] = {
+        version: row.version, as_of: iso(row.at), status: row.status, trigger: row.trigger, score: eff.completeness.score,
+        blocking: eff.completeness.blocking, workflow: workflow(row, acts),
+      };
+    }
+    const sev = or(get(or(els.get('E07') ?? null, {}), 'narrative'), {}) as any;
+    const flags: any = {};
+    for (const k of ['E08', 'E09', 'E10']) flags[k] = get(or(els.get(k) ?? null, {}), 'data');
+    const sinceDecision = (dep ?? at) - (e.admit_decision_ts as number);
+    return {
+      csn, facility: e.facility, phase,
+      patient: { name: e.patient_name, mrn: e.mrn, sex: e.sex, age: age(e.birth_date, at) },
+      chief_complaint: e.chief_complaint, esi: e.esi, service: or(get(dest, 'service'), e.service),
+      arrival_ts: iso(e.arrival_ts), admit_decision_ts: iso(e.admit_decision_ts), ed_departure_ts: iso(dep),
+      minutes_boarding: pyRound(sinceDecision / 1000 / 60),
+      location: pick(dest, ['unit', 'room', 'bed']),
+      destination: dep === null
+        ? pick(dest, ['pending_unit', 'pending_room', 'pending_bed', 'level_of_care'])
+        : { pending_unit: or(get(dest, 'unit'), get(dest, 'pending_unit')), pending_room: get(dest, 'room'), pending_bed: get(dest, 'bed'),
+          level_of_care: get(dest, 'level_of_care') },
+      severity: get(sev, 'value'), severity_floor: get(or(get(sev, 'floor'), {}), 'value'),
+      code_status: isDict(flags.E08) ? get(or(flags.E08, {}), 'value') : null,
+      isolation: isDict(flags.E10) ? get(or(flags.E10, {}), 'value') : null,
+      allergies: Array.isArray(flags.E09) ? flags.E09.map((a: any) => get(a, 'allergen')) : [],
+      last_update: { as_of: iso(anyRow.at), trigger: anyRow.trigger },
+      templates,
+    };
+  }
+
+  board(at: number, person: any): any {
+    const rows: any[] = [];
+    for (const c of this.ds.enc.keys()) {
+      const s = this.summary(c, at, person);
+      if (s) rows.push(s);
+    }
+    const rank = (r: any) => SEVERITY_RANK[or(r.severity, '') as string] ?? -1;
+    rows.sort((a, b) => Number(a.phase !== 'boarding') - Number(b.phase !== 'boarding') || rank(b) - rank(a) || b.minutes_boarding - a.minutes_boarding);
+    const boarding = rows.filter((r) => r.phase === 'boarding');
+    const mine = or(person.can_sign, person.can_ack);
+    const tpl = person.default_template;
+    const tplOf = (r: any) => or(r.templates[tpl] ?? null, {}) as any;
+    const state = (r: any) => get(get(tplOf(r), 'workflow') ?? {}, 'state');
+    const kpis = {
+      boarding: boarding.length,
+      median_boarding_min: boarding.length ? pyRound(median(boarding.map((r) => r.minutes_boarding))) : null,
+      unstable: boarding.filter((r) => r.severity === 'unstable').length,
+      to_sign: truthy(person.can_sign) ? boarding.filter((r) => state(r) === 'draft').length : null,
+      to_acknowledge: truthy(person.can_ack) ? rows.filter((r) => state(r) === 'signed').length : null,
+      blocking: boarding.filter((r) => truthy(get(tplOf(r), 'blocking'))).length,
+      arrived: rows.length - boarding.length,
+    };
+    return { at: iso(at), template: tpl, kpis, rows, scoped: truthy(mine) };
+  }
+
+  case(csn: string, at: number, person: any): any {
+    const summary = this.summary(csn, at, person);
+    if (summary === null) return null;
+    const acts = this.store.actions(csn, at);
+    const byT = new Map<string, Row[]>();
+    for (const r of this.ds.rowsAt(csn, at)) {
+      let list = byT.get(r.template);
+      if (!list) byT.set(r.template, (list = []));
+      list.push(r);
+    }
+    const templates: any = {};
+    for (const [tid, versions] of byT) {
+      const row = versions[versions.length - 1];
+      const wf = workflow(row, acts);
+      let base: Row | null = null;
+      if (truthy(get(wf, 'signed')) && truthy(get(wf, 'changed_since_signed'))) {
+        base = versions.find((v) => v.version === wf.signed.version) ?? null;
+      } else if (versions.length > 1) {
+        base = versions[versions.length - 2];
+      }
+      templates[tid] = {
+        draft: effective(row, acts),
+        row: { ...pick(row, ['version', 'status', 'trigger', 'model']), as_of: iso(row.at) },
+        workflow: wf,
+        changes: {
+          since: truthy(get(wf, 'changed_since_signed')) ? 'signed' : 'previous',
+          version: base ? base.version : null,
+          elements: diff(base && base.draft, row.draft),
+        },
+        versions: versions.map((v) => ({ version: v.version, as_of: iso(v.at), trigger: v.trigger, status: v.status, severity: v.severity, score: v.score })),
+      };
+    }
+    const log = acts.map((a) => ({
+      kind: a.kind, template: a.template, by: a.by, at: iso(a.at) as string, version: a.version,
+      detail: or(or(get(a, 'element'), get(a, 'rule')), get(a, 'option')),
+    }));
+    // sorted(key=at string, reverse=True) keeps equal keys in their original order
+    log.sort((a, b) => cmpStr(b.at, a.at));
+    return { summary, templates, activity: log };
+  }
+
+  // -------------------------------------------------------------------------------------------- analytics
+  analytics(at: number): any {
+    const ds = this.ds;
+    const encs = [...ds.enc.values()];
+    const series: any[] = [];
+    const stop = Math.min(at, ds.end);
+    for (let t = ds.start; t <= stop; t += HOUR) {
+      let ed = 0, board = 0;
+      for (const e of encs) {
+        if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && e.status !== 'canceled') ed++;
+        if (e.admit_decision_ts !== null && e.admit_decision_ts <= t && (e.ed_departure_ts === null || e.ed_departure_ts > t) && truthy(ds.versions.get(e.csn) ?? null)) board++;
+      }
+      series.push({ t: iso(t), ed, boarding: board });
+    }
+    const done = encs.filter((e) => e.ed_departure_ts !== null && e.ed_departure_ts <= at && e.admit_decision_ts !== null && truthy(ds.versions.get(e.csn) ?? null));
+    const byUnit = new Map<string, number[]>();
+    const timing: number[] = [], completeness: number[] = [];
+    const blockers = new Map<string, number>(), sevMix = new Map<string, number>();
+    const inc = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+    for (const e of done) {
+      const dep = e.ed_departure_ts as number;
+      const latest = ds.latestAt(e.csn, dep);
+      const row = (or(latest.get('sbar_nurse') ?? null, latest.values().next().value ?? null) as Row | null);
+      const dest = row ? (or(get(or(elements(row.draft).get('E04') ?? null, {}), 'data'), {}) as any) : {};
+      const unit = `${pyStr(e.facility)} ${pyStr(or(get(dest, 'pending_unit'), e.unit))}`;
+      let list = byUnit.get(unit);
+      if (!list) byUnit.set(unit, (list = []));
+      list.push((dep - (e.admit_decision_ts as number)) / 1000 / 60);
+      timing.push(new Set((ds.versions.get(e.csn) as Row[]).filter((r) => r.at <= at).map((r) => r.at)).size);
+      if (row) {
+        completeness.push(row.draft.completeness.score);
+        inc(sevMix, or(row.severity, 'unknown') as string);
+        for (const r of row.draft.rules) {
+          if ((r.level === 'hard' || r.level === 'stale') && r.status !== 'pass' && r.status !== 'deferred') inc(blockers, r.label);
+        }
+      }
+    }
+    const q = (v: number[], p: number) => {
+      const s = [...v].sort((a, b) => a - b);
+      return s.length ? pyRound(s[Math.min(s.length - 1, Math.floor(p * s.length))]) : null;
+    };
+    const units = [...byUnit.entries()].sort((a, b) => cmpStr(a[0], b[0]))
+      .map(([u, v]) => ({ unit: u, n: v.length, median_min: q(v, 0.5), p90_min: q(v, 0.9) }));
+    const acts = this.store.allActions(at);
+    let signedBefore = 0;
+    for (const e of done) {
+      if (acts.some((a) => a.kind === 'sign' && a.csn === e.csn && a.at <= (e.ed_departure_ts as number))) signedBefore++;
+    }
+    const drafts = [...ds.versions.values()].flat().filter((r) => r.at <= at);
+    // Counter.most_common(8): by count, ties in first seen order
+    const common = [...blockers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return {
+      at: iso(at), series, units,
+      admitted: done.length,
+      drafts_per_patient: { median: q(timing, 0.5), max: timing.length ? Math.max(...timing) : null },
+      completeness_at_transfer: { median: completeness.length ? median(completeness) : null, histogram: histogram(completeness) },
+      blocking_at_transfer: common.map(([label, n]) => ({ label, n })),
+      severity_at_transfer: Object.fromEntries(sevMix),
+      signed_before_transfer: signedBefore,
+      drafts: drafts.length,
+      model_calls: new Set(drafts.map((r) => `${r.csn}|${r.at}`)).size,
+      addenda: new Set(drafts.filter((r) => r.status === 'addendum').map((r) => `${r.csn}|${r.at}`)).size,
+    };
+  }
+
+  // ---------------------------------------------------------------------------------------------- actions
+  act(kind: string, csn: string, template: string, at: number, person: any, body: any): any {
+    const summary = this.summary(csn, at, person);
+    if (summary === null) throw new ActionError('This patient is not on your board at this time.');
+    const latest = this.ds.latestAt(csn, at).get(template);
+    if (!latest) throw new ActionError('There is no draft for this template yet.');
+    const acts = this.store.actions(csn, at);
+    const row: any = {
+      csn, template, version: latest.version, at, by: person.name, role: person.role, user_email: get(person, 'user_email'),
+    };
+    if (kind === 'edit' || kind === 'attest' || kind === 'sign') {
+      if (!(SIGNS[person.role] ?? []).includes(template)) throw new ActionError('Only the sending ED clinician for this template can change or sign it.');
+      if (summary.phase !== 'boarding' && latest.status !== 'addendum') throw new ActionError('The patient has left the ED; the handoff is final.');
+    }
+    const eff = effective(latest, acts);
+    if (kind === 'edit') {
+      const el = elements(eff).get(get(body, 'element'));
+      if (!truthy(el) || el.kind !== 'narrative') throw new ActionError('Only narrative elements can be edited; structured data comes from the chart.');
+      const model = or(get(elements(latest.draft).get(el.id), 'narrative'), {}) as any;
+      Object.assign(row, { element: el.id, text: get(body, 'text'), items: get(body, 'items'), model_before: { text: get(model, 'text'), items: get(model, 'items') } });
+    } else if (kind === 'attest') {
+      const r = eff.rules.find((x: any) => x.rule === get(body, 'rule'));
+      if (!r || !(or(get(r, 'attest_options'), []) as any[]).some((o) => pyEq(o, get(body, 'option')))) {
+        throw new ActionError('Choose one of the listed attestations for this rule.');
+      }
+      Object.assign(row, { rule: r.rule, option: body.option });
+    } else if (kind === 'sign') {
+      if (eff.completeness.blocking.length) {
+        const labels = eff.rules.filter((x: any) => eff.completeness.blocking.includes(x.rule)).map((x: any) => x.label);
+        throw new ActionError('Resolve before signing: ' + labels.join(', ') + '.');
+      }
+      if (!truthy(strip(or(get(body, 'callback'), '') as string))) throw new ActionError('Add a callback number so the receiver can reach you.');
+      row.callback = strip(body.callback);
+    } else if (kind === 'ack') {
+      if (!(ACKS[person.role] ?? []).includes(template)) throw new ActionError('Only the receiving clinician can acknowledge this handoff.');
+      const wf = workflow(latest, acts);
+      if (wf.state === 'draft') throw new ActionError('The handoff has not been signed yet.');
+      if (pyLen(strip(or(get(body, 'readback'), '') as string)) < 10) {
+        throw new ActionError('Write a short read back: the patient, the key risk and what you will do first.');
+      }
+      Object.assign(row, { readback: strip(body.readback), questions: or(strip(or(get(body, 'questions'), '') as string), null) });
+    } else {
+      throw new ActionError(`Unknown action ${kind}.`);
+    }
+    this.store.add(kind, row);
+    return this.case(csn, at, person);
+  }
+}
+
+function histogram(values: number[]): any[] {
+  const bins: [number, number, string][] = [[0.0, 0.5, 'under 50%'], [0.5, 0.6, '50 to 59%'], [0.6, 0.7, '60 to 69%'], [0.7, 0.8, '70 to 79%'],
+    [0.8, 0.9, '80 to 89%'], [0.9, 1.01, '90% or more']];
+  return bins.map(([lo, hi, label]) => ({ bin: label, n: values.filter((v) => lo <= v && v < hi).length }));
+}

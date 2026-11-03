@@ -138,7 +138,14 @@ export const GUIDE: GuideSection[] = [
       {
         id: 'label',
         title: 'Synthetic data',
-        body: <p>Every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>,
+        body: __STATIC_DEMO__ ? (
+          <>
+            <p>Every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
+            <Note>In this public web demo everything runs in your browser. What you sign or accept is kept only in this tab and is cleared when you reload the page.</Note>
+          </>
+        ) : (
+          <p>Every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
+        ),
       },
     ],
   },

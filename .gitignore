@@ -24,3 +24,4 @@ dist/
 /synthetic/out/
 /app/fixtures/data/
 /app/server/static/
+/app/fixtures/parity/

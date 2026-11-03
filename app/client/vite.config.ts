@@ -9,16 +9,19 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 // The FastAPI backend (app/server) serves /api; override with API_PROXY_TARGET.
 const target = process.env.API_PROXY_TARGET || 'http://127.0.0.1:8000';
 const proxy = { '/api': { target, changeOrigin: true } };
+// VITE_DEMO=static builds the public static demo: no server, the API runs in the browser (src/demo).
+const staticDemo = process.env.VITE_DEMO === 'static';
 
 export default defineConfig({
   base: '/',
+  define: { __STATIC_DEMO__: JSON.stringify(staticDemo) },
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(root, 'src') } },
   server: { port: 5180, proxy },
-  preview: { port: 5180, proxy },
+  preview: { port: 5180, proxy: staticDemo ? {} : proxy },
   build: {
-    // The FastAPI app serves the built client from app/server/static.
-    outDir: '../server/static',
+    // The FastAPI app serves the built client from app/server/static; the static demo goes to dist/demo.
+    outDir: staticDemo ? 'dist/demo' : '../server/static',
     emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {

@@ -1,8 +1,9 @@
 // Screenshots of every page (desktop, phone, dark) for design review, plus checks: no console errors and no
 // horizontal scroll at 390 px. Usage: node scripts/screenshots.mjs [baseUrl] [outDir]
-// Uses the installed Chrome (or CHROME_PATH).
+// Uses the installed Chrome (or CHROME_PATH). STATIC_DEMO=1 checks the static demo build (scripts/lib/static-demo.mjs).
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
+import { firstCsn, watchRequests } from './lib/static-demo.mjs';
 
 const base = process.argv[2] || 'http://localhost:5180';
 const out = process.argv[3] || 'screenshots';
@@ -21,6 +22,7 @@ async function shot(name, path, { width = 1440, height = 900, dark = false, pers
   const page = await ctx.newPage();
   page.on('console', (m) => m.type() === 'error' && problems.push(`${name}: console ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`${name}: ${e.message}`));
+  watchRequests(page, name, problems);
   await page.goto(base + path, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   if (before) await before(page);
@@ -30,8 +32,7 @@ async function shot(name, path, { width = 1440, height = 900, dark = false, pers
   await ctx.close();
 }
 
-const first = await (await fetch(`${base}/api/board`, { headers: { 'X-Demo-Persona': 'ed-rn', ...headers } })).json();
-const csn = first.rows[0]?.csn;
+const csn = await firstCsn(browser, base, headers);
 await shot('board', '/');
 await shot('board-dark', '/', { dark: true });
 await shot('board-phone', '/', { width: 390, height: 844 });

@@ -51,3 +51,42 @@ The bundle (`databricks.yml`) deploys the app with `EDIP_MODE=live` and a postgr
 Settings (`config.env` of the app in `databricks.yml`): `EDIP_CLOCK_MODE=replay` keeps the replay clock for the synthetic week (`live` follows the current time, for real feeds); `EDIP_DEMO_PERSONAS=true` lets viewers switch roles (`false` takes the role from `EDIP_ROLE_MAP`, a JSON map of email to persona id, and shows the signed in user).
 
 The app is built from the repository root: `package.json` builds the client into `app/server/static`, `requirements.txt` installs the server, and the command is `uvicorn main:app --app-dir app/server`.
+
+## Static demo
+
+A public, backend free build of the same client. `src/demo` is a TypeScript port of the server's mock mode
+(`data.py`, `logic.py`, `workflow.py`, `personas.py` and the routes of `main.py`): the browser loads the fixtures
+from `/data`, decompresses `drafts.jsonl.gz` with `DecompressionStream`, and answers every API call itself, with
+the same rules and messages. Actions stay in the tab and reset on reload. The default build (served by FastAPI)
+does not contain this code: `__STATIC_DEMO__` is a build time constant.
+
+```bash
+# Build: the client with the in-browser API into app/client/dist/demo, then the data it loads
+cd app/client && npm run build:demo && cd ../..
+.venv/bin/python app/fixtures/static_demo.py          # copies app/fixtures/data and writes templates.json
+
+# Look at it locally
+cd app/client && VITE_DEMO=static npx vite preview --outDir dist/demo --port 5191
+STATIC_DEMO=1 node scripts/flow.mjs http://127.0.0.1:5191         # also screenshots.mjs and a11y.mjs
+```
+
+Parity test: the port must answer exactly as the server does. `app/fixtures/parity.py` drives the FastAPI app
+through a fixed list of requests (config, boards at many times and for each role, cases, analytics, a full
+edit, attest, sign and read back sequence with every refused action, views before and after) and writes the
+answers to `app/fixtures/parity`; the Vitest test `src/demo/parity.test.ts` replays them through the port and
+compares each one. Only the wall clock `now` of `/api/health` is normalized. CI runs it on fixtures built from
+the stand in world (no network or credentials).
+
+```bash
+.venv/bin/python app/fixtures/parity.py                  # stand in world; or --fixtures app/fixtures/data
+cd app/client && npx vitest run src/demo
+```
+
+Deploy and remove (AWS CLI default profile, us-east-1, stack `public-demo-edip-handoff`: a private S3 bucket
+behind CloudFront with origin access control, security headers and a strict CSP; see
+`deploy/aws/static-demo.cfn.yaml`):
+
+```bash
+scripts/deploy_static_demo.sh       # build, scan the bundle, deploy the stack, upload, invalidate
+scripts/teardown_static_demo.sh     # empty the bucket and delete the stack
+```
