@@ -1,0 +1,3523 @@
+{
+ "generated_by": "synthetic/tools/verify_codes.py",
+ "checked_on": "2026-11-02",
+ "summary": {
+  "total": 231,
+  "verified": 227,
+  "not_verified": [
+   "ICD-10-CM E88.81",
+   "RxNorm 70618",
+   "SNOMED CT 227037002",
+   "SNOMED CT 6525002"
+  ],
+  "corrections": [
+   {
+    "system": "LOINC",
+    "code": "36916-5",
+    "where": "reference.IMAGING[CTPE]",
+    "problem": "36916-5 is Kappa light chains.free in Serum, not a CT angiogram",
+    "replace_with": "88322-3",
+    "replacement_name": "CT Chest W contrast IV and CT angiogram Pulmonary arteries for pulmonary embolus W contrast IV"
+   },
+   {
+    "system": "RxNorm",
+    "code": "70618",
+    "where": "world.ALLERGENS Penicillins",
+    "problem": "ingredient concept retired (NotCurrent since 02/2020)",
+    "replace_with": "7980",
+    "replacement_name": "penicillin G (IN, Active); or RxClass MeSH D010406 'Penicillins' if a class code is wanted"
+   },
+   {
+    "system": "ICD-10-CM",
+    "code": "E88.81",
+    "where": "synthea._CHRONIC_ICD10[237602007]",
+    "problem": "E88.81 was subdivided in FY2023 and is no longer billable",
+    "replace_with": "E88.810",
+    "replacement_name": "Metabolic syndrome"
+   },
+   {
+    "system": "SNOMED CT",
+    "code": "227037002",
+    "where": "world.ALLERGENS Shellfish",
+    "problem": "concept 'Fish - dietary' is inactive",
+    "replace_with": "44027008",
+    "replacement_name": "Seafood (active); use 735029006 Shellfish if the terminology server carries it"
+   },
+   {
+    "system": "SNOMED CT",
+    "code": "68566005",
+    "where": "scenarios sepsis_uti and pyelo dx (N10)",
+    "problem": "68566005 is 'Urinary tract infectious disease', paired with N10 Acute pyelonephritis",
+    "replace_with": "36689008",
+    "replacement_name": "Acute pyelonephritis (keep 68566005 for N39.0 in uti_d)"
+   },
+   {
+    "system": "LOINC",
+    "code": "92142-9",
+    "where": "reference.LABS[FLU]",
+    "problem": "code is Influenza virus A RNA only; display says 'Influenza A and B RNA'",
+    "replace_with": "92142-9 plus 92141-1",
+    "replacement_name": "add FLUB 92141-1 Influenza virus B RNA, or rename the display to Influenza A RNA; panel code 95422-2 covers A, B and SARS-CoV-2"
+   },
+   {
+    "system": "LOINC",
+    "code": "37622-8",
+    "where": "reference.IMAGING[XRHIP]",
+    "problem": "37622-8 is 'XR Pelvis AP'; display says 'XR hip and pelvis'",
+    "replace_with": "30767-8",
+    "replacement_name": "XR Pelvis and Hip Views"
+   },
+   {
+    "system": "LOINC",
+    "code": "24558-9",
+    "where": "reference.IMAGING[RUQUS]",
+    "problem": "24558-9 is 'US Abdomen' (complete); display says right upper quadrant",
+    "replace_with": "24558-9",
+    "replacement_name": "acceptable; rename the display to 'US abdomen' or use a limited RUQ code from the site's catalog"
+   },
+   {
+    "system": "RxNorm",
+    "code": "10180",
+    "where": "world.ALLERGENS Sulfa",
+    "problem": "10180 is the ingredient sulfamethoxazole, used for the sulfonamide class",
+    "replace_with": "10180",
+    "replacement_name": "acceptable approximation; note it in the dataset metadata"
+   },
+   {
+    "system": "SNOMED CT",
+    "code": "6525002",
+    "where": "synthea._CHRONIC_ICD10 key (Synthea source code)",
+    "problem": "'Dependent drug abuse' is inactive in SNOMED CT International 2025",
+    "replace_with": "6525002",
+    "replacement_name": "Synthea emits it; keep the mapping to F19.20 and flag the source code as retired"
+   }
+  ],
+  "name_review": [
+   "ICD-10-CM C50.919: expected 'chronic problem mapping', found 'Malignant neoplasm of unspecified site of unspecified female breast'",
+   "ICD-10-CM D40.0: expected 'chronic problem mapping', found 'Neoplasm of uncertain behavior of prostate'",
+   "ICD-10-CM D64.9: expected 'chronic problem mapping', found 'Anemia, unspecified'",
+   "ICD-10-CM E03.9: expected 'chronic problem mapping', found 'Hypothyroidism, unspecified'",
+   "ICD-10-CM E11.29: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus with other diabetic kidney complication'",
+   "ICD-10-CM E11.40: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus with diabetic neuropathy, unspecified'",
+   "ICD-10-CM E11.9: expected 'chronic problem mapping', found 'Type 2 diabetes mellitus without complications'",
+   "ICD-10-CM E78.1: expected 'chronic problem mapping', found 'Pure hyperglyceridemia'",
+   "ICD-10-CM E78.5: expected 'chronic problem mapping', found 'Hyperlipidemia, unspecified'",
+   "ICD-10-CM F19.20: expected 'chronic problem mapping', found 'Other psychoactive substance dependence, uncomplicated'",
+   "ICD-10-CM G30.9: expected 'chronic problem mapping', found 'Alzheimer's disease, unspecified'",
+   "ICD-10-CM G40.909: expected 'chronic problem mapping', found 'Epilepsy, unspecified, not intractable, without status epilepticus'",
+   "ICD-10-CM G47.33: expected 'chronic problem mapping', found 'Obstructive sleep apnea (adult) (pediatric)'",
+   "ICD-10-CM I10: expected 'chronic problem mapping', found 'Essential (primary) hypertension'",
+   "ICD-10-CM I25.10: expected 'chronic problem mapping', found 'Atherosclerotic heart disease of native coronary artery without angina pectoris'",
+   "ICD-10-CM I25.2: expected 'chronic problem mapping', found 'Old myocardial infarction'",
+   "ICD-10-CM I35.0: expected 'chronic problem mapping', found 'Nonrheumatic aortic (valve) stenosis'",
+   "ICD-10-CM I50.9: expected 'chronic problem mapping', found 'Heart failure, unspecified'",
+   "ICD-10-CM J43.9: expected 'chronic problem mapping', found 'Emphysema, unspecified'",
+   "ICD-10-CM J45.909: expected 'chronic problem mapping', found 'Unspecified asthma, uncomplicated'",
+   "ICD-10-CM M16.9: expected 'chronic problem mapping', found 'Osteoarthritis of hip, unspecified'",
+   "ICD-10-CM M17.9: expected 'chronic problem mapping', found 'Osteoarthritis of knee, unspecified'",
+   "ICD-10-CM M81.0: expected 'chronic problem mapping', found 'Age-related osteoporosis without current pathological fracture'",
+   "ICD-10-CM N18.6: expected 'chronic problem mapping', found 'End stage renal disease'",
+   "ICD-10-CM R73.03: expected 'chronic problem mapping', found 'Prediabetes'",
+   "LOINC 11488-4: expected 'Consults', found 'Consult Note'",
+   "LOINC 1742-6: expected 'ALT', found 'Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma'",
+   "LOINC 1920-8: expected 'AST', found 'Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma'",
+   "LOINC 2157-6: expected 'CK', found 'Creatine kinase [Enzymatic activity/volume] in Serum or Plasma'",
+   "LOINC 28568-4: expected 'ED Provider Notes', found 'Physician Emergency Department Note'",
+   "LOINC 30934-4: expected 'BNP', found 'Natriuretic peptide B [Mass/volume] in Serum or Plasma'",
+   "LOINC 3094-0: expected 'BUN', found 'Urea nitrogen [Mass/volume] in Serum or Plasma'",
+   "LOINC 36916-5: expected 'CTA chest pulmonary embolism protocol', found 'Kappa light chains.free [Mass/volume] in Serum'",
+   "LOINC 57053-1: expected 'ED Notes (nursing)', found 'Nurse Emergency Department Note'",
+   "LOINC 6301-6: expected 'INR', found 'INR in Platelet poor plasma by Coagulation assay'",
+   "LOINC 6690-2: expected 'WBC', found 'Leukocytes [#/volume] in Blood by Automated count'",
+   "LOINC 882-1: expected 'ABO and Rh', found 'ABO and Rh group [Type] in Blood'",
+   "RxNorm 10180: expected 'allergen: Sulfa (sulfonamide antibiotics)', found 'sulfamethoxazole'",
+   "RxNorm 847630: expected 'lactated Ringer's bolus', found 'calcium chloride 0.2 MG/ML / potassium chloride 0.3 MG/ML / sodium chloride 6 MG/ML / sodium lactate 3.1 MG/ML Injectable Solution'",
+   "SNOMED CT 126906006: expected 'chronic problem (Synthea)', found 'Neoplasm of prostate'",
+   "SNOMED CT 127013003: expected 'chronic problem (Synthea)', found 'Disorder of kidney due to diabetes mellitus'",
+   "SNOMED CT 128613002: expected 'chronic problem (Synthea)', found 'Seizure disorder'",
+   "SNOMED CT 185086009: expected 'patient fit condition', found 'Emphysematous bronchitis'",
+   "SNOMED CT 195967001: expected 'patient fit condition', found 'Asthma'",
+   "SNOMED CT 197927001: expected 'patient fit condition', found 'Recurrent urinary tract infection'",
+   "SNOMED CT 237602007: expected 'chronic problem (Synthea)', found 'Metabolic syndrome X'",
+   "SNOMED CT 239872002: expected 'patient fit condition', found 'Osteoarthritis of hip'",
+   "SNOMED CT 239873007: expected 'chronic problem (Synthea)', found 'Osteoarthritis of knee'",
+   "SNOMED CT 254837009: expected 'chronic problem (Synthea)', found 'Malignant neoplasm of breast'",
+   "SNOMED CT 26929004: expected 'patient fit condition', found 'Alzheimer's disease'",
+   "SNOMED CT 271737000: expected 'patient fit condition', found 'Anemia'",
+   "SNOMED CT 302870006: expected 'chronic problem (Synthea)', found 'Hypertriglyceridemia'",
+   "SNOMED CT 368581000119106: expected 'chronic problem (Synthea)', found 'Neuropathy due to type 2 diabetes mellitus'",
+   "SNOMED CT 399211009: expected 'chronic problem (Synthea)', found 'History of myocardial infarction'",
+   "SNOMED CT 401303003: expected 'STEMI', found 'Acute ST segment elevation myocardial infarction'",
+   "SNOMED CT 401314000: expected 'NSTEMI', found 'Acute non-ST segment elevation myocardial infarction'",
+   "SNOMED CT 414545008: expected 'patient fit condition', found 'Ischemic heart disease'",
+   "SNOMED CT 431857002: expected 'patient fit condition', found 'Chronic kidney disease stage 4'",
+   "SNOMED CT 433144002: expected 'patient fit condition', found 'Chronic kidney disease stage 3'",
+   "SNOMED CT 44054006: expected 'patient fit condition', found 'Type 2 diabetes mellitus'",
+   "SNOMED CT 46177005: expected 'chronic problem (Synthea)', found 'End-stage renal disease'",
+   "SNOMED CT 49436004: expected 'patient fit condition', found 'Atrial fibrillation'",
+   "SNOMED CT 55822004: expected 'patient fit condition', found 'Hyperlipidemia'",
+   "SNOMED CT 59621000: expected 'patient fit condition', found 'Essential hypertension'",
+   "SNOMED CT 60573004: expected 'patient fit condition', found 'Aortic valve stenosis'",
+   "SNOMED CT 64859006: expected 'patient fit condition', found 'Osteoporosis'",
+   "SNOMED CT 68566005: expected 'Acute pyelonephritis', found 'Urinary tract infectious disease'",
+   "SNOMED CT 714628002: expected 'chronic problem (Synthea)', found 'Prediabetes'",
+   "SNOMED CT 78275009: expected 'chronic problem (Synthea)', found 'Obstructive sleep apnea syndrome'",
+   "SNOMED CT 83664006: expected 'chronic problem (Synthea)', found 'Idiopathic atrophic hypothyroidism'",
+   "SNOMED CT 84757009: expected 'chronic problem (Synthea)', found 'Epilepsy'",
+   "SNOMED CT 87433001: expected 'patient fit condition', found 'Pulmonary emphysema'",
+   "SNOMED CT 88805009: expected 'patient fit condition', found 'Chronic congestive heart failure'"
+  ]
+ },
+ "codes": [
+  {
+   "code": "A41.9",
+   "system": "ICD-10-CM",
+   "expected": "Sepsis, unspecified organism",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_pna].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Sepsis, unspecified organism",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=A41.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "C50.919",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Malignant neoplasm of unspecified site of unspecified female breast",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=C50.919&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "D40.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Neoplasm of uncertain behavior of prostate",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=D40.0&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "D62",
+   "system": "ICD-10-CM",
+   "expected": "Acute posthemorrhagic anemia",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute posthemorrhagic anemia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=D62&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "D64.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Anemia, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=D64.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E03.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Hypothyroidism, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E03.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E11.10",
+   "system": "ICD-10-CM",
+   "expected": "Type 2 diabetes mellitus with ketoacidosis without coma",
+   "used_in": [
+    "scenarios.SCENARIOS[dka].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Type 2 diabetes mellitus with ketoacidosis without coma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E11.10&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "E11.29",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Type 2 diabetes mellitus with other diabetic kidney complication",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E11.29&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E11.40",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Type 2 diabetes mellitus with diabetic neuropathy, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E11.40&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E11.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Type 2 diabetes mellitus without complications",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E11.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E78.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Pure hyperglyceridemia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E78.1&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E78.5",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Hyperlipidemia, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E78.5&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "E88.81",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "not found",
+   "name_found": null,
+   "verified": false,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=E88.81&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "F19.20",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Other psychoactive substance dependence, uncomplicated",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F19.20&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "F41.9",
+   "system": "ICD-10-CM",
+   "expected": "Anxiety disorder, unspecified",
+   "used_in": [
+    "scenarios.DISCHARGE[psych_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Anxiety disorder, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=F41.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "G30.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Alzheimer's disease, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G30.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "G40.909",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Epilepsy, unspecified, not intractable, without status epilepticus",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G40.909&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "G43.719",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic migraine without aura, intractable, without status migrainosus",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G43.719&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "G47.33",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Obstructive sleep apnea (adult) (pediatric)",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=G47.33&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I10",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Essential (primary) hypertension",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I10&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I11.0",
+   "system": "ICD-10-CM",
+   "expected": "Hypertensive heart disease with heart failure",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Hypertensive heart disease with heart failure",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I11.0&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "I21.3",
+   "system": "ICD-10-CM",
+   "expected": "STEMI",
+   "used_in": [
+    "scenarios.DISCHARGE[stemi_transfer].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "ST elevation (STEMI) myocardial infarction of unspecified site",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I21.3&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "I21.4",
+   "system": "ICD-10-CM",
+   "expected": "NSTEMI",
+   "used_in": [
+    "scenarios.SCENARIOS[nstemi].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Non-ST elevation (NSTEMI) myocardial infarction",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I21.4&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "I25.10",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Atherosclerotic heart disease of native coronary artery without angina pectoris",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I25.10&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I25.2",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Old myocardial infarction",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I25.2&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I35.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Nonrheumatic aortic (valve) stenosis",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I35.0&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I48.91",
+   "system": "ICD-10-CM",
+   "expected": "Atrial fibrillation",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[af_rvr].dx",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Unspecified atrial fibrillation",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I48.91&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "I50.23",
+   "system": "ICD-10-CM",
+   "expected": "Acute on chronic systolic heart failure",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute on chronic systolic (congestive) heart failure",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I50.23&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "I50.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Heart failure, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I50.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "I63.9",
+   "system": "ICD-10-CM",
+   "expected": "Cerebral infarction, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[stroke].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Cerebral infarction, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=I63.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J06.9",
+   "system": "ICD-10-CM",
+   "expected": "Acute upper respiratory infection",
+   "used_in": [
+    "scenarios.DISCHARGE[sob_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Acute upper respiratory infection, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J06.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J10.1",
+   "system": "ICD-10-CM",
+   "expected": "Influenza with other respiratory manifestations",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[flu_covid].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Influenza due to other identified influenza virus with other respiratory manifestations",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J10.1&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J18.9",
+   "system": "ICD-10-CM",
+   "expected": "Pneumonia",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].dx",
+    "scenarios.SCENARIOS[sepsis_pna].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Pneumonia, unspecified organism",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J18.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J43.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Emphysema, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J43.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "J44.1",
+   "system": "ICD-10-CM",
+   "expected": "COPD with acute exacerbation",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic obstructive pulmonary disease with (acute) exacerbation",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J44.1&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J44.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic obstructive pulmonary disease, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J44.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J45.909",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Unspecified asthma, uncomplicated",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J45.909&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "J96.01",
+   "system": "ICD-10-CM",
+   "expected": "Acute respiratory failure with hypoxia",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_pna].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute respiratory failure with hypoxia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J96.01&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "J96.02",
+   "system": "ICD-10-CM",
+   "expected": "Acute respiratory failure with hypercapnia",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute respiratory failure with hypercapnia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=J96.02&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "K81.0",
+   "system": "ICD-10-CM",
+   "expected": "Acute cholecystitis",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[abdominal].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Acute cholecystitis",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K81.0&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "K85.90",
+   "system": "ICD-10-CM",
+   "expected": "Acute pancreatitis",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[abdominal].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Acute pancreatitis without necrosis or infection, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K85.90&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "K92.2",
+   "system": "ICD-10-CM",
+   "expected": "Gastrointestinal hemorrhage, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Gastrointestinal hemorrhage, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=K92.2&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "L03.115",
+   "system": "ICD-10-CM",
+   "expected": "Cellulitis of right lower limb",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[cellulitis].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Cellulitis of right lower limb",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=L03.115&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "M16.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Osteoarthritis of hip, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M16.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "M17.9",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Osteoarthritis of knee, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M17.9&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "M54.50",
+   "system": "ICD-10-CM",
+   "expected": "Low back pain, unspecified",
+   "used_in": [
+    "scenarios.DISCHARGE[back_pain_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Low back pain, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M54.50&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "M81.0",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Age-related osteoporosis without current pathological fracture",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=M81.0&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "N10",
+   "system": "ICD-10-CM",
+   "expected": "Acute pyelonephritis",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[pyelo].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute pyelonephritis",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N10&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N17.9",
+   "system": "ICD-10-CM",
+   "expected": "Acute kidney injury",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[aki].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Acute kidney failure, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N17.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N18.1",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic kidney disease, stage 1",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N18.1&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N18.2",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic kidney disease, stage 2 (mild)",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N18.2&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N18.30",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic kidney disease, stage 3 unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N18.30&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N18.4",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chronic kidney disease, stage 4 (severe)",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N18.4&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "N18.6",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "End stage renal disease",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N18.6&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "N39.0",
+   "system": "ICD-10-CM",
+   "expected": "Urinary tract infection",
+   "used_in": [
+    "scenarios.DISCHARGE[uti_d].dx",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Urinary tract infection, site not specified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=N39.0&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R07.89",
+   "system": "ICD-10-CM",
+   "expected": "Other chest pain",
+   "used_in": [
+    "scenarios.DISCHARGE[chest_pain_d].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Other chest pain",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R07.89&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R07.9",
+   "system": "ICD-10-CM",
+   "expected": "Chest pain, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Chest pain, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R07.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R09.02",
+   "system": "ICD-10-CM",
+   "expected": "Hypoxemia",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Hypoxemia",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R09.02&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R10.9",
+   "system": "ICD-10-CM",
+   "expected": "Unspecified abdominal pain",
+   "used_in": [
+    "scenarios.DISCHARGE[abd_pain_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Unspecified abdominal pain",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R10.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R11.2",
+   "system": "ICD-10-CM",
+   "expected": "Nausea with vomiting, unspecified",
+   "used_in": [
+    "scenarios.DISCHARGE[vomiting_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Nausea with vomiting, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R11.2&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R21",
+   "system": "ICD-10-CM",
+   "expected": "Rash and other nonspecific skin eruption",
+   "used_in": [
+    "scenarios.DISCHARGE[minor_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Rash and other nonspecific skin eruption",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R21&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R42",
+   "system": "ICD-10-CM",
+   "expected": "Dizziness and giddiness",
+   "used_in": [
+    "scenarios.DISCHARGE[dizzy_d].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Dizziness and giddiness",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R42&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R45.851",
+   "system": "ICD-10-CM",
+   "expected": "Suicidal ideations",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[psych_hold].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Suicidal ideations",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R45.851&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R50.9",
+   "system": "ICD-10-CM",
+   "expected": "Fever, unspecified",
+   "used_in": [
+    "scenarios.DISCHARGE[fever_d].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Fever, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R50.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R51.9",
+   "system": "ICD-10-CM",
+   "expected": "Headache, unspecified",
+   "used_in": [
+    "scenarios.DISCHARGE[headache_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Headache, unspecified",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R51.9&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R53.1",
+   "system": "ICD-10-CM",
+   "expected": "Weakness",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[other_medical].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Weakness",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R53.1&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R55",
+   "system": "ICD-10-CM",
+   "expected": "Syncope and collapse",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[syncope].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Syncope and collapse",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R55&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "R73.03",
+   "system": "ICD-10-CM",
+   "expected": "chronic problem mapping",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Prediabetes",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=R73.03&maxList=50",
+   "name_consistent": false
+  },
+  {
+   "code": "S22.41XA",
+   "system": "ICD-10-CM",
+   "expected": "Multiple fractures of ribs, right side, initial",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[trauma_other].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Multiple fractures of ribs, right side, initial encounter for closed fracture",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=S22.41XA&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "S72.001A",
+   "system": "ICD-10-CM",
+   "expected": "Fracture of unspecified part of neck of right femur, initial",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Fracture of unspecified part of neck of right femur, initial encounter for closed fracture",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=S72.001A&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "S93.401A",
+   "system": "ICD-10-CM",
+   "expected": "Sprain of right ankle, initial",
+   "used_in": [
+    "scenarios.DISCHARGE[injury_d].dx"
+   ],
+   "in_unverified_list": true,
+   "status_found": "billable code",
+   "name_found": "Sprain of unspecified ligament of right ankle, initial encounter",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=S93.401A&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "W19.XXXA",
+   "system": "ICD-10-CM",
+   "expected": "Fall",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "billable code",
+   "name_found": "Unspecified fall, initial encounter",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code&terms=W19.XXXA&maxList=50",
+   "name_consistent": true
+  },
+  {
+   "code": "104530-1",
+   "system": "LOINC",
+   "expected": "H&P (hospitalist)",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Hospitalist Admission History and Physical Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=104530-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "104816-4",
+   "system": "LOINC",
+   "expected": "Beta hydroxybutyrate",
+   "used_in": [
+    "reference.LABS[BHB]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Beta hydroxybutyrate [Moles/volume] in Blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=104816-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "11488-4",
+   "system": "LOINC",
+   "expected": "Consults",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Consult Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=11488-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "11506-3",
+   "system": "LOINC",
+   "expected": "Progress Notes",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Progress Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=11506-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "14627-4",
+   "system": "LOINC",
+   "expected": "Bicarbonate venous",
+   "used_in": [
+    "reference.LABS[VHCO3]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Bicarbonate [Moles/volume] in Venous blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=14627-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "1742-6",
+   "system": "LOINC",
+   "expected": "ALT",
+   "used_in": [
+    "reference.LABS[ALT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=1742-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "1751-7",
+   "system": "LOINC",
+   "expected": "Albumin",
+   "used_in": [
+    "reference.LABS[ALB]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Albumin [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=1751-7&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "17861-6",
+   "system": "LOINC",
+   "expected": "Calcium",
+   "used_in": [
+    "reference.LABS[CA]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Calcium [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=17861-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "19123-9",
+   "system": "LOINC",
+   "expected": "Magnesium",
+   "used_in": [
+    "reference.LABS[MG]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Magnesium [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=19123-9&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "1920-8",
+   "system": "LOINC",
+   "expected": "AST",
+   "used_in": [
+    "reference.LABS[AST]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=1920-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "1975-2",
+   "system": "LOINC",
+   "expected": "Bilirubin total",
+   "used_in": [
+    "reference.LABS[TBILI]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Bilirubin.total [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=1975-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "1988-5",
+   "system": "LOINC",
+   "expected": "C reactive protein",
+   "used_in": [
+    "reference.LABS[CRP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "C reactive protein [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=1988-5&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2021-4",
+   "system": "LOINC",
+   "expected": "pCO2 venous",
+   "used_in": [
+    "reference.LABS[VPCO2]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Carbon dioxide [Partial pressure] in Venous blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2021-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2028-9",
+   "system": "LOINC",
+   "expected": "CO2 total",
+   "used_in": [
+    "reference.LABS[CO2]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Carbon dioxide, total [Moles/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2028-9&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2075-0",
+   "system": "LOINC",
+   "expected": "Chloride",
+   "used_in": [
+    "reference.LABS[CL]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Chloride [Moles/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2075-0&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2157-6",
+   "system": "LOINC",
+   "expected": "CK",
+   "used_in": [
+    "reference.LABS[CK]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Creatine kinase [Enzymatic activity/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2157-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "2160-0",
+   "system": "LOINC",
+   "expected": "Creatinine",
+   "used_in": [
+    "reference.LABS[CREAT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Creatinine [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2160-0&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2345-7",
+   "system": "LOINC",
+   "expected": "Glucose",
+   "used_in": [
+    "reference.LABS[GLU]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Glucose [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2345-7&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "24558-9",
+   "system": "LOINC",
+   "expected": "US abdomen right upper quadrant",
+   "used_in": [
+    "reference.IMAGING[RUQUS]"
+   ],
+   "in_unverified_list": true,
+   "status_found": "ACTIVE",
+   "name_found": "US Abdomen",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=24558-9&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2746-6",
+   "system": "LOINC",
+   "expected": "pH venous",
+   "used_in": [
+    "reference.LABS[VPH]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "pH of Venous blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2746-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2777-1",
+   "system": "LOINC",
+   "expected": "Phosphate",
+   "used_in": [
+    "reference.LABS[PHOS]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Phosphate [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2777-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2823-3",
+   "system": "LOINC",
+   "expected": "Potassium",
+   "used_in": [
+    "reference.LABS[K]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Potassium [Moles/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2823-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "28568-4",
+   "system": "LOINC",
+   "expected": "ED Provider Notes",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Physician Emergency Department Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=28568-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "28651-8",
+   "system": "LOINC",
+   "expected": "ED to Hosp-Admission Nursing Transfer",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Nurse Transfer Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=28651-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2885-2",
+   "system": "LOINC",
+   "expected": "Protein total",
+   "used_in": [
+    "reference.LABS[TP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Protein [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2885-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "2951-2",
+   "system": "LOINC",
+   "expected": "Sodium",
+   "used_in": [
+    "reference.LABS[NA]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Sodium [Moles/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=2951-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "3040-3",
+   "system": "LOINC",
+   "expected": "Lipase",
+   "used_in": [
+    "reference.LABS[LIPASE]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Lipase [Enzymatic activity/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=3040-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "30746-2",
+   "system": "LOINC",
+   "expected": "XR chest 1 view portable",
+   "used_in": [
+    "reference.IMAGING[CXR]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Portable XR Chest Views",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=30746-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "30799-1",
+   "system": "LOINC",
+   "expected": "CT head without contrast",
+   "used_in": [
+    "reference.IMAGING[CTH]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "CT Head WO contrast",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=30799-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "30934-4",
+   "system": "LOINC",
+   "expected": "BNP",
+   "used_in": [
+    "reference.LABS[BNP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Natriuretic peptide B [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=30934-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "3094-0",
+   "system": "LOINC",
+   "expected": "BUN",
+   "used_in": [
+    "reference.LABS[BUN]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Urea nitrogen [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=3094-0&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "3173-2",
+   "system": "LOINC",
+   "expected": "aPTT",
+   "used_in": [
+    "reference.LABS[PTT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "aPTT in Blood by Coagulation assay",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=3173-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "32693-4",
+   "system": "LOINC",
+   "expected": "Lactate",
+   "used_in": [
+    "reference.LABS[LACT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Lactate [Moles/volume] in Blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=32693-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "33037-3",
+   "system": "LOINC",
+   "expected": "Anion gap",
+   "used_in": [
+    "reference.LABS[AGAP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Anion gap in Serum or Plasma by calculation",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=33037-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "33959-8",
+   "system": "LOINC",
+   "expected": "Procalcitonin",
+   "used_in": [
+    "reference.LABS[PCT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Procalcitonin [Mass/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=33959-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "34534-8",
+   "system": "LOINC",
+   "expected": "12 lead ECG",
+   "used_in": [
+    "reference.IMAGING[ECG]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "12 lead EKG panel",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=34534-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "36813-4",
+   "system": "LOINC",
+   "expected": "CT abdomen and pelvis with contrast",
+   "used_in": [
+    "reference.IMAGING[CTAP]"
+   ],
+   "in_unverified_list": true,
+   "status_found": "ACTIVE",
+   "name_found": "CT Abdomen and Pelvis W contrast IV",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=36813-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "36916-5",
+   "system": "LOINC",
+   "expected": "CTA chest pulmonary embolism protocol",
+   "used_in": [
+    "reference.IMAGING[CTPE]"
+   ],
+   "in_unverified_list": true,
+   "status_found": "ACTIVE",
+   "name_found": "Kappa light chains.free [Mass/volume] in Serum",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=36916-5&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "37498-3",
+   "system": "LOINC",
+   "expected": "CTA head and neck",
+   "used_in": [
+    "reference.IMAGING[CTA]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "CTA Head vessels and Neck vessels W contrast IV",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=37498-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "37622-8",
+   "system": "LOINC",
+   "expected": "XR hip and pelvis",
+   "used_in": [
+    "reference.IMAGING[XRHIP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "XR Pelvis AP",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=37622-8&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "41653-7",
+   "system": "LOINC",
+   "expected": "Glucose, POC",
+   "used_in": [
+    "reference.LABS[POCGLU]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Glucose [Mass/volume] in Capillary blood by Glucometer",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=41653-7&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "4544-3",
+   "system": "LOINC",
+   "expected": "Hematocrit",
+   "used_in": [
+    "reference.LABS[HCT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Hematocrit [Volume Fraction] of Blood by Automated count",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=4544-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "4548-4",
+   "system": "LOINC",
+   "expected": "Hemoglobin A1c",
+   "used_in": [
+    "reference.LABS[A1C]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Hemoglobin A1c/Hemoglobin.total in Blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=4548-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "57053-1",
+   "system": "LOINC",
+   "expected": "ED Notes (nursing)",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Nurse Emergency Department Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=57053-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "5799-2",
+   "system": "LOINC",
+   "expected": "Leukocyte esterase, urine",
+   "used_in": [
+    "reference.LABS[UA_LE]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Leukocyte esterase [Presence] in Urine by Test strip",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=5799-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "5802-4",
+   "system": "LOINC",
+   "expected": "Nitrite, urine",
+   "used_in": [
+    "reference.LABS[UA_NIT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Nitrite [Presence] in Urine by Test strip",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=5802-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "5821-4",
+   "system": "LOINC",
+   "expected": "WBC, urine",
+   "used_in": [
+    "reference.LABS[UA_WBC]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Leukocytes [#/area] in Urine sediment by Microscopy high power field",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=5821-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "59408-5",
+   "system": "LOINC",
+   "expected": "Oxygen saturation by pulse oximetry",
+   "used_in": [
+    "reference.VITAL_LOINC[spo2]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Oxygen saturation in Arterial blood by Pulse oximetry",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=59408-5&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "600-7",
+   "system": "LOINC",
+   "expected": "Blood culture",
+   "used_in": [
+    "reference.LABS[BCX]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Bacteria identified in Blood by Culture",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=600-7&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "630-4",
+   "system": "LOINC",
+   "expected": "Urine culture",
+   "used_in": [
+    "reference.LABS[UCX]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Bacteria identified in Urine by Culture",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=630-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "6301-6",
+   "system": "LOINC",
+   "expected": "INR",
+   "used_in": [
+    "reference.LABS[INR]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "INR in Platelet poor plasma by Coagulation assay",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=6301-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "6690-2",
+   "system": "LOINC",
+   "expected": "WBC",
+   "used_in": [
+    "reference.LABS[WBC]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Leukocytes [#/volume] in Blood by Automated count",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=6690-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "67151-1",
+   "system": "LOINC",
+   "expected": "Troponin T, high sensitivity",
+   "used_in": [
+    "reference.LABS[TROP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Troponin T.cardiac [Mass/volume] in Serum or Plasma by High sensitivity method",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=67151-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "6768-6",
+   "system": "LOINC",
+   "expected": "Alkaline phosphatase",
+   "used_in": [
+    "reference.LABS[ALKP]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Alkaline phosphatase [Enzymatic activity/volume] in Serum or Plasma",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=6768-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "718-7",
+   "system": "LOINC",
+   "expected": "Hemoglobin",
+   "used_in": [
+    "reference.LABS[HGB]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Hemoglobin [Mass/volume] in Blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=718-7&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "72514-3",
+   "system": "LOINC",
+   "expected": "Pain severity 0 to 10",
+   "used_in": [
+    "reference.VITAL_LOINC[pain]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Pain severity - 0-10 verbal numeric rating [Score] - Reported",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=72514-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "777-3",
+   "system": "LOINC",
+   "expected": "Platelets",
+   "used_in": [
+    "reference.LABS[PLT]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Platelets [#/volume] in Blood by Automated count",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=777-3&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "8310-5",
+   "system": "LOINC",
+   "expected": "Body temperature",
+   "used_in": [
+    "reference.VITAL_LOINC[temp]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Body temperature",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=8310-5&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "84249-2",
+   "system": "LOINC",
+   "expected": "ED Triage Notes",
+   "used_in": [
+    "world._notes"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Nurse Emergency Department Triage Note",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=84249-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "8462-4",
+   "system": "LOINC",
+   "expected": "Diastolic blood pressure",
+   "used_in": [
+    "reference.VITAL_LOINC[dbp]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Diastolic blood pressure",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=8462-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "8480-6",
+   "system": "LOINC",
+   "expected": "Systolic blood pressure",
+   "used_in": [
+    "reference.VITAL_LOINC[sbp]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Systolic blood pressure",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=8480-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "882-1",
+   "system": "LOINC",
+   "expected": "ABO and Rh",
+   "used_in": [
+    "reference.LABS[ABORH]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "ABO and Rh group [Type] in Blood",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=882-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": false
+  },
+  {
+   "code": "8867-4",
+   "system": "LOINC",
+   "expected": "Heart rate",
+   "used_in": [
+    "reference.VITAL_LOINC[hr]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Heart rate",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=8867-4&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "92142-9",
+   "system": "LOINC",
+   "expected": "Influenza A and B RNA",
+   "used_in": [
+    "reference.LABS[FLU]"
+   ],
+   "in_unverified_list": true,
+   "status_found": "ACTIVE",
+   "name_found": "Influenza virus A RNA [Presence] in Respiratory system specimen by NAA with probe detection",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=92142-9&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "9269-2",
+   "system": "LOINC",
+   "expected": "Glasgow coma score total",
+   "used_in": [
+    "reference.VITAL_LOINC[gcs]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Glasgow coma score total",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=9269-2&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "9279-1",
+   "system": "LOINC",
+   "expected": "Respiratory rate",
+   "used_in": [
+    "reference.VITAL_LOINC[rr]"
+   ],
+   "in_unverified_list": false,
+   "status_found": "ACTIVE",
+   "name_found": "Respiratory rate",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=9279-1&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "94500-6",
+   "system": "LOINC",
+   "expected": "SARS-CoV-2 RNA",
+   "used_in": [
+    "reference.LABS[COVID]"
+   ],
+   "in_unverified_list": true,
+   "status_found": "ACTIVE",
+   "name_found": "SARS-CoV-2 (COVID-19) RNA [Presence] in Respiratory system specimen by NAA with probe detection",
+   "verified": true,
+   "source_url": "https://clinicaltables.nlm.nih.gov/api/loinc_items/v3/search?terms=94500-6&df=LOINC_NUM%2CLONG_COMMON_NAME&sf=LOINC_NUM",
+   "name_consistent": true
+  },
+  {
+   "code": "10180",
+   "system": "RxNorm",
+   "expected": "allergen: Sulfa (sulfonamide antibiotics)",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "sulfamethoxazole",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/10180/properties.json",
+   "tty": "IN",
+   "name_consistent": false
+  },
+  {
+   "code": "1437702",
+   "system": "RxNorm",
+   "expected": "albuterol-ipratropium 2.5-0.5 mg/3 mL neb",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "albuterol 0.833 MG/ML / ipratropium bromide 0.167 MG/ML Inhalation Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1437702/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1658717",
+   "system": "RxNorm",
+   "expected": "heparin 100 units/mL premix",
+   "used_in": [
+    "scenarios.SCENARIOS[nstemi].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "250 ML heparin sodium, porcine 100 UNT/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1658717/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1659149",
+   "system": "RxNorm",
+   "expected": "piperacillin-tazobactam 4.5 g injection",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_uti].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "piperacillin 4000 MG / tazobactam 500 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1659149/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1665021",
+   "system": "RxNorm",
+   "expected": "cefTRIAXone 1 g injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[pyelo].meds",
+    "scenarios.SCENARIOS[cap].meds",
+    "scenarios.SCENARIOS[sepsis_pna].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "ceftriaxone 1000 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665021/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1665046",
+   "system": "RxNorm",
+   "expected": "cefTRIAXone 2 g injection",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_uti].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "ceftriaxone 2000 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665046/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1665060",
+   "system": "RxNorm",
+   "expected": "cefazolin 2 g injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[cellulitis].meds"
+   ],
+   "in_unverified_list": true,
+   "status_found": "Active",
+   "name_found": "cefazolin 2000 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665060/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1665088",
+   "system": "RxNorm",
+   "expected": "cefepime 2 g injection (penicillin allergy substitute)",
+   "used_in": [
+    "world._meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "cefepime 2000 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665088/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1665188",
+   "system": "RxNorm",
+   "expected": "LORazepam 2 mg/mL injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[psych_hold].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "1 ML lorazepam 2 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1665188/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1668238",
+   "system": "RxNorm",
+   "expected": "azithromycin 500 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].meds",
+    "scenarios.SCENARIOS[copd].meds",
+    "scenarios.SCENARIOS[sepsis_pna].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "azithromycin 500 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1668238/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1719291",
+   "system": "RxNorm",
+   "expected": "furosemide 10 mg/mL injection",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "4 ML furosemide 10 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1719291/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1732006",
+   "system": "RxNorm",
+   "expected": "morphine 4 mg/mL injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[abdominal].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "1 ML morphine sulfate 4 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1732006/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1740467",
+   "system": "RxNorm",
+   "expected": "ondansetron 2 mg/mL injection",
+   "used_in": [
+    "scenarios.DISCHARGE[abd_pain_d].meds",
+    "scenarios.DISCHARGE[dizzy_d].meds",
+    "scenarios.DISCHARGE[vomiting_d].meds",
+    "scenarios.GENERIC_ADMITS[abdominal].meds",
+    "scenarios.GENERIC_ADMITS[pyelo].meds",
+    "scenarios.SCENARIOS[dka].meds",
+    "scenarios.SCENARIOS[hip_fx].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "2 ML ondansetron 2 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1740467/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1743704",
+   "system": "RxNorm",
+   "expected": "methylPREDNISolone 125 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "methylprednisolone 125 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1743704/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1791229",
+   "system": "RxNorm",
+   "expected": "diltiazem 5 mg/mL injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[af_rvr].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "5 ML diltiazem hydrochloride 5 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1791229/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1804799",
+   "system": "RxNorm",
+   "expected": "alteplase 100 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[stroke].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "alteplase 100 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1804799/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "1807513",
+   "system": "RxNorm",
+   "expected": "vancomycin 1000 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_pna].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "vancomycin 1000 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/1807513/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "198039",
+   "system": "RxNorm",
+   "expected": "nitroglycerin 0.4 mg SL tablet",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].meds",
+    "scenarios.SCENARIOS[chf].meds",
+    "scenarios.SCENARIOS[nstemi].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "nitroglycerin 0.4 MG Sublingual Tablet",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/198039/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "198440",
+   "system": "RxNorm",
+   "expected": "acetaminophen 500 mg tablet",
+   "used_in": [
+    "scenarios.DISCHARGE[fever_d].meds",
+    "scenarios.DISCHARGE[headache_d].meds",
+    "scenarios.DISCHARGE[injury_d].meds",
+    "scenarios.GENERIC_ADMITS[flu_covid].meds",
+    "scenarios.SCENARIOS[cap].meds",
+    "scenarios.SCENARIOS[sepsis_pna].meds",
+    "scenarios.SCENARIOS[sepsis_uti].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "acetaminophen 500 MG Oral Tablet",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/198440/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "204520",
+   "system": "RxNorm",
+   "expected": "potassium chloride 2 mEq/mL injection",
+   "used_in": [
+    "scenarios.SCENARIOS[dka].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "potassium chloride 2 MEQ/ML Injectable Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/204520/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "2231",
+   "system": "RxNorm",
+   "expected": "allergen: Cephalexin",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "cephalexin",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2231/properties.json",
+   "tty": "IN",
+   "name_consistent": true
+  },
+  {
+   "code": "242969",
+   "system": "RxNorm",
+   "expected": "norepinephrine 1 mg/mL injection",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_uti].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "4 ML norepinephrine 1 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/242969/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "2551",
+   "system": "RxNorm",
+   "expected": "allergen: Ciprofloxacin",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "ciprofloxacin",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2551/properties.json",
+   "tty": "IN",
+   "name_consistent": true
+  },
+  {
+   "code": "26225",
+   "system": "RxNorm",
+   "expected": "allergen: Ondansetron",
+   "used_in": [
+    "world._pre_bed_faults F21"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "ondansetron",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/26225/properties.json",
+   "tty": "IN",
+   "name_consistent": true
+  },
+  {
+   "code": "2670",
+   "system": "RxNorm",
+   "expected": "allergen: Codeine",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "codeine",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/2670/properties.json",
+   "tty": "IN",
+   "name_consistent": true
+  },
+  {
+   "code": "283669",
+   "system": "RxNorm",
+   "expected": "pantoprazole 40 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "pantoprazole 40 MG Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/283669/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "311034",
+   "system": "RxNorm",
+   "expected": "insulin regular 100 units/mL infusion",
+   "used_in": [
+    "scenarios.SCENARIOS[dka].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "insulin, regular, human 100 UNT/ML Injectable Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/311034/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "312068",
+   "system": "RxNorm",
+   "expected": "octreotide 50 mcg/mL injection",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "1 ML octreotide 0.05 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/312068/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "313002",
+   "system": "RxNorm",
+   "expected": "sodium chloride 0.9 % bolus",
+   "used_in": [
+    "scenarios.DISCHARGE[vomiting_d].meds",
+    "scenarios.GENERIC_ADMITS[abdominal].meds",
+    "scenarios.GENERIC_ADMITS[aki].meds",
+    "scenarios.GENERIC_ADMITS[other_medical].meds",
+    "scenarios.GENERIC_ADMITS[syncope].meds",
+    "scenarios.SCENARIOS[dka].meds",
+    "scenarios.SCENARIOS[ugib].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "sodium chloride 9 MG/ML Injectable Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/313002/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "318272",
+   "system": "RxNorm",
+   "expected": "aspirin 81 mg chewable tablet",
+   "used_in": [
+    "scenarios.DISCHARGE[chest_pain_d].meds",
+    "scenarios.DISCHARGE[stemi_transfer].meds",
+    "scenarios.SCENARIOS[chest_pain_ro].meds",
+    "scenarios.SCENARIOS[nstemi].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "aspirin 81 MG Chewable Tablet",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/318272/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "483017",
+   "system": "RxNorm",
+   "expected": "acetaminophen 10 mg/mL injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[trauma_other].meds",
+    "scenarios.SCENARIOS[hip_fx].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "100 ML acetaminophen 10 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/483017/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "7052",
+   "system": "RxNorm",
+   "expected": "allergen: Morphine",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "morphine",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/7052/properties.json",
+   "tty": "IN",
+   "name_consistent": true
+  },
+  {
+   "code": "70618",
+   "system": "RxNorm",
+   "expected": "allergen: Penicillins",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "NotCurrent",
+   "name_found": "Penicillin",
+   "verified": false,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/70618/properties.json",
+   "tty": "IN",
+   "name_consistent": false
+  },
+  {
+   "code": "847630",
+   "system": "RxNorm",
+   "expected": "lactated Ringer's bolus",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_pna].meds",
+    "scenarios.SCENARIOS[sepsis_uti].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "calcium chloride 0.2 MG/ML / potassium chloride 0.3 MG/ML / sodium chloride 6 MG/ML / sodium lactate 3.1 MG/ML Injectable Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/847630/properties.json",
+   "tty": "SCD",
+   "name_consistent": false
+  },
+  {
+   "code": "854235",
+   "system": "RxNorm",
+   "expected": "enoxaparin 100 mg/mL syringe",
+   "used_in": [
+    "scenarios.ENOX"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "0.4 ML enoxaparin sodium 100 MG/ML Prefilled Syringe",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/854235/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "860092",
+   "system": "RxNorm",
+   "expected": "ketorolac 15 mg injection",
+   "used_in": [
+    "scenarios.DISCHARGE[abd_pain_d].meds",
+    "scenarios.DISCHARGE[back_pain_d].meds",
+    "scenarios.DISCHARGE[headache_d].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "1 ML ketorolac tromethamine 15 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/860092/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "866508",
+   "system": "RxNorm",
+   "expected": "metoprolol tartrate 5 mg injection",
+   "used_in": [
+    "scenarios.SCENARIOS[nstemi].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "5 ML metoprolol tartrate 1 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/866508/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "896771",
+   "system": "RxNorm",
+   "expected": "labetalol 5 mg/mL injection",
+   "used_in": [
+    "scenarios.SCENARIOS[stroke].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "labetalol hydrochloride 5 MG/ML Injectable Solution",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/896771/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "897653",
+   "system": "RxNorm",
+   "expected": "hydromorphone 1 mg/mL injection",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[trauma_other].meds",
+    "scenarios.SCENARIOS[hip_fx].meds"
+   ],
+   "in_unverified_list": false,
+   "status_found": "Active",
+   "name_found": "1 ML hydromorphone hydrochloride 1 MG/ML Injection",
+   "verified": true,
+   "source_url": "https://rxnav.nlm.nih.gov/REST/rxcui/897653/properties.json",
+   "tty": "SCD",
+   "name_consistent": true
+  },
+  {
+   "code": "111088007",
+   "system": "SNOMED CT",
+   "expected": "allergen: Latex",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Latex",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=111088007",
+   "name_consistent": true
+  },
+  {
+   "code": "124171000119105",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic intractable migraine without aura",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=124171000119105",
+   "name_consistent": true
+  },
+  {
+   "code": "126906006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Neoplasm of prostate",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=126906006",
+   "name_consistent": false
+  },
+  {
+   "code": "127013003",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Disorder of kidney due to diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=127013003",
+   "name_consistent": false
+  },
+  {
+   "code": "128613002",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Seizure disorder",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=128613002",
+   "name_consistent": false
+  },
+  {
+   "code": "14669001",
+   "system": "SNOMED CT",
+   "expected": "Acute kidney injury",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[aki].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute kidney injury",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=14669001",
+   "name_consistent": true
+  },
+  {
+   "code": "185086009",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].conditions",
+    "scenarios.SCENARIOS[sepsis_pna].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Emphysematous bronchitis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=185086009",
+   "name_consistent": false
+  },
+  {
+   "code": "1912002",
+   "system": "SNOMED CT",
+   "expected": "Fall",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Fall",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=1912002",
+   "name_consistent": true
+  },
+  {
+   "code": "195951007",
+   "system": "SNOMED CT",
+   "expected": "COPD with acute exacerbation",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute exacerbation of chronic obstructive pulmonary disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=195951007",
+   "name_consistent": true
+  },
+  {
+   "code": "195967001",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Asthma",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=195967001",
+   "name_consistent": false
+  },
+  {
+   "code": "197927001",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_uti].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Recurrent urinary tract infection",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=197927001",
+   "name_consistent": false
+  },
+  {
+   "code": "227037002",
+   "system": "SNOMED CT",
+   "expected": "allergen: Shellfish",
+   "used_in": [
+    "world.ALLERGENS"
+   ],
+   "in_unverified_list": false,
+   "status_found": "inactive",
+   "name_found": "Fish - dietary",
+   "verified": false,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=227037002",
+   "name_consistent": false
+  },
+  {
+   "code": "233604007",
+   "system": "SNOMED CT",
+   "expected": "Pneumonia",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].dx",
+    "scenarios.SCENARIOS[sepsis_pna].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Pneumonia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=233604007",
+   "name_consistent": true
+  },
+  {
+   "code": "237602007",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Metabolic syndrome X",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=237602007",
+   "name_consistent": false
+  },
+  {
+   "code": "239872002",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Osteoarthritis of hip",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=239872002",
+   "name_consistent": false
+  },
+  {
+   "code": "239873007",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Osteoarthritis of knee",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=239873007",
+   "name_consistent": false
+  },
+  {
+   "code": "254837009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Malignant neoplasm of breast",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=254837009",
+   "name_consistent": false
+  },
+  {
+   "code": "26929004",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[cap].conditions",
+    "scenarios.SCENARIOS[hip_fx].conditions",
+    "scenarios.SCENARIOS[sepsis_pna].conditions",
+    "scenarios.SCENARIOS[sepsis_uti].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Alzheimer's disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=26929004",
+   "name_consistent": false
+  },
+  {
+   "code": "271737000",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Anemia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=271737000",
+   "name_consistent": false
+  },
+  {
+   "code": "29857009",
+   "system": "SNOMED CT",
+   "expected": "Chest pain, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chest pain",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=29857009",
+   "name_consistent": true
+  },
+  {
+   "code": "302870006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Hypertriglyceridemia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=302870006",
+   "name_consistent": false
+  },
+  {
+   "code": "368581000119106",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Neuropathy due to type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=368581000119106",
+   "name_consistent": false
+  },
+  {
+   "code": "399211009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "History of myocardial infarction",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=399211009",
+   "name_consistent": false
+  },
+  {
+   "code": "401303003",
+   "system": "SNOMED CT",
+   "expected": "STEMI",
+   "used_in": [
+    "scenarios.DISCHARGE[stemi_transfer].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute ST segment elevation myocardial infarction",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=401303003",
+   "name_consistent": false
+  },
+  {
+   "code": "401314000",
+   "system": "SNOMED CT",
+   "expected": "NSTEMI",
+   "used_in": [
+    "scenarios.SCENARIOS[nstemi].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute non-ST segment elevation myocardial infarction",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=401314000",
+   "name_consistent": false
+  },
+  {
+   "code": "414545008",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].conditions",
+    "scenarios.SCENARIOS[chf].conditions",
+    "scenarios.SCENARIOS[nstemi].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Ischemic heart disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=414545008",
+   "name_consistent": false
+  },
+  {
+   "code": "421750000",
+   "system": "SNOMED CT",
+   "expected": "Type 2 diabetes mellitus with ketoacidosis without coma",
+   "used_in": [
+    "scenarios.SCENARIOS[dka].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Ketoacidosis due to type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=421750000",
+   "name_consistent": true
+  },
+  {
+   "code": "42343007",
+   "system": "SNOMED CT",
+   "expected": "Hypertensive heart disease with heart failure",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Congestive heart failure",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=42343007",
+   "name_consistent": true
+  },
+  {
+   "code": "431855005",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic kidney disease stage 1",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=431855005",
+   "name_consistent": true
+  },
+  {
+   "code": "431856006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic kidney disease stage 2",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=431856006",
+   "name_consistent": true
+  },
+  {
+   "code": "431857002",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[aki].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic kidney disease stage 4",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=431857002",
+   "name_consistent": false
+  },
+  {
+   "code": "432504007",
+   "system": "SNOMED CT",
+   "expected": "Cerebral infarction, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[stroke].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Cerebral infarction",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=432504007",
+   "name_consistent": true
+  },
+  {
+   "code": "433144002",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[aki].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic kidney disease stage 3",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=433144002",
+   "name_consistent": false
+  },
+  {
+   "code": "44054006",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[dka].conditions",
+    "scenarios.SCENARIOS[nstemi].conditions",
+    "scenarios.SCENARIOS[sepsis_uti].conditions",
+    "scenarios.SCENARIOS[stroke].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Type 2 diabetes mellitus",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=44054006",
+   "name_consistent": false
+  },
+  {
+   "code": "46177005",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "End-stage renal disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=46177005",
+   "name_consistent": false
+  },
+  {
+   "code": "49436004",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.GENERIC_ADMITS[af_rvr].conditions",
+    "scenarios.GENERIC_ADMITS[af_rvr].dx",
+    "scenarios.SCENARIOS[stroke].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Atrial fibrillation",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=49436004",
+   "name_consistent": false
+  },
+  {
+   "code": "55822004",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].conditions",
+    "scenarios.SCENARIOS[nstemi].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Hyperlipidemia",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=55822004",
+   "name_consistent": false
+  },
+  {
+   "code": "56675007",
+   "system": "SNOMED CT",
+   "expected": "Acute on chronic systolic heart failure",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute heart failure",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=56675007",
+   "name_consistent": true
+  },
+  {
+   "code": "5913000",
+   "system": "SNOMED CT",
+   "expected": "Fracture of unspecified part of neck of right femur, initial",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Fracture of neck of femur",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=5913000",
+   "name_consistent": true
+  },
+  {
+   "code": "59621000",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[chest_pain_ro].conditions",
+    "scenarios.SCENARIOS[chf].conditions",
+    "scenarios.SCENARIOS[nstemi].conditions",
+    "scenarios.SCENARIOS[stroke].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Essential hypertension",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=59621000",
+   "name_consistent": false
+  },
+  {
+   "code": "60573004",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Aortic valve stenosis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=60573004",
+   "name_consistent": false
+  },
+  {
+   "code": "64859006",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[hip_fx].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Osteoporosis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=64859006",
+   "name_consistent": false
+  },
+  {
+   "code": "6525002",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "inactive",
+   "name_found": "Dependent drug abuse",
+   "verified": false,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=6525002",
+   "name_consistent": false
+  },
+  {
+   "code": "65710008",
+   "system": "SNOMED CT",
+   "expected": "Acute respiratory failure with hypoxia",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].dx",
+    "scenarios.SCENARIOS[sepsis_pna].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Acute respiratory failure",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=65710008",
+   "name_consistent": true
+  },
+  {
+   "code": "68566005",
+   "system": "SNOMED CT",
+   "expected": "Acute pyelonephritis",
+   "used_in": [
+    "scenarios.DISCHARGE[uti_d].dx",
+    "scenarios.GENERIC_ADMITS[pyelo].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Urinary tract infectious disease",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=68566005",
+   "name_consistent": false
+  },
+  {
+   "code": "714628002",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Prediabetes",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=714628002",
+   "name_consistent": false
+  },
+  {
+   "code": "74474003",
+   "system": "SNOMED CT",
+   "expected": "Gastrointestinal hemorrhage, unspecified",
+   "used_in": [
+    "scenarios.SCENARIOS[ugib].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Gastrointestinal hemorrhage",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=74474003",
+   "name_consistent": true
+  },
+  {
+   "code": "78275009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Obstructive sleep apnea syndrome",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=78275009",
+   "name_consistent": false
+  },
+  {
+   "code": "83664006",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Idiopathic atrophic hypothyroidism",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=83664006",
+   "name_consistent": false
+  },
+  {
+   "code": "84757009",
+   "system": "SNOMED CT",
+   "expected": "chronic problem (Synthea)",
+   "used_in": [
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Epilepsy",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=84757009",
+   "name_consistent": false
+  },
+  {
+   "code": "87433001",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[copd].conditions",
+    "scenarios.SCENARIOS[sepsis_pna].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Pulmonary emphysema",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=87433001",
+   "name_consistent": false
+  },
+  {
+   "code": "88805009",
+   "system": "SNOMED CT",
+   "expected": "patient fit condition",
+   "used_in": [
+    "scenarios.SCENARIOS[chf].conditions",
+    "synthea._CHRONIC_ICD10"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Chronic congestive heart failure",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=88805009",
+   "name_consistent": false
+  },
+  {
+   "code": "91302008",
+   "system": "SNOMED CT",
+   "expected": "Sepsis, unspecified organism",
+   "used_in": [
+    "scenarios.SCENARIOS[sepsis_pna].dx",
+    "scenarios.SCENARIOS[sepsis_uti].dx"
+   ],
+   "in_unverified_list": false,
+   "status_found": "active",
+   "name_found": "Sepsis",
+   "verified": true,
+   "source_url": "https://tx.fhir.org/r4/CodeSystem/$lookup?system=http%3A%2F%2Fsnomed.info%2Fsct&code=91302008",
+   "name_consistent": true
+  }
+ ]
+}
