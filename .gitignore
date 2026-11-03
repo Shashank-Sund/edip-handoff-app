@@ -19,3 +19,6 @@ dist/
 .databricks/
 .DS_Store
 *.egg-info/
+
+# generator output
+/synthetic/out/
