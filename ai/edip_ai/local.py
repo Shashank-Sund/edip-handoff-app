@@ -29,7 +29,8 @@ def records(world: Path, feeds=("fhir", "hl7")):
     if "hl7" in feeds:
         for line in open(world / "hl7" / "messages.jsonl", encoding="utf-8"):
             m = json.loads(line)
-            r = parse_hl7((world / "hl7" / m["file"]).read_text(encoding="utf-8"))
+            received = datetime.fromisoformat(m["delivery_ts"].replace("Z", "+00:00")) if m.get("delivery_ts") else None
+            r = parse_hl7((world / "hl7" / m["file"]).read_text(encoding="utf-8"), received)
             for k in KINDS:
                 out[k] += r[k]
     keys = {"obs": ("csn", "category", "order_id", "code", "status", "observed_ts", "resulted_ts"),

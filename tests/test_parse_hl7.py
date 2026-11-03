@@ -27,13 +27,8 @@ TZ = ZoneInfo("America/New_York")
 
 
 def fold(dt):
-    """LKS sends no UTC offset, so a time in the repeated 01:00 hour of 2026-11-01 is ambiguous and the
-    parser takes the first occurrence. Compare both sides on that reading."""
-    if dt is None:
-        return None
-    loc = dt.astimezone(TZ)
-    if loc.fold or (loc.month, loc.day, loc.hour) == (11, 1, 1):
-        return loc.replace(fold=0).astimezone(timezone.utc)
+    """LKS sends no UTC offset, so a time in the repeated 01:00 hour of 2026-11-01 is ambiguous. The parser
+    resolves it against the receipt time; comparisons are exact (this helper is the identity)."""
     return dt
 
 
@@ -237,3 +232,16 @@ def test_unknown_segments_and_garbage_do_not_crash():
     assert a["patient_class"] == "OBS" and a["kind"] == "update" and a["patient_name"] == "Nuñez, Ana" and not out["quarantine"]
     assert parse_hl7("garbage")["quarantine"][0]["reason"] == "no MSH segment"
     assert parse_hl7("MSH|^~\\&|EPIC|MGH|||20261026101500||ORU^R01|9|T|2.3\rPID|1\rPV1|1\r")["quarantine"]
+
+
+def test_repeated_dst_hour_resolves_against_receipt_time():
+    from parse_hl7 import parse_ts
+    utc = timezone.utc
+    edt, est = datetime(2026, 11, 1, 5, 48, 32, tzinfo=utc), datetime(2026, 11, 1, 6, 48, 32, tzinfo=utc)
+    assert parse_ts("20261101014832") == edt                                      # no reference: first reading
+    assert parse_ts("20261101014832", datetime(2026, 11, 1, 6, 48, 40, tzinfo=utc)) == est   # received after EST
+    assert parse_ts("20261101014832", datetime(2026, 11, 1, 5, 48, 40, tzinfo=utc)) == edt   # EST is in the future
+    assert parse_ts("20261101014832", datetime(2026, 11, 1, 6, 48, 40)) == est    # naive reference is UTC
+    assert parse_ts("20261101013314", datetime(2026, 11, 1, 15, 33, 44, tzinfo=utc)) == datetime(
+        2026, 11, 1, 5, 33, 14, tzinfo=utc)                                       # sent hours later: ambiguous
+    assert parse_ts("20261101014832-0500") == est                                 # an offset always wins

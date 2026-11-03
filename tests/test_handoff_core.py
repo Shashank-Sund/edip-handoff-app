@@ -66,6 +66,25 @@ def test_validator_removes_unknown_sources_and_flags_numbers():
     assert out["E06"]["text"] == "" if "text" in out["E06"] else True
 
 
+def test_validator_number_rules():
+    p = _packet()                                   # lactate 4.6, HR 112, SBP 96 charted
+    lab, vit = p["labs"][0]["src"], p["vitals"]["latest"]["src"]
+    nh = chr(0x2011)                                # non breaking hyphen, as some models write ranges
+    raw = {"E26": {"text": f"Expect 48{nh}72 h stay, then a 48-hour reassessment", "sources": []},
+           "E25": {"text": "If BP exceeds 180/105 or Cr \u21910.3, call; recheck after 6 h", "sources": [vit]},
+           "E11": {"text": "Lactate 4.60, HR 112.0, given 2.8 L LR; COVID-19 negative", "sources": [lab, vit]},
+           "E06": {"text": "Lactate 4613 then 4.6", "sources": [lab]}}
+    out, _ = validate.check(raw, p, list(raw))
+    assert out["E26"]["unsupported_numbers"] == [] and out["E25"]["unsupported_numbers"] == []
+    assert out["E11"]["unsupported_numbers"] == ["2.8"]           # a summed volume is not a charted value
+    assert out["E06"]["unsupported_numbers"] == ["4613"]
+    assert not validate._in("5", {"4.6"}) and validate._in("4.6", {"4.62"})   # integers never match by rounding
+    p["labs"][0]["value"] = "4.62"
+    p["_sources"][lab]["value"] = "4.62"
+    out, _ = validate.check({"E11": {"text": "lactate 4.6", "sources": [lab]}}, p, ["E11"])
+    assert out["E11"]["unsupported_numbers"] == []                # rounded to the stated precision
+
+
 def test_validator_survives_truncated_output():
     out, report = validate.check('{"E07": {"value": "stable", "text": "ok"', _packet(), ["E07"])
     assert "parse_error" in report and out["E07"]["confidence"] == 0.0

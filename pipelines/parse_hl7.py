@@ -16,6 +16,7 @@ except ImportError:                                   # run as a plain script
     from edip_contract import ADT_KINDS, empty
 
 TZ = ZoneInfo("America/New_York")
+SKEW = timedelta(minutes=2)          # clock skew allowed between a sender and the engine
 UTC = timezone.utc
 
 TRIGGER_KIND = {"A04": "arrival", "A14": "pending_admit", "A06": "class_change", "A15": "bed_assigned", "A26": "bed_unassigned",
@@ -44,9 +45,13 @@ def unescape(s: str) -> str:
     return s
 
 
-def parse_ts(s, fold=0):
-    """HL7 TS to aware UTC. Without an offset the time is America/New_York; during the repeated DST
-    hour the first occurrence (EDT) is taken unless the caller passes fold=1."""
+def parse_ts(s, ref=None):
+    """HL7 TS to aware UTC. Without an offset the time is America/New_York. In the repeated hour when DST
+    ends (01:00 to 01:59 twice), the later reading (standard time) is taken when ref, the time the value
+    cannot follow (receipt time for MSH-7, the message time for fields inside it), is at or within an hour
+    after it; otherwise the earlier reading (daylight time). A value sent more than an hour after the
+    repeated hour (a note signed the next morning) stays ambiguous and takes the earlier reading. Naive refs
+    are UTC."""
     m = TS_RE.match(s or "")
     if not m:
         return None
@@ -56,7 +61,12 @@ def parse_ts(s, fold=0):
         sign = 1 if off[0] == "+" else -1
         tz = timezone(sign * timedelta(hours=int(off[1:3]), minutes=int(off[3:5])))
         return dt.replace(tzinfo=tz).astimezone(UTC)
-    return dt.replace(tzinfo=TZ, fold=fold).astimezone(UTC)
+    first, later = (dt.replace(tzinfo=TZ, fold=f).astimezone(UTC) for f in (0, 1))
+    if first != later and ref is not None:
+        ref = ref if ref.tzinfo else ref.replace(tzinfo=UTC)
+        if later <= ref + SKEW and ref - later < timedelta(hours=1):
+            return later
+    return first
 
 
 def num(s):
@@ -129,7 +139,7 @@ def parse_hl7(content: str, received_ts=None) -> dict:
     msh = segs[0]
     base = {"source": "hl7", "msg_key": f"{msh[3]}|{msh[4]}|{msh[10]}", "facility": msh[4]}
     mtype, trigger = msh.c(9, 1), msh.c(9, 2)
-    msh_ts = parse_ts(msh[7]) or received_ts
+    msh_ts = parse_ts(msh[7], received_ts) or received_ts
     by = {}
     for s in segs:
         by.setdefault(s.name, []).append(s)
@@ -162,14 +172,14 @@ def _allergies(out, base, ctx):
             continue
         out["allergy"].append({**base, "allergen": unescape(al.c(3, 2)), "code": al.c(3, 1), "system": al.c(3, 3),
                                "reaction": unescape(al[5]).title(), "severity": {"SV": "High", "MO": "Medium", "MI": "Low"}.get(al[4], al[4]),
-                               "recorded_ts": parse_ts(al[6])})
+                               "recorded_ts": parse_ts(al[6], ctx["msh_ts"])})
 
 
 def _adt(out, base, ctx, trigger, content):
     by, pid, pv1, msh = ctx["by"], ctx["pid"], ctx["pv1"], ctx["msh"]
     evn = by.get("EVN", [None])[0]
-    recorded = (parse_ts(evn[2]) if evn else None) or ctx["msh_ts"]
-    effective = (parse_ts(evn[6]) if evn else None) or recorded
+    recorded = (parse_ts(evn[2], ctx["msh_ts"]) if evn else None) or ctx["msh_ts"]
+    effective = (parse_ts(evn[6], ctx["msh_ts"]) if evn else None) or recorded
     reason = evn[4] if evn else ""
     cls = CLASS.get(pv1[2], pv1[2] or None)
     kind = TRIGGER_KIND.get(trigger)
@@ -232,8 +242,8 @@ def _oru(out, base, ctx):
     else:
         category = "lab"
     order_id = None if category == "vital" else (orc.c(2) if orc else "") or obr.c(2) or None
-    resulted = parse_ts(obr[22]) or ctx["msh_ts"]
-    collected = parse_ts(obr[7])
+    resulted = parse_ts(obr[22], ctx["msh_ts"]) or ctx["msh_ts"]
+    collected = parse_ts(obr[7], ctx["msh_ts"])
     rows = []
     for s in segs:
         if s.name == "OBX":
@@ -254,8 +264,8 @@ def _oru(out, base, ctx):
         status = s[11]
         rec = {**base, "category": category, "order_id": order_id, "code": code, "loinc": loinc, "name": name,
                "value": unescape(s[5]), "numeric": num(s[5]) if s[2] == "NM" else None, "units": s[6], "ref_low": lo, "ref_high": hi,
-               "flag": s[8], "status": status, "observed_ts": collected if category == "vital" else (parse_ts(s[14]) or collected),
-               "resulted_ts": parse_ts(s[14]) if category == "vital" else resulted, "comment": " ".join(notes),
+               "flag": s[8], "status": status, "observed_ts": collected if category == "vital" else (parse_ts(s[14], ctx["msh_ts"]) or collected),
+               "resulted_ts": parse_ts(s[14], ctx["msh_ts"]) if category == "vital" else resulted, "comment": " ".join(notes),
                "validated": not device and not (category == "vital" and status == "P"),
                "line": None if category == "vital" else (int(s[1]) if s[1].isdigit() else None)}
         out["obs"].append(rec)
@@ -279,7 +289,7 @@ def _rde(out, base, ctx):
     rate = f"{rxe[23]} {rxe[24]}".strip() if rxe[23] else ""
     route = rxr.c(1) if rxr else ""
     out["med"].append({**_med_base(base, ctx, orc, rxe[2]), "dose": rxe[3], "unit": rxe.c(5, 1), "route": ROUTE.get(route, route), "rate": rate,
-                       "event": "order", "action": None, "line": None, "event_ts": (parse_ts(orc[9]) if orc else None) or ctx["msh_ts"],
+                       "event": "order", "action": None, "line": None, "event_ts": (parse_ts(orc[9], ctx["msh_ts"]) if orc else None) or ctx["msh_ts"],
                        "frequency": _timing(orc, rxe)})
     _allergies(out, base, ctx)
 
@@ -295,7 +305,7 @@ def _ras(out, base, ctx):
     for rxa in by.get("RXA", []):
         out["med"].append({**_med_base(base, ctx, orc, rxa[5]), "dose": rxa[6], "unit": rxa.c(7, 1), "route": ROUTE.get(route, route),
                            "rate": rate, "event": "administration", "action": unescape(rxa[9]) or ("Held" if rxa[20] == "NA" else "Given"),
-                           "line": int(rxa[2]) if rxa[2].isdigit() else None, "event_ts": parse_ts(rxa[3]) or ctx["msh_ts"],
+                           "line": int(rxa[2]) if rxa[2].isdigit() else None, "event_ts": parse_ts(rxa[3], ctx["msh_ts"]) or ctx["msh_ts"],
                            "frequency": _timing(orc)})
 
 
@@ -307,9 +317,9 @@ def _mdm(out, base, ctx):
         return
     status = NOTE_STATUS.get(txa[17], "In Progress")
     note_type = unescape(txa[2])
-    activity = parse_ts(txa[4]) or ctx["msh_ts"]
+    activity = parse_ts(txa[4], ctx["msh_ts"]) or ctx["msh_ts"]
     out["note"].append({**base, "note_id": txa.c(12, 1), "note_type": note_type, "loinc": NOTE_LOINC.get(note_type, ""), "status": status,
-                        "author_id": ident(txa[9]) or None, "created_ts": parse_ts(txa[6]) or activity, "service_ts": None,
+                        "author_id": ident(txa[9]) or None, "created_ts": parse_ts(txa[6], ctx["msh_ts"]) or activity, "service_ts": None,
                         "signed_ts": activity if status == "Signed" else None,
                         "text": "\n".join(unescape(o[5]) for o in by.get("OBX", []))})
 
