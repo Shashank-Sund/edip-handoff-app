@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--workers", type=int, default=2,
                     help="concurrent model calls; pay per token endpoints rate limit per workspace (HTTP 429)")
     ap.add_argument("--flush-every", type=int, default=20)
+    ap.add_argument("--sync-tables", default="gold.encounter_state_pg,gold.handoff_latest_pg",
+                    help="Lakebase synced tables (Triggered) to refresh at the end; empty to skip")
     a = ap.parse_args()
     sys.path[:0] = [f"{a.code_path}/ai", f"{a.code_path}/pipelines"]
     from edip_ai import generate, llm, local, templates
@@ -149,11 +151,27 @@ def main():
         WHEN NOT MATCHED THEN INSERT (csn, template, version, status, trigger, as_of, created_ts, model, severity, score,
           blocking, draft) VALUES (s.csn, s.template, s.version, s.status, s.trigger, s.as_of, s.created_ts, s.model,
           s.severity, s.score, s.blocking, s.draft)""")
+    refresh_synced(cat, a.sync_tables)
     tok = [(r.get("prompt_tokens") or 0, r.get("completion_tokens") or 0) for r in out[:: max(1, len(templates.templates()))]]
     print(f"generated {len(out)} drafts ({len(tok)} model calls, {failures} failed) in {time.time() - t1:.0f}s; "
           f"tokens in {sum(t[0] for t in tok)}, out {sum(t[1] for t in tok)}; retracted {len(retracted)} encounters")
     if failures:
         sys.exit(1)
+
+
+def refresh_synced(cat, names):
+    """Start an update of each Triggered synced table's pipeline so Lakebase reflects the new gold rows."""
+    from databricks.sdk import WorkspaceClient
+    w = WorkspaceClient()
+    for name in [n.strip() for n in names.split(",") if n.strip()]:
+        try:
+            t = w.postgres.get_synced_table(name=f"synced_tables/{cat}.{name}")
+            pid = getattr(t.status, "pipeline_id", None) or getattr(t, "pipeline_id", None)
+            if pid:
+                w.pipelines.start_update(pid)
+                print(f"sync refresh started: {name}")
+        except Exception as exc:          # a missing sync must not fail the generation run
+            print(f"sync refresh skipped for {name}: {type(exc).__name__}: {str(exc)[:160]}")
 
 
 def _guard(fn, arg):
