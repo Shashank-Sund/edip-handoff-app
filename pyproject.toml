@@ -1,0 +1,15 @@
+[project]
+name = "edip-handoff-app"
+version = "0.1.0"
+description = "ED to inpatient handoff reference app on Databricks (synthetic data)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

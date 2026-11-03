@@ -1,0 +1,21 @@
+# local data and outputs (never commit)
+/data/
+/synthea_out/
+*.parquet
+*.ndjson
+*.hl7
+# secrets and local config
+.env
+*.env
+.databrickscfg
+# python / node
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+node_modules/
+dist/
+# bundle state
+.databricks/
+.DS_Store
+*.egg-info/
