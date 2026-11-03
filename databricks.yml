@@ -28,6 +28,10 @@ variables:
   fhir_mode:
     description: batch (load FHIR events during setup) or zerobus (leave them to the Zerobus replayer, docs/zerobus.md)
     default: batch
+  drafts:
+    description: reference (setup loads the handoffs committed in ai/reference/ when they match the data, minutes) or
+      model (setup asks the model to write every handoff, about 30 to 75 minutes)
+    default: reference
 
 targets:
   dev:
@@ -92,8 +96,8 @@ resources:
     edip_setup:
       name: edip-setup-${bundle.target}
       description: One time (or repeatable) setup. Generates the synthetic week, loads bronze, runs the pipeline,
-        drafts every handoff with the model, and syncs the app's tables to Lakebase. About 2 hours; the model calls
-        cost about 1 USD at list price.
+        loads the reference handoffs (or drafts them with the model when var drafts is model), and syncs the app's
+        tables to Lakebase. About 15 minutes with reference drafts.
       tags: {project: edip}
       max_concurrent_runs: 1
       environments:
@@ -117,6 +121,7 @@ resources:
           depends_on: [{task_key: pipeline}]
           run_job_task:
             job_id: ${resources.jobs.handoff_generator.id}
+            job_parameters: {drafts: "${var.drafts}"}
         - task_key: lakebase
           depends_on: [{task_key: handoffs}]
           environment_key: default
@@ -140,6 +145,8 @@ resources:
       parameters:
         - {name: limit, default: "0"}
         - {name: model, default: "${var.model}"}
+        - {name: drafts, default: model}
+        - {name: workers, default: "4"}
       environments:
         - environment_key: default
           spec:
@@ -151,7 +158,8 @@ resources:
           spark_python_task:
             python_file: ./jobs/handoff_job.py
             parameters: [--catalog, "${var.catalog}", --code-path, "${workspace.file_path}", --limit, "{{job.parameters.limit}}",
-                         --model, "{{job.parameters.model}}"]
+                         --model, "{{job.parameters.model}}", --drafts, "{{job.parameters.drafts}}",
+                         --workers, "{{job.parameters.workers}}"]
 
     nightly_shutdown:
       name: edip-nightly-shutdown-${bundle.target}

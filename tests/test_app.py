@@ -138,3 +138,30 @@ def test_viewer_role_reads_but_cannot_act(client):
     assert c.get(f"/api/handoffs/{row['csn']}", headers=h("viewer")).status_code == 200
     for kind, body in (("sign", {"callback": "x1"}), ("ack", {"readback": "a" * 20}), ("edit", {"element": "E25", "text": "x"})):
         assert c.post(f"/api/handoffs/{row['csn']}/sbar_nurse/{kind}", json=body, headers=h("viewer")).status_code == 409
+
+
+def test_static_files_never_leave_the_static_folder(tmp_path):
+    """A request path with ../ (or %2e%2e) must not read files outside the built client."""
+    static = tmp_path / "static"
+    (static / "assets").mkdir(parents=True)
+    (static / "index.html").write_text("<!doctype html>index")
+    (static / "logo.svg").write_text("<svg/>")
+    (tmp_path / "secret.txt").write_text("secret")
+    os.environ["EDIP_STATIC"] = str(static)
+    if str(ROOT / "app/server") not in sys.path:
+        sys.path.insert(0, str(ROOT / "app/server"))
+    for m in ("config", "main"):
+        sys.modules.pop(m, None)
+    try:
+        main = importlib.import_module("main")
+        from fastapi.testclient import TestClient
+        c = TestClient(main.app)
+        assert c.get("/logo.svg").text == "<svg/>"
+        for path in ("/%2e%2e/secret.txt", "/..%2fsecret.txt", "/%2e%2e%2fsecret.txt", "/assets/%2e%2e/%2e%2e/secret.txt"):
+            r = c.get(path)
+            assert "secret" not in r.text, path
+        assert c.get("/handoff/123").text.endswith("index")
+        assert c.get("/api/nope").status_code == 404
+    finally:
+        for m in ("config", "main"):
+            sys.modules.pop(m, None)

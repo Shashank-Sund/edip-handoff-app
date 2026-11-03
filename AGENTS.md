@@ -4,17 +4,17 @@ You are deploying or changing the ED to inpatient handoff reference app. Everyth
 
 ## Deploy this app ("deploy this app")
 
-1. Confirm with the user: the target (`dev` unless they say otherwise), the catalog name (default `edip`), and that spending about 2 USD on serverless compute and model calls is fine. Ask whether the default model `databricks-gpt-oss-120b` exists in Serving; if not, ask which chat endpoint to use (`--var model=<name>`).
+1. Confirm with the user: the target (`dev` unless they say otherwise), the catalog name (default `edip`), and that spending well under 1 USD on serverless compute is fine (setup loads the handoffs shipped in `ai/reference/`; with `--var drafts=model` the model writes them instead, about 0.60 USD more and 30 to 75 minutes). Ask whether the default model `databricks-gpt-oss-120b` exists in Serving; if not, ask which chat endpoint to use (`--var model=<name>`).
 2. Run `scripts/deploy.sh <target> --check [--var ...]` if a terminal is available: it checks the CLI, the login, the bundle and the model in seconds, before any compute, and prints the fix for each problem.
 3. If the catalog does not exist, create it with SQL (works with Default Storage): `CREATE CATALOG IF NOT EXISTS <catalog>`. Do not use the catalogs REST API for this.
 4. `databricks bundle deploy -t <target> [--var catalog=<catalog>] [--var model=<endpoint>]`
-5. `databricks bundle run edip_setup -t <target> [same --var flags]`. About 90 minutes. Tasks: `data`, `pipeline`, `handoffs`, `lakebase`. If a task fails, read its error, fix the cause, and repair the run rather than starting over.
-6. Only after step 5 succeeds: `databricks bundle run edip_app -t <target> [same --var flags]` and give the user the app URL.
+5. `databricks bundle run edip_app -t <target> [same --var flags]` and give the user the app URL (it shows "data not loaded yet" until step 6 finishes).
+6. `databricks bundle run edip_setup -t <target> [same --var flags]`. About 15 minutes. Tasks: `data`, `pipeline`, `handoffs`, `lakebase`. If a task fails, read its error, fix the cause, and repair the run rather than starting over.
 7. Verify: the `lakebase` task output reports about 702 encounters and about 1,300 drafts; the app's `/api/health` returns `"status": "ok"`, `"mode": "live"` and the same counts.
 
 From a terminal, `scripts/deploy.sh <target> [--var ...]` does steps 2 to 6. To remove a deployment (only when the user asks): `scripts/remove.sh <target> [--var ...]`.
 
-Without a terminal (workspace UI): open the repo as a Git folder, open `databricks.yml`, choose Deploy, then in the Deployments panel run `edip_setup`, then `edip_app`. If another deployment of this app already exists in the workspace, ask the user for their own `app_name`, `lakebase_project` and `catalog` values first.
+Without a terminal (workspace UI): open the repo as a Git folder, open `databricks.yml`, choose Deploy, then in the Deployments panel run `edip_app`, then `edip_setup`. If another deployment of this app already exists in the workspace, ask the user for their own `app_name`, `lakebase_project` and `catalog` values first.
 
 ## Rules
 

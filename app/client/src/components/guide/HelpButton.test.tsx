@@ -28,7 +28,7 @@ describe('guide topics', () => {
 
   it('finds the topic ids used in the app', () => {
     // A sanity check that the scan works; these are known call sites.
-    for (const id of ['handoff.severity', 'handoff.sign', 'handoff.ack', 'board.columns', 'topbar.clock', 'board', 'analytics.census']) {
+    for (const id of ['handoff.severity', 'handoff.sign', 'handoff.ack', 'board.columns', 'clock', 'board', 'analytics.census']) {
       expect(used.has(id), id).toBe(true);
     }
   });
@@ -75,7 +75,7 @@ describe('HelpButton', () => {
     const title = findTopic('handoff.sign')!.topics[0].title;
     const dialog = screen.getByRole('dialog', { name: title });
     const link = within(dialog).getByRole('link', { name: 'Open the full guide' });
-    expect(link).toHaveAttribute('href', '/guide#handoff');
+    expect(link).toHaveAttribute('href', '/guide#handoff-sign');
     await user.click(link);
     expect(window.location.pathname).toBe('/guide');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

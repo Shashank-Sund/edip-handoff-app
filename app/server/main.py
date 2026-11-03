@@ -196,10 +196,14 @@ if (config.STATIC / "index.html").exists():
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
-        f = config.STATIC / path
-        if path and f.is_file():
+        # Serve only files inside the static folder: a path with ../ (or %2e%2e) must never reach other files.
+        root = config.STATIC.resolve()
+        f = (root / path).resolve()
+        if path and f.is_relative_to(root) and f.is_file():
             return FileResponse(f)
-        return FileResponse(config.STATIC / "index.html")
+        if path.startswith("api/"):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        return FileResponse(root / "index.html")
 else:
     @app.get("/", include_in_schema=False)
     def no_client():

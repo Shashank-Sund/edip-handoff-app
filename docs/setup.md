@@ -1,6 +1,6 @@
 # Deploy to your Databricks workspace
 
-This guide takes you from a fresh clone to the running app in your own workspace. You type three commands; the rest runs by itself for about 90 minutes and costs about 1 to 2 USD. Everything is synthetic data, so nothing here touches real patients.
+This guide takes you from a fresh clone to the running app in your own workspace. You type three commands; the rest runs by itself for about 20 minutes and costs well under 1 USD. Everything is synthetic data, so nothing here touches real patients.
 
 **In a hurry?** Steps 1 to 3 are all you need. The rest of the page is reference.
 
@@ -25,7 +25,7 @@ cd edip-handoff-app
 
 The login opens your browser; sign in and come back. `export` tells every later command which workspace to use (run it again in any new terminal).
 
-## 3. Deploy (one command, about 90 minutes)
+## 3. Deploy (one command, about 20 minutes)
 
 First a 10 second check that finds problems before anything runs or costs money:
 
@@ -45,10 +45,16 @@ If your workspace does not have `databricks-gpt-oss-120b`, add `--var model=<you
 
 1. `0/3 catalog`: creates the catalog `edip` (seconds).
 2. `1/3 bundle deploy`: creates the database, pipeline, jobs and app (about a minute).
-3. `2/3 setup job`: prints a **Run URL** and then waits. Open the URL to watch four tasks turn green: `data` (about 7 minutes), `pipeline` (about 4), `handoffs` (about 75, the model writes every handoff) and `lakebase` (about 3). You can close the terminal: the job keeps running in Databricks. If you do, start the app yourself when it finishes (step 4 of the step by step section below).
-4. `3/3 app`: builds and starts the app and prints its URL (a few minutes).
+3. `2/3 app`: builds and starts the app and prints its URL (a few minutes). You can open it now; it says "data not loaded yet" until the next step finishes, then fills in by itself.
+4. `3/3 setup job`: prints a **Run URL** and then waits. Open the URL to watch four tasks turn green: `data` (about 7 minutes), `pipeline` (about 4), `handoffs` (a minute: it loads the handoffs that come with the repo) and `lakebase` (about 3). You can close the terminal: the job keeps running in Databricks.
 
 **Open the URL**, then read **How to use** in the app's left menu. It walks you through your first five minutes.
+
+### The handoffs: shipped with the repo, or written by your model
+
+The synthetic week is the same in every deploy, so the repo ships the handoffs that `databricks-gpt-oss-120b` wrote for it (`ai/reference/`), and setup loads them instead of making about 440 model calls. Setup checks that they match your data and templates exactly, and calls the model for everything if anything differs (for example another population or edited templates), so a handoff never describes a different chart.
+
+To see your own model write them, either deploy with `--var drafts=model` (setup then takes 30 to 75 minutes and about 0.60 USD of model calls), or later run the job **edip-handoff-generator-dev** with its `drafts` parameter set to `model` after deleting the rows in `gold.handoff_draft`. Each draft shows which model wrote it.
 
 ### Your own names (shared workspaces)
 
@@ -73,19 +79,19 @@ scripts/deploy.sh dev --var app_name=edip-handoff-ana --var lakebase_project=edi
 #    CREATE CATALOG IF NOT EXISTS edip;
 #    (Workspaces without Default Storage: add MANAGED LOCATION 's3://<bucket>/edip')
 databricks bundle deploy -t dev                 # 1. resources, no data yet
-databricks bundle run edip_setup -t dev         # 2. data, pipeline, drafts, Lakebase (about 90 minutes)
-databricks bundle run edip_app -t dev           # 3. start the app; prints its URL
+databricks bundle run edip_app -t dev           # 2. start the app; prints its URL
+databricks bundle run edip_setup -t dev         # 3. data, pipeline, drafts, Lakebase (about 15 minutes)
 ```
 
-Add the same `--var` flags to each command if you use any. Start the app only after step 2 finishes; before that it opens but shows "data not loaded yet".
+Add the same `--var` flags to each command if you use any. Until step 3 finishes the app shows "data not loaded yet", then fills in by itself.
 
 ### From the workspace, without a terminal
 
 1. **Workspace > Create > Git folder**, paste `https://github.com/Shashank-Sund/edip-handoff-app`, create it.
 2. Create the catalog: open a SQL editor and run `CREATE CATALOG IF NOT EXISTS edip;`.
 3. In the Git folder, open `databricks.yml` and choose **Deploy** (the deployments panel on the left).
-4. In the same panel, run **edip_setup** and wait for it to finish (about 90 minutes; **Jobs** shows the progress).
-5. Run **edip_app**. The app's URL is under **Compute > Apps**.
+4. In the same panel, run **edip_app**. The app's URL is under **Compute > Apps**.
+5. Run **edip_setup** (about 15 minutes; **Jobs** shows the progress). The app fills in when it finishes.
 
 ### With an AI assistant
 
@@ -100,6 +106,7 @@ Open the repo in Genie Code, Claude Code or similar and say "deploy this app". `
 | `app_name` | `edip-handoff` | App name, unique in the workspace |
 | `model` | `databricks-gpt-oss-120b` | Chat endpoint that writes the narrative |
 | `population` | `synthea` | `synthea`: the committed Synthea population (the reference dataset); `standin`: the built in population |
+| `drafts` | `reference` | `reference`: load the handoffs shipped in `ai/reference/` when they match (minutes); `model`: the model writes every handoff (30 to 75 minutes) |
 | `fhir_mode` | `batch` | `batch`: load FHIR events during setup; `zerobus`: stream them yourself ([zerobus.md](zerobus.md)) |
 
 Pass them per command (`--var model=databricks-claude-sonnet-5-5`) or set them per target in `databricks.yml`. The `cleanroom` target is an example of a second, independent copy in the same workspace.
@@ -113,7 +120,7 @@ App settings live in `databricks.yml` under the app's `config.env`:
 ## Day to day
 
 - **Costs.** Everything scales to zero except a running app. A job stops this deployment's app and pipeline at 01:00 Pacific every night. To start it again: `databricks apps start edip-handoff` (or **Compute > Apps > edip-handoff > Start**); `databricks apps stop edip-handoff` stops it.
-- **Redraft handoffs** (after changing a template or the model): run the job `edip-handoff-generator-dev`. It skips drafts that exist, so delete the rows in `gold.handoff_draft` first to redo them. It refreshes Lakebase when it finishes.
+- **Redraft handoffs** (after changing a template or the model): delete the rows in `gold.handoff_draft`, then run the job `edip-handoff-generator-dev` (its `drafts` parameter is `model`; `workers` sets how many model calls run at once, 4 by default; lower it if the log shows HTTP 429). It skips drafts that exist and refreshes Lakebase when it finishes.
 - **Live updates.** The handoff job has a trigger on `<catalog>.silver.handoff_events`, paused so a deploy never starts model calls by itself. With new data arriving (for example through Zerobus) and the pipeline running, unpause it under **Jobs > edip-handoff-generator-dev > Schedules and triggers**: it then drafts only new admit decisions and changes, at most every 5 minutes. Set `EDIP_CLOCK_MODE` to `live` too. Pause it again to stop model spend.
 - **Change the code**: `databricks bundle deploy -t dev`, then `databricks bundle run edip_app -t dev` for app changes.
 - In the workspace, jobs and pipelines of the `dev` target show with a `[dev <your name>]` prefix; that is normal for development targets.

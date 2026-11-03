@@ -104,7 +104,7 @@ export function ClockControl() {
           {playing ? <Pause /> : <Play />}
         </Button>
       </WithTooltip>
-      <HelpButton topic="topbar.clock" label="What is this clock?" className="hidden sm:inline-grid" />
+      <HelpButton topic="clock" label="What is this clock?" className="hidden sm:inline-grid" />
     </div>
   );
 }

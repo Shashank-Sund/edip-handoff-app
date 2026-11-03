@@ -8,8 +8,9 @@
 #
 # Needs the Databricks CLI (1.23 or later) logged in to the workspace (DATABRICKS_CONFIG_PROFILE or a default
 # profile). Steps: 0 create the catalog if missing (SQL, so Default Storage works), 1 deploy the bundle,
-# 2 run the setup job (about 90 minutes: data, pipeline, model drafts, Lakebase sync), 3 build and start the app.
-# Safe to re-run: every step is idempotent; step 2 regenerates the data and the drafts.
+# 2 build and start the app, 3 run the setup job (about 15 minutes: data, pipeline, reference drafts, Lakebase sync;
+# with --var drafts=model the model writes every handoff instead, 30 to 75 minutes).
+# Safe to re-run: every step is idempotent; step 3 regenerates the data and reloads the drafts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 target="${1:-dev}"
@@ -72,9 +73,15 @@ fi
 echo "== 1/3 bundle deploy"
 databricks bundle deploy -t "$target" "${extra[@]+"${extra[@]}"}"
 
-echo "== 2/3 setup job (about 90 minutes; the Run URL below shows progress, and the job keeps running if you close this terminal)"
-databricks bundle run edip_setup -t "$target" "${extra[@]+"${extra[@]}"}"
-
-echo "== 3/3 app"
+# The app starts first, so its URL is ready while the data loads; it shows "data not loaded yet" and checks again
+# every 30 seconds until setup has filled Lakebase.
+echo "== 2/3 app (a few minutes)"
 databricks bundle run edip_app -t "$target" "${extra[@]+"${extra[@]}"}"
-databricks bundle summary -t "$target" "${extra[@]+"${extra[@]}"}" | grep -i -A2 "apps" || true
+url="$(databricks apps get "$app" -o json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("url", ""))')"
+echo "App: $url (it fills in when step 3 finishes)"
+
+drafts="$(var drafts)"
+if [ "$drafts" = "model" ]; then took="30 to 75 minutes, the model writes every handoff"; else took="about 15 minutes"; fi
+echo "== 3/3 setup job ($took; the Run URL below shows progress, and the job keeps running if you close this terminal)"
+databricks bundle run edip_setup -t "$target" "${extra[@]+"${extra[@]}"}"
+echo "Done. Open $url"

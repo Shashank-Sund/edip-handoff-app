@@ -18,7 +18,7 @@ Needs the Databricks CLI 1.23 or later, logged in to your workspace, and Python 
 ```bash
 export DATABRICKS_CONFIG_PROFILE=<your profile>
 scripts/deploy.sh dev --check     # 10 seconds: checks the CLI, login and model, creates nothing
-scripts/deploy.sh dev             # about 90 minutes, about 1 to 2 USD
+scripts/deploy.sh dev             # about 20 minutes, well under 1 USD
 ```
 
 One bundle deploys the Lakebase database, the pipeline, the jobs and the app, then generates a synthetic week, drafts every handoff and starts the app. A first time guide, other ways to deploy (workspace UI, AI assistant), settings and troubleshooting: [docs/setup.md](docs/setup.md). AI agents: [AGENTS.md](AGENTS.md).

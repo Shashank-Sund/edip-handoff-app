@@ -1,0 +1,10 @@
+{
+  "drafts": 1320,
+  "points": 440,
+  "encounters": 118,
+  "models": [
+    "databricks-gpt-oss-120b"
+  ],
+  "templates_sha": "d5ee30ece8f30f0056989fdc6442a91b58fc2f5d455cc1ebd63612602bb4e75e",
+  "population": "synthea (synthetic/population/synthea_3000.json.gz)"
+}

@@ -1,7 +1,13 @@
 """Handoff generator job (serverless). Reads silver triggers, generates drafts, writes gold.
 
   python jobs/handoff_job.py --catalog edip --code-path <workspace path of the repo files> [--model ENDPOINT]
-      [--backfill-interval-min 60] [--limit N] [--workers 8]
+      [--drafts reference|model] [--backfill-interval-min 60] [--limit N] [--workers 4]
+
+--drafts reference (what setup uses) loads the drafts committed in ai/reference/ instead of calling the model, when
+they match this data exactly: the same generation points (every encounter and time) and the same templates. The
+synthetic week is deterministic, so a standard deploy matches and setup takes minutes instead of over an hour. Any
+mismatch (another population, changed generator or templates) falls back to the model for everything, so a draft
+never describes a different chart. --drafts model always calls the model (redrafts, live updates).
 
 For each encounter with a handoff start, the generation points are the start, then regenerate triggers spaced
 at least --backfill-interval-min apart (the live debounce from ai/config.yaml when running continuously), and
@@ -14,13 +20,13 @@ Data volumes here are small (one week, two EDs), so silver is read into memory o
 deployment would read per encounter.
 """
 import argparse
+import gzip
+import hashlib
 import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-
-from pyspark.sql import SparkSession
 
 
 def _utc(v):
@@ -41,7 +47,9 @@ def main():
     ap.add_argument("--model", default="")
     ap.add_argument("--backfill-interval-min", type=int, default=60)
     ap.add_argument("--limit", type=int, default=0, help="only the first N encounters (trial runs)")
-    ap.add_argument("--workers", type=int, default=2,
+    ap.add_argument("--drafts", choices=["reference", "model"], default="model",
+                    help="reference: load ai/reference/ drafts when they match this data; model: call the model")
+    ap.add_argument("--workers", type=int, default=4,
                     help="concurrent model calls; pay per token endpoints rate limit per workspace (HTTP 429)")
     ap.add_argument("--flush-every", type=int, default=20)
     ap.add_argument("--sync-tables", default="gold.encounter_state_pg,gold.handoff_draft_pg",
@@ -63,6 +71,7 @@ def main():
             raise RuntimeError(f"Model endpoint {model.endpoint!r} is not available in this workspace "
                                f"({type(exc).__name__}). Pick a chat endpoint under Serving and pass it as the job's "
                                f"model parameter (bundle: --var model=<name>).") from None
+    from pyspark.sql import SparkSession
     spark = SparkSession.builder.getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     cat = a.catalog
@@ -101,6 +110,7 @@ def main():
         points = [p for p in points if p[0] in keep]
     todo = [p for p in points if (p[0], p[1]) not in done]
     print(f"{len({p[0] for p in points})} encounters, {len(points)} generation points, {len(todo)} to generate")
+    reference = load_reference(a.code_path, points, todo) if a.drafts == "reference" and todo and not a.limit else None
 
     def one(point):
         csn, as_of, trigger, status = point
@@ -135,6 +145,10 @@ def main():
     # Results are written every --flush-every points, so a cancel or a failure loses at most one batch and a rerun
     # resumes (points already stored are skipped).
     out, batch, failures, t1 = [], [], 0, time.time()
+    if reference is not None:
+        flush(reference)
+        todo = []           # the summary below then counts model calls only
+        print(f"loaded {len(reference)} reference drafts from ai/reference/ in {time.time() - t1:.0f}s (no model calls)")
     with ThreadPoolExecutor(a.workers) as pool:
         for i, res in enumerate(pool.map(lambda p: _guard(one, p), todo), 1):
             if isinstance(res, Exception):
@@ -170,6 +184,51 @@ def main():
     # already drafted; more than 2% means something is wrong.
     if failures > max(1, 0.02 * len(todo)):
         sys.exit(1)
+
+
+def templates_sha(code_path):
+    """Fingerprint of the handoff templates the drafts were written for."""
+    h = hashlib.sha256()
+    for f in sorted(__import__("pathlib").Path(code_path, "ai", "templates").glob("*.yaml")):
+        h.update(f.name.encode() + b"\0" + f.read_bytes())
+    return h.hexdigest()
+
+
+def load_reference(code_path, points, todo):
+    """Rows for the flush() schema from ai/reference/, or None (with the reason) when they do not match exactly."""
+    from pathlib import Path
+    base = Path(code_path, "ai", "reference")
+    try:
+        meta = json.loads((base / "meta.json").read_text())
+        ref = [json.loads(line) for line in gzip.open(base / "drafts.jsonl.gz", "rt")]
+    except OSError as exc:
+        print(f"no reference drafts ({type(exc).__name__}); generating with the model")
+        return None
+    if meta.get("templates_sha") != templates_sha(code_path):
+        print("reference drafts were written for other templates; generating with the model")
+        return None
+    iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    want = {(p[0], iso(p[1])): p for p in points}
+    have = {(r["csn"], r["as_of"]) for r in ref}
+    if have != set(want):
+        print(f"reference drafts do not match this data ({len(have & set(want))} of {len(want)} points); "
+              "generating with the model")
+        return None
+    pending = {(p[0], iso(p[1])) for p in todo}
+    num = lambda v, f: f(v) if v not in (None, "") else None
+    rows = []
+    for r in ref:
+        key = (r["csn"], r["as_of"])
+        if key not in pending:
+            continue
+        p = want[key]
+        blocking = r["blocking"] if isinstance(r["blocking"], list) else json.loads(r["blocking"] or "[]")
+        rows.append({"csn": r["csn"], "template": r["template"], "status": p[3], "trigger": p[2], "as_of": p[1],
+                     "model": r["model"], "severity": r["severity"], "score": num(r["score"], float), "blocking": blocking,
+                     "draft": r["draft"], "validation": r["validation"],
+                     "prompt_tokens": num(r["prompt_tokens"], int), "completion_tokens": num(r["completion_tokens"], int),
+                     "seconds": num(r["seconds"], float)})
+    return rows
 
 
 def refresh_synced(cat, names):

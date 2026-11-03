@@ -4,7 +4,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { WithTooltip } from '@/components/ui/tooltip';
 import { linkProps } from '@/lib/router';
 import { cn } from '@/lib/utils';
-import { findTopic } from './content';
+import { anchorFor, findTopic } from './content';
 
 /** A ? button that opens one topic of the guide in a side panel, without leaving the page. */
 export function HelpButton({ topic, label = 'How to read this', className }: { topic: string; label?: string; className?: string }) {
@@ -30,14 +30,15 @@ export function HelpButton({ topic, label = 'How to read this', className }: { t
       <Sheet open={open} onOpenChange={setOpen}>
         {open && (
           <SheetContent title={topics.length === 1 ? topics[0].title : section.title} description={topics.length === 1 ? section.title : section.summary}>
-            <div className="space-y-6 px-5 py-5 text-sm leading-relaxed">
+            {/* Any link inside (to the guide, or within it) leaves the page, so the panel closes. */}
+            <div className="space-y-6 px-5 py-5 text-sm leading-relaxed" onClickCapture={(e) => (e.target as HTMLElement).closest('a') && setOpen(false)}>
               {topics.map((t) => (
                 <section key={t.id} className="space-y-3">
                   {topics.length > 1 && <h3 className="font-semibold">{t.title}</h3>}
                   {t.body}
                 </section>
               ))}
-              <a {...linkProps(`/guide#${section.id}`)} onClickCapture={() => setOpen(false)} className="inline-block text-sm font-medium text-primary hover:underline">
+              <a {...linkProps(`/guide#${topics.length === 1 ? anchorFor(`${section.id}.${topics[0].id}`) : section.id}`)} className="inline-block text-sm font-medium text-primary hover:underline">
                 Open the full guide
               </a>
             </div>
