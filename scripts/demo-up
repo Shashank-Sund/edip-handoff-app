@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin wrapper: see scripts/demo_ctl.py. Uses $DATABRICKS_CONFIG_PROFILE (default: edip).
+set -euo pipefail
+export DATABRICKS_CONFIG_PROFILE="${DATABRICKS_CONFIG_PROFILE:-edip}"
+exec python3 "$(dirname "$0")/demo_ctl.py" up "$@"
