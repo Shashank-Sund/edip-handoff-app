@@ -42,8 +42,8 @@ ALLERGY_TYPE = {"Shellfish": "FA", "Latex": "EA", "Adhesive tape": "EA"}
 ROUTE = {"IV": "IV^Intravenous^HL70162", "PO": "PO^Oral^HL70162", "SL": "SL^Sublingual^HL70162", "INH": "IH^Inhalation^L",
          "IM": "IM^Intramuscular^HL70162", "SC": "SC^Subcutaneous^HL70162"}
 EVN_REASON = {"arrival": "ED_ARRIVAL", "registration": "FIN", "pending_admit": "ADMIT", "class_change": "ADMIT",
-              "transfer": "TRANSFER", "discharge": "DISCHARGE", "cancel_admit": "CANCEL", "cancel_transfer": "CANCEL",
-              "cancel_discharge": "CANCEL", "merge": "MERGE"}
+              "bed_assigned": "BED_ASSIGN", "bed_unassigned": "BED_RELEASE", "transfer": "TRANSFER", "discharge": "DISCHARGE",
+              "cancel_admit": "CANCEL", "cancel_transfer": "CANCEL", "cancel_discharge": "CANCEL", "merge": "MERGE"}
 TRIGGER = {"arrival": "A04", "registration": "A08", "triage": "A08", "roomed": "A08", "provider": "A08", "allergy_update": "A08",
            "isolation_update": "A08", "code_status_update": "A08", "transfer": "A02", "cancel_transfer": "A12",
            "discharge": "A03", "cancel_discharge": "A13", "cancel_admit": "A11", "merge": "A40"}

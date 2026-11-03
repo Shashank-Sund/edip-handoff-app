@@ -1,0 +1,32 @@
+# Declarative Automation Bundle for the ED to inpatient handoff reference app.
+# The workspace comes from your CLI profile (for example DATABRICKS_CONFIG_PROFILE=edip), so no host is stored here.
+#   databricks bundle deploy -t dev
+#   databricks bundle run edip_pipeline -t dev
+bundle:
+  name: edip-handoff-app
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds bronze, silver and gold
+    default: edip
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+resources:
+  pipelines:
+    edip_pipeline:
+      name: edip-pipeline
+      catalog: ${var.catalog}
+      schema: silver
+      serverless: true
+      continuous: false
+      channel: CURRENT
+      configuration:
+        edip.catalog: ${var.catalog}
+        edip.code_path: ${workspace.file_path}/pipelines
+      libraries:
+        - file:
+            path: ./pipelines/edip_pipeline.py

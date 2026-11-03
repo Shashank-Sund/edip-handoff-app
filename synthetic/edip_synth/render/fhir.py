@@ -180,10 +180,15 @@ class Renderer:
         empty_at = None
         st = {"status": "arrived", "class": "E", "locs": [], "planned": None, "service": "", "admitting": "",
               "priority": None, "reason": None, "dx": False, "period_end": None, "disposition": None,
-              "admit_source": False, "cancelled": False}
+              "admit_source": False, "cancelled": False, "attending": "", "level_of_care": "",
+              "classes": [{"class": "E", "start": enc["arrival_at"], "end": None}]}
         for i, a in enumerate(rows):
             kind, d, eff, rec = a["kind"], a["details"], a["effective_at"], a["recorded_at"]
             loc = (a["dept_id"], a["unit"], a["room"], a["bed"])
+            while flood and flood[0] < ts(rec):           # F01 copies carry the state as of their own time
+                t = flood.pop(0)
+                if i and rows[i - 1]["kind"] not in ("arrival", "cancel_admit"):
+                    self._flood(enc, self.pats[rows[i - 1]["pat_id"]], st, rows[i - 1], org, t, len(flood))
             st["class"] = a["patient_class"]
             self._apply(st, enc, kind, d, eff, loc)
             self.snap[csn].append((rec, st["class"], st["status"], loc))
@@ -198,11 +203,11 @@ class Renderer:
             if kind == "registration" and csn in self.empty_a08:
                 empty_at = ts(rec) + timedelta(minutes=self.rng.uniform(2, 20))
             nxt = ts(rows[i + 1]["recorded_at"]) if i + 1 < len(rows) else None
-            while flood and (nxt is None or flood[0] < nxt) and kind not in ("arrival", "cancel_admit"):
-                self._flood(enc, pat, st, a, org, flood.pop(0), len(flood))
             if empty_at and (nxt is None or empty_at < nxt):
                 self._empty_a08(enc, pat, a, org, empty_at)
                 empty_at = None
+        while flood and rows[-1]["kind"] not in ("arrival", "cancel_admit"):
+            self._flood(enc, self.pats[rows[-1]["pat_id"]], st, rows[-1], org, flood.pop(0), len(flood))
         if variant >= 2:
             self.fault("F30", csn, rows[0]["recorded_at"], self.log_id(first),
                        f"Patient class display spelled as variant {variant} on every event of the visit",
@@ -220,17 +225,26 @@ class Renderer:
             st["status"] = "in-progress"
         elif kind == "triage":
             st["priority"], st["reason"] = d.get("esi"), d.get("chief_complaint")
+        elif kind == "provider":
+            st["attending"] = d.get("provider", "")
         elif kind == "pending_admit":
             dept = self.dept_by_code.get((enc["facility"], d.get("pending_unit", "")))
-            st["planned"] = (dept["dept_id"], d["pending_unit"], "", "") if dept else None
-            st.update(service=d.get("service", ""), admitting=d.get("admitting", ""), dx=True, admit_source=True)
+            st["planned"] = self._loc_entry((dept["dept_id"], d["pending_unit"], "", ""), "planned", eff) if dept else None
+            st.update(service=d.get("service", ""), admitting=d.get("admitting", ""), dx=True, admit_source=True,
+                      level_of_care=d.get("level_of_care", ""))
         elif kind == "bed_assigned":
             dept = self.dept_by_code.get((enc["facility"], d["pending_unit"]))
-            st["planned"] = (dept["dept_id"], d["pending_unit"], d["pending_room"], d["pending_bed"]) if dept else None
+            st["planned"] = self._loc_entry((dept["dept_id"], d["pending_unit"], d["pending_room"], d["pending_bed"]),
+                                            "planned", eff) if dept else None
         elif kind == "bed_unassigned":
+            if st["planned"]:
+                st["planned"]["end"] = eff          # the plan ended: kept in the history, status planned with an end
+                locs.append(st["planned"])
             st["planned"] = None
         elif kind == "class_change":
             st["status"] = "in-progress"
+            st["classes"][-1]["end"] = eff
+            st["classes"].append({"class": st["class"], "start": eff, "end": None})
             if d.get("admitting"):
                 st["admitting"] = d["admitting"]
             if d.get("service"):
@@ -239,7 +253,7 @@ class Renderer:
             for x in current:
                 x["status"], x["end"] = "completed", eff
             locs.append(self._loc_entry(loc, "active", eff))
-            st["planned"] = None if st["planned"] == loc else st["planned"]
+            st["planned"] = None if st["planned"] and st["planned"]["loc"] == loc else st["planned"]
             st["status"] = "in-progress"
         elif kind == "cancel_transfer":
             if current:
@@ -283,7 +297,12 @@ class Renderer:
             e["reasonCode"] = [{"text": st["reason"]}]
         if st["period_end"]:
             e["period"]["end"] = st["period_end"]
-        for role, prov_id in (("ATND", a["attending"]), ("ADM", st["admitting"])):
+        e["classHistory"] = [{"class": R.coding(R.TERM + "v3-ActCode", R.CLASS[c["class"]][0], R.CLASS[c["class"]][1][0]),
+                              "period": {"start": c["start"], **({"end": c["end"]} if c["end"] else {})}}
+                             for c in st["classes"]]
+        if st["level_of_care"]:
+            e["extension"] = [{"url": R.system_for(src, "level-of-care"), "valueString": st["level_of_care"]}]
+        for role, prov_id in (("ATND", st["attending"]), ("ADM", st["admitting"])):
             p = self.prac(prov_id)
             if p:
                 resources.append(p)
@@ -306,7 +325,7 @@ class Renderer:
                                             "text": a["details"].get("disposition") or disp}
         if hosp:
             e["hospitalization"] = hosp
-        entries = list(st["locs"]) + ([self._loc_entry(st["planned"], "planned", None)] if st["planned"] else [])
+        entries = list(st["locs"]) + ([st["planned"]] if st["planned"] else [])
         for x in entries:
             dept_id, unit, room, bed = x["loc"]
             chain = R.location_chain(self.ids, self.depts[dept_id], unit, room, bed, org)
@@ -444,7 +463,7 @@ class Renderer:
             ostatus = R.RESULT_STATUS[r["status"]]
             if mixed:
                 ostatus = ["final", "preliminary", "registered"][min(i, 2)]
-            obs.append(R.result_observation(self.ids, {**r, "status": r["status"] + ("m" if mixed else "")}, ostatus,
+            obs.append(R.result_observation(self.ids, {**r, "status": r["status"] + ("m" if mixed else "")}, src, ostatus,
                                             pat_ref, enc_ref, R.ref(lab), R.ref(spec) if spec else None,
                                             "imaging" if imaging else "laboratory"))
         done = status in ("F", "C")
@@ -472,6 +491,7 @@ class Renderer:
                                      {"coding": [R.coding(R.system_for(self.src(fac), "FLO"), "VS", "Vital signs")],
                                       "text": "Vital signs"}, R.ref(p), R.ref(e), R.ref(nurse), obs, v["entered_at"],
                                      v["taken_at"], category=R.cc(R.TERM + "observation-category", "vital-signs", "Vital Signs"))
+            dr["identifier"] = [{"system": R.system_for(self.src(fac), "FLO"), "value": f"{v['csn']}-{v['line']}"}]
             # Only sites with a flowsheet ORU interface carry the HL7 lineage extensions (site profile knob).
             hl7 = self.cfg["site_profile"][fac]["flowsheet_oru"]
             self.emit(f"vit/{v['csn']}/{v['line']}", v["csn"], fac, "result-created", "R01" if hl7 else None,
@@ -493,6 +513,7 @@ class Renderer:
             nurse = self.prac(m["user_id"])
             mr_ref = R.ref({"id": self.ids.rid("mr", mo["order_med_id"])})
             ma = R.medication_administration(self.ids, m, mo, R.ref(p), R.ref(e), R.ref(nurse), mr_ref)
+            ma["identifier"] = [{"system": R.system_for(self.src(fac), "MAR"), "value": f"{m['order_med_id']}-{m['line']}"}]
             mr = R.medication_request(self.ids, mo, self.src(fac), R.ref(p), R.ref(e),
                                       R.ref({"id": self.ids.rid("prac", mo["prescriber"])}))
             prescriber = self.prac(mo["prescriber"])

@@ -43,7 +43,8 @@ INTERP = {"H": "High", "L": "Low", "HH": "Critical high", "LL": "Critical low", 
 RESULT_STATUS = {"P": "preliminary", "F": "final", "C": "corrected"}
 UCUM_CODE = {"K/uL": "10*3/uL", "mmHg": "mm[Hg]"}
 ROUTE = {"IV": ("C38276", "Intravenous"), "PO": ("C38288", "Oral"), "SL": ("C38300", "Sublingual"),
-         "INH": ("C38216", "Respiratory (inhalation)")}
+         "INH": ("C38216", "Respiratory (inhalation)"), "SC": ("C38299", "Subcutaneous"), "IM": ("C28161", "Intramuscular"),
+         "PR": ("C38295", "Rectal"), "TOP": ("C38304", "Topical")}
 FREQ = {"Q4H": (1, 4, "h"), "Q8H": (1, 8, "h"), "Q12H": (1, 12, "h"), "Q24H": (1, 24, "h"), "BID": (2, 1, "d")}
 MAR_STATUS = {"Given": "completed", "New Bag": "completed", "Rate Change": "completed", "Held": "not-done"}
 REACTION_SCT = {"Hives": "247472004", "Wheal (finding)": "247472004", "Rash": "271807003",
@@ -139,6 +140,7 @@ def location_chain(ids, dept, unit, room, bed, org):
     src = dept["facility"].lower()
     out = [{"resourceType": "Location", "id": ids.rid("loc", dept["dept_id"]), "status": "active", "mode": "instance",
             "identifier": [{"system": system_for(src, "DEP"), "value": dept["dept_id"]}], "name": dept["name"],
+            "alias": [dept["code"]],
             "physicalType": cc(TERM + "location-physical-type", "wa", "Ward"), "managingOrganization": ref(org)}]
     if room:
         kind = "area" if room == "WR" else "ro"
@@ -213,7 +215,8 @@ def allergy(ids, a, src, pat_ref, enc_ref=None):
            "clinicalStatus": cc(TERM + "allergyintolerance-clinical", "active", "Active"),
            "verificationStatus": cc(TERM + "allergyintolerance-verification", "confirmed", "Confirmed"),
            "type": "allergy", "category": [category], "criticality": "high" if a["severity"] == "High" else "low",
-           "code": cc(system, a["code"] if system else None, a["allergen"], text=a["allergen"]),
+           "code": {"text": a["allergen"], **({"coding": [{k: v for k, v in (("system", system), ("code", a["code"]),
+                                                                              ("display", a["allergen"])) if v}]} if system else {})},
            "patient": pat_ref, "recordedDate": a["noted_at"]}
     if enc_ref:
         out["encounter"] = enc_ref
@@ -299,8 +302,8 @@ def _dosage(row, action=None):
     if action and action != "Given":
         text = f"{action}: {text}"
     d = {"text": text}
-    if row["route"] in ROUTE:
-        d["route"] = cc(NCIT, *ROUTE[row["route"]], text=row["route"])
+    if row["route"]:
+        d["route"] = cc(NCIT, *ROUTE[row["route"]], text=row["route"]) if row["route"] in ROUTE else {"text": row["route"]}
     rate = {}
     m = re.match(r"^([\d.]+)\s*(.*)$", row.get("rate") or "")
     if m:
@@ -400,10 +403,11 @@ def specimen(ids, order, src, pat_ref):
             "subject": pat_ref, "collection": {"collectedDateTime": order["collected_at"]}}
 
 
-def result_observation(ids, r, status, pat_ref, enc_ref, performer, specimen_ref=None, category="laboratory"):
+def result_observation(ids, r, src, status, pat_ref, enc_ref, performer, specimen_ref=None, category="laboratory"):
     out = {"resourceType": "Observation", "id": ids.rid("obs", r["order_id"], r["line"], r["status"], r["resulted_at"]),
            "status": status, "category": [cc(TERM + "observation-category", category, category.capitalize())],
-           "code": cc(LOINC, r["loinc"], r["name"], text=r["name"]), "subject": pat_ref, "encounter": enc_ref,
+           "code": {"coding": [coding(LOINC, r["loinc"], r["name"]), coding(system_for(src, "COMPONENT"), r["lab"])],
+                    "text": r["name"]}, "subject": pat_ref, "encounter": enc_ref,
            "effectiveDateTime": r["observed_at"], "issued": r["resulted_at"], "performer": [performer]}
     if status == "registered":
         out["dataAbsentReason"] = cc(TERM + "data-absent-reason", "temp-unknown", "Temporarily Unknown")

@@ -24,6 +24,8 @@ SKIP_ON_UP = ("-smoke",)
 
 
 def ours(name):
+    if name and name.startswith("[dev "):          # bundle development mode prefixes "[dev <user>] "
+        name = name.split("] ", 1)[-1]
     return bool(name) and (name == PREFIX or name.startswith(PREFIX + "-") or name.startswith(PREFIX + "_"))
 
 
