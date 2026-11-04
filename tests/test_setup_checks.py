@@ -56,6 +56,7 @@ def test_role_map_is_a_deploy_time_variable():
     assert b["variables"]["role_map"]["default"] == "{}"
     env = {e["name"]: e["value"] for e in b["resources"]["apps"]["edip_app"]["config"]["env"]}
     assert env["EDIP_ROLE_MAP"] == "${var.role_map}"
-    assert "@" not in (ROOT / "databricks.yml").read_text()
+    import re
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", (ROOT / "databricks.yml").read_text())     # no email address
     # The local override file the docs point to (.databricks/bundle/<target>/variable-overrides.json) is ignored.
     assert ".databricks/" in (ROOT / ".gitignore").read_text().split()

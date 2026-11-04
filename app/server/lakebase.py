@@ -5,8 +5,8 @@ is a short lived token from the Databricks SDK for the endpoint in EDIP_PG_ENDPO
 endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
-refreshed by the handoff job; retracted_ts only once the sync has it). Writes: app.handoff_action and app.view_log (with the live clock, every view of an
-earlier time), created here on first start, append only.
+refreshed by the handoff job; retracted_ts once the sync has it). Writes: app.handoff_action and app.view_log (with
+the live clock, every view of an earlier time), created here on first start, append only.
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def load_dataset() -> Dataset:
             drafts = cur.execute(DRAFT_SQL.format(", retracted_ts")).fetchall()
         except UndefinedColumn:
             # Synced before the handoff job added retracted_ts (a deployment from before it): a retracted version is
-            # then retracted at every time, as before. The next full refresh of the sync brings the column.
+            # then retracted at every time, as before. edip_lakebase_setup (a full refresh) brings the column.
             drafts = cur.execute(DRAFT_SQL.format("")).fetchall()
     for d in drafts:
         if isinstance(d["blocking"], str):

@@ -521,9 +521,10 @@ class Views:
         series, t = [], start
         while t <= min(at, ds.end):
             ed = sum(1 for e in encs if e["arrival_ts"] and e["arrival_ts"] <= t and (e["left_ts"] is None or e["left_ts"] > t)
-                     and e["status"] != "canceled")
+                     and not ds.canceled_at(e, t))
             board = sum(1 for e in encs if e["admit_decision_ts"] and e["admit_decision_ts"] <= t
                         and (e["ed_departure_ts"] is None or e["ed_departure_ts"] > t) and ds.versions.get(e["csn"])
+                        and not ds.canceled_at(e, t)
                         and (e["ed_departure_ts"] or self.stale_boarding is None or t - e["admit_decision_ts"] <= self.stale_boarding))
             series.append({"t": iso(t), "ed": ed, "boarding": board})
             t += timedelta(hours=1)

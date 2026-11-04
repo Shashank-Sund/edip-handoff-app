@@ -1,7 +1,8 @@
 """The handoff job's retraction and its upgrade of older tables, without Spark or Databricks.
 
 A canceled admission marks every version retracted with the cancel's time (retracted_ts), so the app can show the
-case as it was before the cancel; tables made before the column get it added, and the drafts sync a full refresh.
+case as it was before the cancel; tables made before the column get it added (edip_lakebase_setup then brings it to
+Lakebase with a full refresh).
 """
 import sys
 import types
@@ -63,26 +64,9 @@ def test_older_tables_get_the_column_once():
                          "ALTER TABLE edip.gold.handoff_latest ADD COLUMNS (retracted_ts TIMESTAMP)"]
     new = FakeSpark({"handoff_draft": old + ["retracted_ts"], "handoff_latest": old + ["retracted_ts"]})
     assert H.add_retracted_ts(new, "edip") is False and new.ran == []
-
-
-def test_a_new_column_gets_a_full_refresh_of_the_drafts_sync(monkeypatch):
-    started = []
-
-    class W:
-        def __init__(self):
-            self.postgres = types.SimpleNamespace(
-                get_synced_table=lambda name: types.SimpleNamespace(status=types.SimpleNamespace(pipeline_id=name.split(".")[-1])))
-            self.pipelines = types.SimpleNamespace(start_update=lambda pid, full_refresh=False: started.append((pid, full_refresh)))
-    sdk = types.ModuleType("databricks.sdk")
-    sdk.WorkspaceClient = W
-    monkeypatch.setitem(sys.modules, "databricks", types.ModuleType("databricks"))
-    monkeypatch.setitem(sys.modules, "databricks.sdk", sdk)
-    names = "gold.encounter_state_pg,gold.handoff_draft_pg"
-    H.refresh_synced("edip", names)
-    assert started == [("encounter_state_pg", False), ("handoff_draft_pg", False)]
-    started.clear()
-    H.refresh_synced("edip", names, full=True)
-    assert started == [("encounter_state_pg", False), ("handoff_draft_pg", True)]
+    # Only the synced table counts: handoff_latest is not in Lakebase.
+    latest = FakeSpark({"handoff_draft": old + ["retracted_ts"], "handoff_latest": list(old)})
+    assert H.add_retracted_ts(latest, "edip") is False and len(latest.ran) == 1
 
 
 def test_reference_rows_need_no_retraction_time():

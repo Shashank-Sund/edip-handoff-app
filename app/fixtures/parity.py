@@ -41,7 +41,8 @@ def build_fixtures(out: Path) -> None:
 def cancel_admissions(out: Path) -> list[str]:
     """Mark two admissions canceled as the handoff job does (every version retracted, retracted_ts the cancel's time,
     the encounter's status canceled): one while boarding, one after its transfer and any addenda. The synthetic
-    week's own canceled registrations never had a handoff, so without this no scenario shows a canceled case."""
+    week's own canceled registrations never had a handoff, so without this no scenario shows a canceled case. Unlike the
+    real job (no points after a retract), versions after the cancel stay; both sides read the same fixtures."""
     t = lambda v: datetime.fromisoformat(v.replace("Z", "+00:00"))  # noqa: E731
     encounters = json.loads((out / "encounters.json").read_text())
     with gzip.open(out / "drafts.jsonl.gz", "rt", encoding="utf-8") as f:
@@ -56,8 +57,11 @@ def cancel_admissions(out: Path) -> list[str]:
             continue
         if "boarding" not in picks and dep - pts[1] > timedelta(hours=1):
             picks["boarding"] = (e, pts[1] + timedelta(minutes=30))
-        elif "arrived" not in picks and pts[-1] >= dep and pts[-1] + timedelta(minutes=30) < dep + timedelta(hours=11):
+        elif "arrived" not in picks and pts[-1] > dep and pts[-1] + timedelta(minutes=30) < dep + timedelta(hours=11):
             picks["arrived"] = (e, pts[-1] + timedelta(minutes=30))
+    if len(picks) < 2:
+        raise SystemExit(f"cancel_admissions found only {sorted(picks)}: it needs an admission to cancel while boarding "
+                         "and one after an addendum")
     for e, at in picks.values():
         e["status"] = "canceled"
         for d in drafts:
@@ -598,7 +602,7 @@ def main():
             shutil.copyfile(Path(a.fixtures) / f, out / f)
     else:
         build_fixtures(out)
-    print(f"canceled admissions: {', '.join(cancel_admissions(out)) or 'none found'}")
+    print(f"canceled admissions: {', '.join(cancel_admissions(out))}")
     c, main_mod = load_app(out)
     items = scenarios(c, main_mod)
     (out / "templates.json").write_text(json.dumps(c.get("/api/templates").json()))

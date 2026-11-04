@@ -562,9 +562,9 @@ export class Views {
     for (let t = ds.start; t <= stop; t += HOUR) {
       let ed = 0, board = 0;
       for (const e of encs) {
-        if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && e.status !== 'canceled') ed++;
+        if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && !ds.canceledAt(e, t)) ed++;
         if (e.admit_decision_ts !== null && e.admit_decision_ts <= t && (e.ed_departure_ts === null || e.ed_departure_ts > t) && truthy(ds.versions.get(e.csn) ?? null)
-          && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
+          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
       }
       series.push({ t: iso(t), ed, boarding: board });
     }

@@ -55,6 +55,8 @@ export class Dataset {
   enc = new Map<string, Enc>();
   versions = new Map<string, Row[]>();
   private keys = new Map<string, number[]>();
+  /** When each canceled admission was canceled: null when a version has no retracted_ts (an older handoff job). */
+  canceled = new Map<string, number | null>();
   start: number;
   end: number;
 
@@ -82,6 +84,8 @@ export class Dataset {
       rows.sort((a, b) => a.at - b.at || (a.template < b.template ? -1 : a.template > b.template ? 1 : 0) || a.version - b.version);
       this.keys.set(csn, rows.map((r) => r.at));
       writtenStatus(rows);
+      const out = rows.filter((r) => r.status === 'retracted').map((r) => r.retracted_ts as number | null);
+      if (out.length) this.canceled.set(csn, out.includes(null) ? null : Math.min(...(out as number[])));
     }
     const w = meta?.window ?? {};
     if (w.start) {
@@ -94,6 +98,16 @@ export class Dataset {
       this.start = Math.min(...times);
       this.end = Math.max(...times);
     }
+  }
+
+  /**
+   * Whether encounter e's admission is canceled at `at`: from the cancel on when its drafts carry the time, else (no
+   * drafts, or retracted by an older handoff job) as its status is now.
+   */
+  canceledAt(e: Enc, at: number): boolean {
+    const when = this.canceled.get(e.csn);
+    if (when !== undefined && when !== null) return at >= when;
+    return this.canceled.has(e.csn) || e.status === 'canceled';
   }
 
   rowsAt(csn: string, at: number): Row[] {

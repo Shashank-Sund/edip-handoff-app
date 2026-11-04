@@ -180,8 +180,10 @@ def main():
         WHEN NOT MATCHED THEN INSERT (csn, template, version, status, trigger, as_of, created_ts, model, severity, score,
           blocking, draft, retracted_ts) VALUES (s.csn, s.template, s.version, s.status, s.trigger, s.as_of, s.created_ts,
           s.model, s.severity, s.score, s.blocking, s.draft, s.retracted_ts)""")
-    # The sync copies changes only; a new column needs a full refresh to reach Lakebase.
-    refresh_synced(cat, a.sync_tables, full=added)
+    refresh_synced(cat, a.sync_tables)
+    if added:
+        # The sync copies changes only; edip_lakebase_setup runs the full refresh (and the grant) that brings the column.
+        print("retracted_ts is new in gold.handoff_draft: run the job edip_lakebase_setup once so Lakebase gets it")
     tok = [(r.get("prompt_tokens") or 0, r.get("completion_tokens") or 0) for r in out[:: max(1, len(templates.templates()))]]
     print(f"generated {len(out)} drafts ({len(tok)} model calls, {failures} failed) in {time.time() - t1:.0f}s; "
           f"tokens in {sum(t[0] for t in tok)}, out {sum(t[1] for t in tok)}; retracted {len(retracted)} encounters")
@@ -192,13 +194,14 @@ def main():
 
 
 def add_retracted_ts(spark, cat):
-    """Add retracted_ts to drafts tables made before it (deployments from before the column). True when it added it."""
+    """Add retracted_ts to drafts tables made before it (deployments from before the column). True when it added it
+    to gold.handoff_draft, the synced one."""
     added = False
     for t in ("handoff_draft", "handoff_latest"):
         if "retracted_ts" not in spark.table(f"{cat}.gold.{t}").columns:
             spark.sql(f"ALTER TABLE {cat}.gold.{t} ADD COLUMNS (retracted_ts TIMESTAMP)")
             print(f"added column retracted_ts to {cat}.gold.{t}")
-            added = True
+            added = added or t == "handoff_draft"
     return added
 
 
@@ -269,9 +272,8 @@ def load_reference(code_path, points, todo):
     return rows
 
 
-def refresh_synced(cat, names, full=False):
-    """Start an update of each Triggered synced table's pipeline so Lakebase reflects the new gold rows (full: a full
-    refresh of the drafts sync, after a schema change)."""
+def refresh_synced(cat, names):
+    """Start an update of each Triggered synced table's pipeline so Lakebase reflects the new gold rows."""
     from databricks.sdk import WorkspaceClient
     w = WorkspaceClient()
     for name in [n.strip() for n in names.split(",") if n.strip()]:
@@ -279,9 +281,8 @@ def refresh_synced(cat, names, full=False):
             t = w.postgres.get_synced_table(name=f"synced_tables/{cat}.{name}")
             pid = getattr(t.status, "pipeline_id", None) or getattr(t, "pipeline_id", None)
             if pid:
-                whole = full and name.endswith("handoff_draft_pg")
-                w.pipelines.start_update(pid, full_refresh=whole)
-                print(f"sync {'full ' if whole else ''}refresh started: {name}")
+                w.pipelines.start_update(pid)
+                print(f"sync refresh started: {name}")
         except Exception as exc:          # a missing sync must not fail the generation run
             print(f"sync refresh skipped for {name}: {type(exc).__name__}: {str(exc)[:160]}")
 

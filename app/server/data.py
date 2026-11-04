@@ -64,6 +64,12 @@ class Dataset:
             rows.sort(key=lambda r: (r["shown"], r["template"], r["version"]))
             _written_status(rows)
         self._keys = {c: [r["shown"] for r in rows] for c, rows in self.versions.items()}
+        # When each canceled admission was canceled: None when a version has no retracted_ts (an older handoff job).
+        self.canceled: dict[str, datetime | None] = {}
+        for c, rows in self.versions.items():
+            out = [r["retracted_ts"] for r in rows if r["status"] == "retracted"]
+            if out:
+                self.canceled[c] = None if None in out else min(out)
         w = meta.get("window") or {}
         if w.get("start"):
             self.start = ts(w["start"])
@@ -76,6 +82,14 @@ class Dataset:
     def rows_at(self, csn: str, at: datetime) -> list[dict]:
         rows = self.versions.get(csn, [])
         return rows[: bisect_right(self._keys.get(csn, []), at)]
+
+    def canceled_at(self, e: dict, at: datetime) -> bool:
+        """Whether encounter e's admission is canceled at `at`: from the cancel on when its drafts carry the time, else
+        (no drafts, or retracted by an older handoff job) as its status is now."""
+        when = self.canceled.get(e["csn"])
+        if when is not None:
+            return at >= when
+        return e["csn"] in self.canceled or e["status"] == "canceled"
 
     def latest_at(self, csn: str, at: datetime) -> dict[str, dict]:
         """The newest version of each template shown at `at` (the highest number, also if an older one was written
