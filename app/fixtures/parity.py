@@ -6,13 +6,14 @@ scenario list and writes every request with its status and response.
 
 Without --fixtures it builds fixtures from the stand in world, the way tests/test_app.py does (no network, no
 Databricks credentials; reproducible in CI). With --fixtures it uses an existing folder, for example the app's
-own app/fixtures/data. The out folder gets the fixtures used (encounters.json, drafts.jsonl.gz, meta.json),
-templates.json and scenarios.json; app/client/src/demo/parity.test.ts replays the same requests, in order,
+own app/fixtures/data. The out folder gets the fixtures used (encounters.json, drafts.jsonl.gz, meta.json, with two
+admissions marked canceled by cancel_admissions()), templates.json and scenarios.json; app/client/src/demo/parity.test.ts replays the same requests, in order,
 through the in-browser implementation and compares every answer.
 
 Normalized (legitimately nondeterministic): the `now` field of /api/health (the wall clock).
 """
 import argparse
+import gzip
 import importlib
 import json
 import os
@@ -20,7 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +36,46 @@ def build_fixtures(out: Path) -> None:
         run_eval.build_world(world)
         subprocess.run([sys.executable, str(ROOT / "app/fixtures/build.py"), "--world", world, "--out", str(out)],
                        check=True, capture_output=True)
+
+
+def cancel_admissions(out: Path) -> list[str]:
+    """Mark three admissions canceled as the handoff job does (every version retracted, retracted_ts the cancel's
+    time, prior_status the status it had; the encounter's status canceled): one while boarding, one after its transfer
+    and an addendum, and one whose versions an older job had retracted (no prior_status: canceled at every time). The
+    synthetic week's own canceled registrations never had a handoff, so without this no scenario shows a canceled case. Unlike the
+    real job (no points after a retract), versions after the cancel stay; both sides read the same fixtures."""
+    t = lambda v: datetime.fromisoformat(v.replace("Z", "+00:00"))  # noqa: E731
+    encounters = json.loads((out / "encounters.json").read_text())
+    with gzip.open(out / "drafts.jsonl.gz", "rt", encoding="utf-8") as f:
+        drafts = [json.loads(line) for line in f]
+    points = {}
+    for d in drafts:
+        points.setdefault(d["csn"], set()).add(t(d["as_of"]))
+    picks = {}
+    for e in sorted(encounters, key=lambda e: e["csn"]):
+        pts, dep = sorted(points.get(e["csn"], ())), e["ed_departure_ts"] and t(e["ed_departure_ts"])
+        if not dep or len(pts) < 2:
+            continue
+        if "boarding" not in picks and dep - pts[1] > timedelta(hours=1):
+            picks["boarding"] = (e, pts[1] + timedelta(minutes=30))
+        elif "arrived" not in picks and pts[-1] > dep and pts[-1] + timedelta(minutes=30) < dep + timedelta(hours=11):
+            picks["arrived"] = (e, pts[-1] + timedelta(minutes=30))
+        elif "older job" not in picks and dep - pts[1] > timedelta(hours=1):
+            picks["older job"] = (e, pts[1] + timedelta(minutes=30))
+    if len(picks) < 3:
+        raise SystemExit(f"cancel_admissions found only {sorted(picks)}: it needs two admissions to cancel while "
+                         "boarding and one after an addendum")
+    for kind, (e, at) in picks.items():
+        e["status"] = "canceled"
+        for d in drafts:
+            if d["csn"] == e["csn"]:
+                d["prior_status"], d["status"] = None if kind == "older job" else d["status"], "retracted"
+                d["retracted_ts"] = at.isoformat().replace("+00:00", "Z")
+    (out / "encounters.json").write_text(json.dumps(encounters))
+    with gzip.open(out / "drafts.jsonl.gz", "wt", encoding="utf-8") as f:
+        for d in drafts:
+            f.write(json.dumps(d, ensure_ascii=False, separators=(",", ":")) + "\n")
+    return sorted(e["csn"] for e, _ in picks.values())
 
 
 def load_app(fixtures: Path):
@@ -251,6 +292,7 @@ def scenarios(c, main):
     rec("unknown api path (404)", "GET", "/api/nope")
     workflow_scenarios(rec, ds, default, boarding, units, end)
     entered_scenarios(rec, ds, default, boarding, units)
+    canceled_scenarios(rec, ds)
     return rec.items
 
 
@@ -534,6 +576,24 @@ def patient_scenarios(rec, boarding, units):
     rec("patient case after removing all", "GET", u, persona="ed-rn")
 
 
+def canceled_scenarios(rec, ds):
+    """The admissions cancel_admissions() canceled: as they were just before the cancel, at it and after it, and an
+    edit before (allowed while boarding) and after (refused). The one an older job retracted is canceled throughout."""
+    iso = lambda t: t.isoformat()  # noqa: E731
+    rec("canceled reset", "POST", "/api/demo/reset")
+    for csn in sorted(c for c, rows in ds.versions.items() if any(r["retracted_ts"] for r in rows)):
+        at, u = ds.versions[csn][0]["retracted_ts"], f"/api/handoffs/{csn}"
+        for label, t in (("before", at - timedelta(minutes=1)), ("at", at), ("after", at + timedelta(minutes=1))):
+            for p in ("ed-rn", "viewer"):
+                rec(f"canceled {csn} {label}: board {p}", "GET", "/api/board", at=iso(t), persona=p)
+                rec(f"canceled {csn} {label}: case {p}", "GET", u, at=iso(t), persona=p)
+            rec(f"canceled {csn} {label}: analytics", "GET", "/api/analytics", at=iso(t))
+        for label, t in (("before", at - timedelta(minutes=1)), ("after (409)", at + timedelta(minutes=1))):
+            rec(f"canceled {csn} edit {label}", "POST", f"{u}/sbar_nurse/edit", at=iso(t), persona="ed-rn",
+                body={"element": "E25", "text": "Plan before the cancel"})
+    rec("canceled reset end", "POST", "/api/demo/reset")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fixtures", help="an existing fixtures folder; omit to build from the stand in world")
@@ -546,6 +606,7 @@ def main():
             shutil.copyfile(Path(a.fixtures) / f, out / f)
     else:
         build_fixtures(out)
+    print(f"canceled admissions: {', '.join(cancel_admissions(out))}")
     c, main_mod = load_app(out)
     items = scenarios(c, main_mod)
     (out / "templates.json").write_text(json.dumps(c.get("/api/templates").json()))

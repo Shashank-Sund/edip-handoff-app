@@ -11,6 +11,8 @@
 # 2 build and start the app, 3 run the setup job (about 15 minutes: data, pipeline, reference drafts, Lakebase sync;
 # with --var drafts=model the model writes every handoff instead, 30 to 75 minutes).
 # Safe to re-run: every step is idempotent; step 3 regenerates the data and reloads the drafts.
+# --var flags go to every bundle command, and so does .databricks/bundle/<target>/variable-overrides.json, the place
+# for the role_map variable (staff emails, kept out of git; --var cannot carry its JSON): docs/setup.md, "Settings".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 target="${1:-dev}"

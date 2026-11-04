@@ -20,6 +20,11 @@ watchRequests(page, 'flow', errors);
 await page.goto(base + '/', { waitUntil: 'networkidle' });
 // The first patient whose nurse handoff is still a draft: on a deployed app, actions from earlier runs persist.
 const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
+// Every earlier run signs one patient: when none is left unsigned at this hour, move the replay clock on.
+for (let i = 0; i < 12 && !STATIC_DEMO && !(await first.count()); i++) {
+  await page.getByRole('button', { name: 'Forward 1 hour' }).click();
+  await page.waitForLoadState('networkidle');
+}
 const name = (await first.locator('a').first().textContent()).trim();
 await first.click();
 const panel = page.locator('aside[aria-label="Sign off and context"]');
@@ -35,7 +40,8 @@ await panel.getByRole('button', { name: 'Sign', exact: true }).click();
 await page.waitForSelector('text=Signed by Jordan Reyes, RN');
 if (out) await page.screenshot({ path: `${out}/flow-signed.png` });
 const dest = await page.locator('text=Going to').locator('..').locator('dd').textContent();
-const unit = dest.trim().split(' ').slice(0, 2).join('-').toLowerCase();
+// The facility and unit code lead the text: "SGH 4C 4005-02 Observation".
+const unit = dest.trim().split(/\s+/).slice(0, 2).join('-').toLowerCase();
 if (STATIC_DEMO) {
   await page.getByRole('button', { name: /Switch persona/ }).click();
   const [fac, code] = dest.trim().split(' ');
@@ -54,7 +60,8 @@ if (STATIC_DEMO) {
   await page.getByRole('link', { name: 'Board' }).first().click();
   await page.waitForSelector('tbody tr');
 } else {
-  await page.goto(base + '/', { waitUntil: 'networkidle' });
+  const at = new URL(page.url()).searchParams.get('at');   // the hour the flow moved the clock to
+  await page.goto(base + '/' + (at ? `?at=${encodeURIComponent(at)}` : ''), { waitUntil: 'networkidle' });
 }
 const state = await page.locator('tbody tr', { hasText: name }).first().textContent();
 if (STATIC_DEMO) {

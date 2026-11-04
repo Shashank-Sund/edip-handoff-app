@@ -54,6 +54,8 @@ class Dataset:
             r["at"] = ts(r["as_of"])
             created = ts(r.get("created_ts")) if written else None
             r["shown"] = max(r["at"], created) if created else r["at"]      # the time the version shows from
+            r["retracted_ts"] = ts(r.get("retracted_ts"))
+            r["prior_status"] = r.get("prior_status") or None
             if isinstance(r.get("draft"), str):
                 r["draft"] = json.loads(r["draft"])
             if isinstance(r.get("blocking"), str):
@@ -62,6 +64,13 @@ class Dataset:
         for rows in self.versions.values():
             rows.sort(key=lambda r: (r["shown"], r["template"], r["version"]))
         self._keys = {c: [r["shown"] for r in rows] for c, rows in self.versions.items()}
+        # When each canceled admission was canceled: None when a version lacks retracted_ts or prior_status (an older
+        # handoff job): canceled at every time.
+        self.canceled: dict[str, datetime | None] = {}
+        for c, rows in self.versions.items():
+            out = [r["retracted_ts"] if r["prior_status"] else None for r in rows if r["status"] == "retracted"]
+            if out:
+                self.canceled[c] = None if None in out else min(out)
         w = meta.get("window") or {}
         if w.get("start"):
             self.start = ts(w["start"])
@@ -74,6 +83,14 @@ class Dataset:
     def rows_at(self, csn: str, at: datetime) -> list[dict]:
         rows = self.versions.get(csn, [])
         return rows[: bisect_right(self._keys.get(csn, []), at)]
+
+    def canceled_at(self, e: dict, at: datetime) -> bool:
+        """Whether encounter e's admission is canceled at `at`: from the cancel on when its drafts carry the time, else
+        (no drafts, or retracted by an older handoff job) as its status is now."""
+        when = self.canceled.get(e["csn"])
+        if when is not None:
+            return at >= when
+        return e["csn"] in self.canceled or e["status"] == "canceled"
 
     def latest_at(self, csn: str, at: datetime) -> dict[str, dict]:
         """The newest version of each template shown at `at` (the highest number, also if an older one was written
@@ -95,6 +112,15 @@ class Dataset:
                 best, best_n = t, n
             t += timedelta(hours=1)
         return best
+
+
+def status_at(r: dict, at: datetime) -> str:
+    """A version's status at `at`. A canceled admission's versions are retracted from retracted_ts on (the
+    cancel's time) and have their prior_status before it, both set by the handoff job when it retracts; without
+    either (retracted by an older handoff job, or a sync from before the columns) they are retracted at every time."""
+    if r["status"] == "retracted" and r["prior_status"] and r["retracted_ts"] is not None and at < r["retracted_ts"]:
+        return r["prior_status"]
+    return r["status"]
 
 
 def load_fixtures(path: Path) -> Dataset:

@@ -18,6 +18,16 @@ export type Enc = Record<string, any> & {
 };
 export type Row = Record<string, any> & { csn: string; template: string; version: number; at: number; draft: any };
 
+/**
+ * A version's status at `at`. A canceled admission's versions are retracted from retracted_ts on (the cancel's
+ * time) and have their prior_status before it, both set by the handoff job when it retracts; without either
+ * (retracted by an older handoff job) they are retracted at every time.
+ */
+export function statusAt(r: Row, at: number): string {
+  if (r.status === 'retracted' && r.prior_status !== null && r.retracted_ts !== null && at < r.retracted_ts) return r.prior_status;
+  return r.status;
+}
+
 export interface Fixtures {
   encounters: any[];
   drafts: any[];
@@ -31,6 +41,8 @@ export class Dataset {
   enc = new Map<string, Enc>();
   versions = new Map<string, Row[]>();
   private keys = new Map<string, number[]>();
+  /** When each canceled admission was canceled: null when a version lacks retracted_ts or prior_status (an older job). */
+  canceled = new Map<string, number | null>();
   start: number;
   end: number;
 
@@ -47,6 +59,8 @@ export class Dataset {
     for (const raw of drafts) {
       const r: any = { ...raw };
       r.at = ts(r.as_of);
+      r.retracted_ts = ts(r.retracted_ts);
+      r.prior_status = r.prior_status || null;
       if (typeof r.draft === 'string') r.draft = JSON.parse(r.draft);
       if (typeof r.blocking === 'string') r.blocking = JSON.parse(r.blocking);
       let list = this.versions.get(r.csn);
@@ -56,6 +70,8 @@ export class Dataset {
     for (const [csn, rows] of this.versions) {
       rows.sort((a, b) => a.at - b.at || (a.template < b.template ? -1 : a.template > b.template ? 1 : 0) || a.version - b.version);
       this.keys.set(csn, rows.map((r) => r.at));
+      const out = rows.filter((r) => r.status === 'retracted').map((r) => (r.prior_status ? (r.retracted_ts as number | null) : null));
+      if (out.length) this.canceled.set(csn, out.includes(null) ? null : Math.min(...(out as number[])));
     }
     const w = meta?.window ?? {};
     if (w.start) {
@@ -68,6 +84,16 @@ export class Dataset {
       this.start = Math.min(...times);
       this.end = Math.max(...times);
     }
+  }
+
+  /**
+   * Whether encounter e's admission is canceled at `at`: from the cancel on when its drafts carry the time, else (no
+   * drafts, or retracted by an older handoff job) as its status is now.
+   */
+  canceledAt(e: Enc, at: number): boolean {
+    const when = this.canceled.get(e.csn);
+    if (when !== undefined && when !== null) return at >= when;
+    return this.canceled.has(e.csn) || e.status === 'canceled';
   }
 
   rowsAt(csn: string, at: number): Row[] {
