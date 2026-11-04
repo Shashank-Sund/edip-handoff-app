@@ -4,6 +4,7 @@ import { SectionBadge } from '@/components/common/SectionBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Layout } from '@/components/layout/Layout';
 import { Pill } from '@/components/common/badges';
+import { Explain } from '@/components/guide/Explain';
 import { ErrorState, PageSkeleton } from '@/components/common/states';
 import { useLoad } from '@/hooks/useLoad';
 import { api } from '@/lib/api';
@@ -15,11 +16,12 @@ const KIND = {
   narrative: { label: 'Model drafted', Icon: Sparkles },
   process: { label: 'In the app', Icon: Cog },
 } as const;
-const LEVEL: Record<string, { label: string; tone: 'danger' | 'warn' | 'neutral' | 'info' }> = {
-  hard: { label: 'Blocks sign off', tone: 'danger' },
-  stale: { label: 'Must be recent', tone: 'warn' },
-  soft: { label: 'Warning', tone: 'neutral' },
+const LEVEL: Record<string, { label: string; tone: 'danger' | 'warn' | 'neutral' | 'info'; help: string }> = {
+  hard: { label: 'Blocks sign off', tone: 'danger', help: 'A hard rule: the item must be documented, or confirmed from its fixed choices, before anyone can sign.' },
+  stale: { label: 'Must be recent', tone: 'warn', help: 'A stale rule: the vital signs must be newer than these minutes for the severity, or rechecked at the bedside.' },
+  soft: { label: 'Warning', tone: 'neutral', help: 'A soft rule: a missing item lowers completeness but never blocks signing.' },
 };
+const AT_HELP = 'Filled by the sign off or the acceptance itself: the sender and callback, or the read back.';
 
 function TemplateView({ t }: { t: Def }) {
   const rules = new Map(t.rules.map((r) => [r.element, r]));
@@ -52,10 +54,12 @@ function TemplateView({ t }: { t: Def }) {
                         {k.label}
                       </span>
                       {r && (
-                        <Pill tone={r.at ? 'info' : LEVEL[r.level]?.tone ?? 'neutral'}>
-                          {r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level}
-                          {r.max_age_min ? ` (${Object.entries(r.max_age_min).map(([s2, m]) => `${s2} ${m} min`).join(', ')})` : ''}
-                        </Pill>
+                        <Explain topic="templates.read" label={r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level} text={r.at ? AT_HELP : LEVEL[r.level]?.help ?? r.level} className="no-underline">
+                          <Pill tone={r.at ? 'info' : LEVEL[r.level]?.tone ?? 'neutral'} className="underline decoration-dotted underline-offset-[3px]">
+                            {r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level}
+                            {r.max_age_min ? ` (${Object.entries(r.max_age_min).map(([s2, m]) => `${s2} ${m} min`).join(', ')})` : ''}
+                          </Pill>
+                        </Explain>
                       )}
                     </div>
                   </li>

@@ -108,6 +108,8 @@ export interface Board {
     to_acknowledge: number | null;
     blocking: number | null;
     arrived: number;
+    /** ED roles: arrived on the unit with no sign off of the role's template; null for other roles. */
+    left_unsigned?: number | null;
   };
   rows: CaseSummary[];
 }
@@ -121,7 +123,10 @@ export interface Rule {
   message?: string;
   evidence?: string[];
   attest_options?: string[];
-  resolution?: { kind: 'attested' | 'edited'; option?: string; by: string; at?: string; version?: number };
+  /** Choices that need words: the field label, and the label of an optional note (the reaction to an allergen). */
+  attest_typed?: Record<string, { label: string; note: string | null }>;
+  /** entered: the choice entered a value (Droplet, DNR, an allergy) rather than confirming there is nothing. */
+  resolution?: { kind: 'attested' | 'edited'; option?: string; by: string; at?: string; version?: number; entered?: boolean };
   /** A bedside recheck older than the rule's limit for the severity: it no longer counts. */
   attest_expired?: { by: string; at: string; until: string; limit_min: number; severity: string };
 }
@@ -156,6 +161,8 @@ export interface Element {
   data?: unknown;
   narrative?: Narrative;
   rules: Rule[];
+  /** A value the ED clinician entered for a chart item the chart does not have yet. */
+  entered?: { rule: string; option: string; value: string; note: string | null; by: string; at: string; version: number };
 }
 
 export interface Section {
@@ -217,7 +224,7 @@ export interface CaseTemplate {
 export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
-  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean }[];
+  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string }[];
 }
 
 export interface Analytics {

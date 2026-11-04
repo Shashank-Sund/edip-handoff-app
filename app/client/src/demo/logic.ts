@@ -35,6 +35,13 @@ const EARLIER = 'You are viewing an earlier time; move the clock to now to act.'
 const READBACK = 'Write a short read back: the patient, the key risk and what you will do first.';
 const CALLBACK = 'Add a callback number the receiver can dial: at least 3 digits, or an extension like x4471.';
 const UNSIGNED = ['draft', 'transferred_unsigned'];
+// Attestation choices that need words from the clinician. The template lists the choice (ai/templates); the app asks
+// for the text. The first choice of a rule confirms there is nothing to add ("No isolation needed"); any other choice
+// is a value the clinician entered, shown on the item until the chart has one.
+const TYPED: Record<string, { label: string; note: string | null; required: string }> = {
+  'E10|Other': { label: 'Type of isolation', note: null, required: 'Write the type of isolation.' },
+  'E09|Add an allergy': { label: 'Allergen', note: 'Reaction (optional)', required: 'Write the allergen.' },
+};
 
 type Rules = Record<string, any>;
 
@@ -149,6 +156,11 @@ function supersede(d: any, rules: Rules): void {
   }
 }
 
+/** An attestation that enters a value: any choice but the rule's first, which confirms there is nothing to add. */
+function entered(a: Action, options: any): boolean {
+  return (truthy(options) && !pyEq(a.option, options[0])) || truthy(get(a, 'entry'));
+}
+
 function callbackOk(cb: string): boolean {
   return (cb.match(/[0-9]/g) ?? []).length >= 3 || /^(x|ext\.?) ?[0-9]{2,}$/i.test(cb);
 }
@@ -199,7 +211,18 @@ export function effective(row: Row, acts: Action[], at: number | null = null, ru
   const sev = or(or(get(or(get(or(els.get('E07') ?? null, {}), 'narrative'), {}), 'value'), get(row, 'severity')), 'watcher') as string;
   for (const r of d.rules ?? []) {
     const e = els.get(r.element) ?? null;
-    if (r.status === 'stale') r.attest_options = STALE_ATTEST;
+    if (r.status === 'stale') {
+      r.attest_options = STALE_ATTEST;
+    } else if (r.status === 'attest' && truthy(get(or(rs[r.rule] ?? null, {}), 'attest'))) {
+      // The choices of the current templates, not the ones the draft was written with: no redraft needed.
+      r.attest_options = [...rs[r.rule].attest];
+    }
+    const typed: Record<string, { label: string; note: string | null }> = {};
+    for (const o of (or(get(r, 'attest_options'), []) as any[])) {
+      const x = TYPED[`${r.element}|${o}`];
+      if (x) typed[o] = { label: x.label, note: x.note };
+    }
+    if (truthy(typed)) r.attest_typed = typed;
     if (r.status === 'attest' || r.status === 'missing' || r.status === 'stale') {
       let a = attests.get(r.rule);
       if (a && r.status !== 'missing' && r.level === 'stale' && a.option === STALE_OPTION && at !== null) {
@@ -214,6 +237,14 @@ export function effective(row: Row, acts: Action[], at: number | null = null, ru
       const n = e ? (or(get(e, 'narrative'), {}) as any) : null;
       if (a && r.status !== 'missing') {
         r.resolution = { kind: 'attested', option: a.option, by: a.by, at: iso(a.at), version: a.version };
+        if (e && entered(a, get(r, 'attest_options'))) {
+          // A value the clinician entered (Droplet, DNR, an allergy): shown until the chart has one.
+          r.resolution.entered = true;
+          e.entered = {
+            rule: r.rule, option: a.option, value: or(get(a, 'entry'), a.option), note: get(a, 'entry_note'), by: a.by, at: iso(a.at),
+            version: a.version,
+          };
+        }
       } else if (truthy(e) && e.kind === 'narrative' && truthy(get(n, 'edited')) &&
         (truthy(strip(or(get(e.narrative, 'text'), '') as string)) || truthy(get(e.narrative, 'items')))) {
         r.resolution = { kind: 'edited', by: e.narrative.edited.by };
@@ -373,6 +404,8 @@ export class Views {
       to_acknowledge: truthy(person.can_ack) ? rows.filter((r) => state(r) === 'signed').length : null,
       blocking: truthy(person.can_sign) ? toSign.filter((r) => truthy(get(tplOf(r), 'blocking'))).length : null,
       arrived: rows.filter((r) => r.phase === 'arrived').length,
+      // ED roles: patients who went up before anyone signed their handoff for this role.
+      left_unsigned: truthy(person.can_sign) ? rows.filter((r) => r.phase === 'arrived' && state(r) === 'transferred_unsigned').length : null,
     };
     return { at: iso(at), template: tpl, kpis, rows, scoped: truthy(mine) };
   }
@@ -422,10 +455,18 @@ export class Views {
       kind: a.kind, template: a.template, by: a.by, at: iso(a.at) as string, version: a.version,
       detail: or(or(get(a, 'element'), get(a, 'rule')), get(a, 'option')),
       ...(truthy(get(a, 'restore')) ? { restore: true } : {}),
+      ...(a.kind === 'attest' ? this.entry(a) : {}),
     }));
     // sorted(key=at string, reverse=True) keeps equal keys in their original order
     log.sort((a, b) => cmpStr(b.at, a.at));
     return { summary, templates, activity: log };
+  }
+
+  /** History keeps a value the clinician entered, also once the chart has one and the item shows the chart. */
+  private entry(a: Action): any {
+    const options = get(or(get(or(this.rules[a.template] ?? null, {}), a.rule), {}), 'attest');
+    if (!entered(a, options)) return {};
+    return { entered: or(get(a, 'entry'), a.option), ...(truthy(get(a, 'entry_note')) ? { note: a.entry_note } : {}) };
   }
 
   // -------------------------------------------------------------------------------------------- analytics
@@ -552,7 +593,15 @@ export class Views {
       if (!r || !(or(get(r, 'attest_options'), []) as any[]).some((o) => pyEq(o, get(body, 'option')))) {
         throw new ActionError('Choose one of the listed attestations for this rule.');
       }
-      Object.assign(row, { rule: r.rule, option: body.option });
+      Object.assign(row, { rule: r.rule, option: body.option, entry: null, entry_note: null });
+      const typed = TYPED[`${r.element}|${body.option}`];
+      if (typed) {
+        const entry = strip(or(get(body, 'entry'), '') as string);
+        const note = typed.note ? strip(or(get(body, 'entry_note'), '') as string) : '';
+        if (!truthy(entry)) throw new ActionError(typed.required);
+        if (pyLen(entry) > MAX_TEXT || pyLen(note) > MAX_TEXT) throw new ActionError(TOO_LONG);
+        Object.assign(row, { entry, entry_note: or(note, null) });
+      }
     } else if (kind === 'sign') {
       if (eff.completeness.blocking.length) {
         const labels = eff.rules.filter((x: any) => eff.completeness.blocking.includes(x.rule)).map((x: any) => x.label);

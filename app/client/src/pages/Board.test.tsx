@@ -32,8 +32,8 @@ const rows = [
   }),
 ];
 
-async function renderBoard() {
-  vi.mocked(api.board).mockResolvedValue(board(rows));
+async function renderBoard(data = board(rows)) {
+  vi.mocked(api.board).mockResolvedValue(data);
   render(
     <AppProvider config={config}>
       <TooltipProvider>
@@ -152,5 +152,64 @@ describe('Board', () => {
       );
     });
     expect(await screen.findByRole('alert')).toHaveTextContent('The server could not be reached.');
+  });
+
+  it('counts patients who left without sign off and lists them on click', async () => {
+    const user = userEvent.setup();
+    const left = caseSummary({
+      csn: '1004',
+      phase: 'arrived',
+      patient: { name: 'Lee, Morgan', mrn: 'M0004', sex: 'M', age: 66 },
+      ed_departure_ts: '2026-03-10T14:00:00Z',
+      templates: { sbar_nurse: templateSummary({ workflow: { state: 'transferred_unsigned' } }) },
+    });
+    const data = board([...rows, left]);
+    data.kpis.left_unsigned = 1;
+    await renderBoard(data);
+    await user.click(screen.getByRole('button', { name: '1 left without sign off' }));
+    const tabs = screen.getByRole('tablist', { name: 'Filter by status' });
+    expect(within(tabs).getByRole('tab', { name: /arrived/i })).toHaveAttribute('aria-selected', 'true');
+    expect(names(screen.getByRole('table'))).toEqual(['Lee, Morgan']);
+    expect(screen.getByText('Left without sign off')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear the Left without sign off filter' }));
+    expect(names(screen.getByRole('table'))).toEqual(['Nguyen, Casey', 'Lee, Morgan']);
+    expect(screen.queryByText('Left without sign off')).not.toBeInTheDocument();
+  });
+
+  it('shows no left without sign off line when none left, or for other roles', async () => {
+    const data = board(rows);
+    data.kpis.left_unsigned = 0;
+    await renderBoard(data);
+    expect(screen.queryByText(/left without sign off/)).not.toBeInTheDocument();
+  });
+
+  it('explains every column on hover, focus and tap', async () => {
+    const user = userEvent.setup();
+    const table = await renderBoard();
+    const header = within(table).getAllByRole('columnheader');
+    expect(header.map((h) => within(h).getByRole('button').getAttribute('aria-label'))).toEqual([
+      'About Patient', 'About Severity', 'About Reason for visit', 'About Destination', 'About Boarding', 'About Handoffs', 'About Completeness (SBAR nurse)', 'About Last update',
+    ]);
+    const completeness = within(table).getByRole('button', { name: 'About Completeness (SBAR nurse)' });
+    expect(completeness).toHaveAccessibleDescription(/For your role's template \(SBAR nurse\): the share of its checks that are met or resolved/);
+    // Keyboard: focus opens it.
+    completeness.focus();
+    expect(await screen.findByRole('dialog', { name: 'Completeness (SBAR nurse)' })).toHaveTextContent('Open counts the required items still to resolve');
+    completeness.blur();
+    // Touch: a tap opens it and keeps it open; a second tap closes it.
+    const boarding = within(table).getByRole('button', { name: 'About Boarding' });
+    await user.click(boarding);
+    expect(await screen.findByRole('dialog', { name: 'Boarding' })).toHaveTextContent('Time since the admit decision while the patient is still in the ED');
+    expect(window.location.pathname).toBe('/');
+    await user.click(boarding);
+    expect(screen.queryByRole('dialog', { name: 'Boarding' })).not.toBeInTheDocument();
+  });
+
+  it('opens the guide from a column explanation', async () => {
+    const user = userEvent.setup();
+    const table = await renderBoard();
+    await user.click(within(table).getByRole('button', { name: 'About Severity' }));
+    await user.click(await screen.findByRole('button', { name: 'More in the guide' }));
+    expect(await screen.findByRole('dialog', { name: 'How to read each column' })).toBeInTheDocument();
   });
 });

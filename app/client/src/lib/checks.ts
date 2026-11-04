@@ -2,7 +2,7 @@
  * The server's rules for what a clinician types (app/server/logic.py), checked as they type so a button can say
  * why it is not ready yet. The server checks again and has the last word.
  */
-import type { CaseTemplate } from './types';
+import type { CaseTemplate, Persona } from './types';
 
 export const MAX_TEXT = 2000;
 
@@ -38,4 +38,21 @@ export function readbackProblem(text: string): string | null {
 export function callbackOk(cb: string): boolean {
   const t = cb.trim();
   return t.length <= 40 && ((t.match(/[0-9]/g) ?? []).length >= 3 || /^(x|ext\.?) ?[0-9]{2,}$/i.test(t));
+}
+
+/** Where the Sign off panel stands, in a few words, for the bar at the bottom of a smaller screen. */
+export function signOffStatus(tpl: CaseTemplate, persona: Persona, template: string, phase: string): string {
+  const w = tpl.workflow;
+  const n = tpl.draft.completeness.blocking.length;
+  if (persona.can_sign.includes(template) && canChange(tpl, phase) && (w.state === 'draft' || w.state === 'changed' || w.state === 'transferred_unsigned')) {
+    if (n) return `Sign off: ${n} item${n > 1 ? 's' : ''} to resolve`;
+    return w.state === 'changed' ? 'Ready to sign again' : 'Ready to sign';
+  }
+  if (persona.can_ack.includes(template)) {
+    if (w.state === 'signed' || (w.state === 'acknowledged' && w.changed_since_acknowledged)) return 'Ready to accept';
+    if (w.state === 'changed') return 'Waiting for the ED to sign again';
+    if (w.state === 'draft' || w.state === 'drafting') return 'Waiting for the ED to sign';
+  }
+  const label: Record<string, string> = { drafting: 'Drafting', draft: 'Draft, not signed yet', signed: 'Signed', changed: 'Changed after signing', acknowledged: 'Acknowledged', transferred_unsigned: 'Transferred without sign off' };
+  return `Handoff status: ${label[w.state] ?? w.state}`;
 }

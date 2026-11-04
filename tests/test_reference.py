@@ -89,7 +89,9 @@ def test_attestation_choices_do_not_change_the_fingerprint(tmp_path):
     shutil.copytree(ROOT / "ai" / "templates", tmp_path / "ai" / "templates")
     before = H.templates_sha(str(tmp_path))
     f = tmp_path / "ai" / "templates" / "sbar_nurse.yaml"
-    f.write_text(f.read_text().replace('attest: ["No isolation needed"]', 'attest: ["No isolation needed", "Droplet"]'))
+    text = f.read_text()
+    assert '"No isolation needed"' in text
+    f.write_text(text.replace('"No isolation needed"', '"No isolation needed", "Cohorted"'))
     assert H.templates_sha(str(tmp_path)) == before
     f.write_text(f.read_text().replace("level: hard", "level: soft", 1))
     assert H.templates_sha(str(tmp_path)) != before

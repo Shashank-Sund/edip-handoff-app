@@ -1,4 +1,5 @@
-import { callbackOk, canChange, readbackOk, readbackProblem } from './checks';
+import { callbackOk, canChange, readbackOk, readbackProblem, signOffStatus } from './checks';
+import type { CaseTemplate, Persona } from './types';
 import { caseTemplate } from '@/test/fixtures';
 
 describe('read back', () => {
@@ -33,5 +34,31 @@ describe('canChange', () => {
     expect(canChange(signed(2), 'arrived')).toBe(false);
     expect(canChange(caseTemplate(), 'canceled')).toBe(false);
     expect(canChange({ ...signed(2), row: { ...signed(2).row, status: 'addendum' } }, 'arrived')).toBe(true);
+  });
+});
+
+describe('signOffStatus', () => {
+  const tpl = (state: string, blocking: string[] = [], over: object = {}) =>
+    ({ draft: { completeness: { score: 0.7, blocking, model_score: 0.7 } }, row: { version: 2, status: 'draft' }, workflow: { state, ...over } }) as unknown as CaseTemplate;
+  const nurse = { can_sign: ['sbar_nurse'], can_ack: [] } as unknown as Persona;
+  const unit = { can_sign: [], can_ack: ['sbar_nurse'] } as unknown as Persona;
+  const viewer = { can_sign: [], can_ack: [] } as unknown as Persona;
+
+  it('says what is left for the sender, and when it is ready', () => {
+    expect(signOffStatus(tpl('draft', ['N07', 'N08']), nurse, 'sbar_nurse', 'boarding')).toBe('Sign off: 2 items to resolve');
+    expect(signOffStatus(tpl('draft', ['N07']), nurse, 'sbar_nurse', 'boarding')).toBe('Sign off: 1 item to resolve');
+    expect(signOffStatus(tpl('draft'), nurse, 'sbar_nurse', 'boarding')).toBe('Ready to sign');
+    expect(signOffStatus(tpl('changed'), nurse, 'sbar_nurse', 'boarding')).toBe('Ready to sign again');
+    expect(signOffStatus(tpl('transferred_unsigned'), nurse, 'sbar_nurse', 'arrived')).toBe('Ready to sign');
+    expect(signOffStatus(tpl('signed'), nurse, 'sbar_nurse', 'boarding')).toBe('Handoff status: Signed');
+  });
+
+  it('gives the receiver and the viewer the state', () => {
+    expect(signOffStatus(tpl('signed'), unit, 'sbar_nurse', 'boarding')).toBe('Ready to accept');
+    expect(signOffStatus(tpl('acknowledged', [], { changed_since_acknowledged: true }), unit, 'sbar_nurse', 'boarding')).toBe('Ready to accept');
+    expect(signOffStatus(tpl('draft'), unit, 'sbar_nurse', 'boarding')).toBe('Waiting for the ED to sign');
+    expect(signOffStatus(tpl('changed'), unit, 'sbar_nurse', 'boarding')).toBe('Waiting for the ED to sign again');
+    expect(signOffStatus(tpl('acknowledged'), unit, 'sbar_nurse', 'boarding')).toBe('Handoff status: Acknowledged');
+    expect(signOffStatus(tpl('draft', ['N07']), viewer, 'sbar_nurse', 'boarding')).toBe('Handoff status: Draft, not signed yet');
   });
 });

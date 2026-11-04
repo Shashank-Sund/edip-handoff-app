@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { BedDouble, ClipboardCheck, Clock3, Search, ShieldAlert, Users } from 'lucide-react';
+import { BedDouble, ClipboardCheck, Clock3, Search, ShieldAlert, Users, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Layout } from '@/components/layout/Layout';
 import { Pill, ProgressRing, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { Stat } from '@/components/common/Stat';
 import { HelpButton } from '@/components/guide/HelpButton';
+import { Explain } from '@/components/guide/Explain';
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/common/states';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
@@ -16,6 +17,32 @@ import { cn } from '@/lib/utils';
 import type { CaseSummary } from '@/lib/types';
 
 type View = 'all' | 'boarding' | 'arrived';
+
+/** One or two sentences per column, true to how the board computes it; the guide has the rest. */
+function columnHelp(tplName: string): [string, string][] {
+  return [
+    ['Patient', 'Name, age, sex and medical record number. Click a row to open the handoff.'],
+    ['Severity', 'How sick the patient is: stable, watcher or unstable. Rules set the lowest level the chart allows, and the model can raise it, never lower it.'],
+    ['Reason for visit', 'The chief complaint. Underneath, from the chart: a code status other than full code, isolation, and allergies.'],
+    ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
+    ['Boarding', 'Time since the admit decision while the patient is still in the ED. Amber from 4 hours, red from 6.'],
+    ['Handoffs', 'Where the nurse and the physician handoff stand: Draft, Signed, Acknowledged, Changed after signing, or Transferred without sign off.'],
+    ['Completeness', `For your role's template (${tplName}): the share of its checks that are met or resolved. Open counts the required items still to resolve before signing.`],
+    ['Last update', 'When the latest draft was written, and what changed in the chart to trigger it.'],
+  ];
+}
+
+function Head({ label, help, className }: { label: string; help: string; className?: string }) {
+  return (
+    <th scope="col" className={cn('px-3 py-2.5 font-medium', className)}>
+      {label}
+      <span className="whitespace-nowrap">
+        &nbsp;
+        <Explain icon label={label} topic="board.columns" text={help} />
+      </span>
+    </th>
+  );
+}
 const TEMPLATE_SHORT: Record<string, string> = { sbar_nurse: 'Nurse', ipass_physician: 'Physician' };
 
 function BoardingTime({ minutes }: { minutes: number }) {
@@ -106,6 +133,7 @@ export default function Board() {
   const { at, persona, version, config } = useApp();
   const { data, error, retry } = useLoad(() => api.board(at), [at, persona.id, version]);
   const [view, setView] = useState<View>('all');
+  const [unsigned, setUnsigned] = useState(false);
   const [facility, setFacility] = useState<string>('all');
   const [q, setQ] = useState('');
   const rows = useMemo(() => {
@@ -113,10 +141,11 @@ export default function Board() {
     return (data?.rows ?? []).filter(
       (r) =>
         (view === 'all' || r.phase === view) &&
+        (!unsigned || (r.phase === 'arrived' && r.templates[data?.template ?? '']?.workflow.state === 'transferred_unsigned')) &&
         (facility === 'all' || r.facility === facility) &&
         (!needle || [r.patient.name, r.patient.mrn, r.chief_complaint, r.destination.pending_unit, r.service].some((v) => v?.toLowerCase().includes(needle))),
     );
-  }, [data, view, facility, q]);
+  }, [data, view, facility, q, unsigned]);
   const scope = persona.unit ? `${persona.facility} ${persona.unit}` : 'All units';
   const title = persona.role === 'unit_nurse' ? `Incoming to ${persona.facility} ${persona.unit}` : 'ED boarding board';
 
@@ -134,7 +163,20 @@ export default function Board() {
           <Stat label="Unstable" value={k.unstable} tone="danger" icon={<ShieldAlert />} hint="Rule floor or model call" />
           {ack && <Stat label="To acknowledge" value={k.to_acknowledge ?? 0} tone="warn" icon={<ClipboardCheck />} hint={`${tplName} handoffs signed by the ED, waiting for your read back`} />}
           {sign && !ack && (
-            <Stat label="To sign" value={k.to_sign ?? 0} icon={<ClipboardCheck />} hint={`${tplName} drafts and changed after signing; ${k.blocking ?? 0} with items to resolve first`} />
+            <Stat label="To sign" value={k.to_sign ?? 0} icon={<ClipboardCheck />} hint={`${tplName} drafts and changed after signing; ${k.blocking ?? 0} with items to resolve first`}>
+              {(k.left_unsigned ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setView('arrived');
+                    setUnsigned(true);
+                  }}
+                  className="mt-1 w-fit rounded-sm text-left text-xs font-medium text-sev-unstable underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60"
+                >
+                  {k.left_unsigned} left without sign off
+                </button>
+              )}
+            </Stat>
           )}
           <Stat label="Arrived on unit" value={k.arrived} icon={<Users />} hint="Transferred in the last 12 hours" />
         </section>
@@ -148,7 +190,10 @@ export default function Board() {
                     key={v}
                     role="tab"
                     aria-selected={view === v}
-                    onClick={() => setView(v)}
+                    onClick={() => {
+                      setView(v);
+                      if (v !== 'arrived') setUnsigned(false);
+                    }}
                     className={cn('rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', view === v ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground')}
                   >
                     {v}
@@ -158,6 +203,14 @@ export default function Board() {
                   </button>
                 ))}
               </div>
+              {unsigned && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sev-unstable/10 py-1 pl-2.5 pr-1 text-xs font-medium text-sev-unstable ring-1 ring-inset ring-sev-unstable/25">
+                  Left without sign off
+                  <button type="button" onClick={() => setUnsigned(false)} className="grid size-5 place-items-center rounded-full outline-none hover:bg-sev-unstable/15 focus-visible:ring-2 focus-visible:ring-ring/60" aria-label="Clear the Left without sign off filter">
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </span>
+              )}
               {!persona.unit && (
                 <div role="group" aria-label="Facility" className="inline-flex rounded-lg bg-muted p-0.5">
                   {['all', ...config.facilities.map((f) => f.code)].map((f) => (
@@ -192,16 +245,14 @@ export default function Board() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                     <tr>
-                      <th scope="col" className="py-2.5 pl-4 pr-3 font-medium lg:pl-5">Patient</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Severity</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Reason for visit</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Destination</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Boarding</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Handoffs</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">
-                        Completeness <span className="font-normal">({tplName})</span>
-                      </th>
-                      <th scope="col" className="py-2.5 pl-3 pr-4 font-medium lg:pr-5">Last update</th>
+                      {columnHelp(tplName).map(([label, help], i, all) => (
+                        <Head
+                          key={label}
+                          label={label === 'Completeness' ? `Completeness (${tplName})` : label}
+                          help={help}
+                          className={i === 0 ? 'pl-4 pr-3 lg:pl-5' : i === all.length - 1 ? 'pl-3 pr-4 lg:pr-5' : undefined}
+                        />
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y">

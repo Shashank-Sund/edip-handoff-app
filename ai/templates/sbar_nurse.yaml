@@ -17,9 +17,10 @@ rules:
   - {id: N02, element: E02, level: hard, at: sign}
   - {id: N03, element: E03, level: hard}
   - {id: N04, element: E06, level: hard}
-  - {id: N05, element: E08, level: hard, attest: ["Full code confirmed with patient or family"]}
-  - {id: N06, element: E09, level: hard, attest: ["No known allergies confirmed"]}
-  - {id: N07, element: E10, level: hard, attest: ["No isolation needed"]}
+  - {id: N05, element: E08, level: hard, attest: ["Full code confirmed with patient or family", "DNR", "DNR/DNI", "Comfort care"]}
+  - {id: N06, element: E09, level: hard, attest: ["No known allergies confirmed", "Add an allergy"]}
+  - {id: N07, element: E10, level: hard,
+     attest: ["No isolation needed", "Contact", "Droplet", "Airborne", "Contact plus (enteric)", "Protective (neutropenic)", "Other"]}
   - {id: N08, element: E14, level: stale, max_age_min: {stable: 60, watcher: 30, unstable: 15}}
   - {id: N09, element: E18, level: hard, attest: ["No medications given in the ED"]}
   - {id: N10, element: E16, level: hard, attest: ["No results pending"]}

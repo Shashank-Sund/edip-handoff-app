@@ -14,8 +14,8 @@ rules:
   - {id: P01, element: E07, level: hard}
   - {id: P02, element: E11, level: hard}
   - {id: P03, element: E26, level: hard}
-  - {id: P04, element: E08, level: hard, attest: ["Full code confirmed with patient or family"]}
-  - {id: P05, element: E09, level: hard, attest: ["No known allergies confirmed"]}
+  - {id: P04, element: E08, level: hard, attest: ["Full code confirmed with patient or family", "DNR", "DNR/DNI", "Comfort care"]}
+  - {id: P05, element: E09, level: hard, attest: ["No known allergies confirmed", "Add an allergy"]}
   - {id: P06, element: E18, level: hard, attest: ["No medications given in the ED"]}
   - {id: P07, element: E14, level: stale, max_age_min: {stable: 120, watcher: 60, unstable: 30}}
   - {id: P07b, element: E15, level: hard, attest: ["No abnormal results"]}

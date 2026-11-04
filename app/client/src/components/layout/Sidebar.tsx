@@ -21,8 +21,8 @@ export function Logo({ collapsed }: { collapsed?: boolean }) {
       </span>
       {!collapsed && (
         <span className="leading-tight">
-          <span className="block text-sm font-semibold">ED Handoff</span>
-          <span className="block text-[11px] text-muted-foreground">Emergency to inpatient</span>
+          <span className="block text-sm font-semibold">Healthcare Handoff</span>
+          <span className="block text-[11px] text-muted-foreground">ED to inpatient</span>
         </span>
       )}
     </a>

@@ -85,7 +85,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Help on every page',
         body: (
           <p>
-            Look for the <Key label="question mark"><CircleHelp /></Key> button next to a title or a panel. It opens a short explanation of that part of the screen without leaving the page, with a link back to this guide.
+            Look for the <Key label="question mark"><CircleHelp /></Key> button next to a title or a panel. It opens a short explanation of that part of the screen without leaving the page, with a link back to this guide. A label with a <span className="underline decoration-dotted underline-offset-[3px]">dotted underline</span>, and the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to each column of the board, explain themselves when you point at them, tab to them or tap them.
           </p>
         ),
       },
@@ -144,7 +144,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <SeeDo
             see={<>The <b>Sign off</b> panel lists what still blocks signing, each marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>. The same items show an amber message in the handoff.</>}
-            act={<>For each one, check the patient, then tap the statement if it is true, for example <Key><Check />No isolation needed</Key> or <Key><Check />Rechecked at bedside, unchanged</Key>.</>}
+            act={<>For each one, check the patient, then tap what is true, for example <Key><Check />No isolation needed</Key>, <Key><Check />Droplet</Key> or <Key><Check />Rechecked at bedside, unchanged</Key>. For an allergy the chart does not have, tap <Key><Pencil />Add an allergy</Key> and type it.</>}
           />
         ),
       },
@@ -297,6 +297,7 @@ export const GUIDE: GuideSection[] = [
               <ColorRow swatch="bg-sev-watcher" title="Amber: needs your attention before you go on">
                 <SeverityBadge value="watcher" />
                 <AmberNote>Isolation: not documented</AmberNote>
+                <Pill tone="warn">Entered by you, not yet in the chart</Pill>
                 <Tag tone="warn">Stale</Tag>
                 <Pill tone="warn">Changed</Pill>
                 <StateBadge state="changed" />
@@ -416,7 +417,7 @@ export const GUIDE: GuideSection[] = [
             items={[
               ['Boarding now', 'Patients with an admit decision who are still in the ED. Below the number: the median wait since the admit decision. The read only viewer sees this, Unstable and Arrived, without the To sign or To acknowledge box.'],
               ['Unstable', 'Boarding patients marked unstable, by the rule floor or by the model. Look at these first.'],
-              ['To sign', 'ED staff: handoffs for your role in Draft or Changed after signing. Below it: how many of those still have items to resolve.'],
+              ['To sign', 'ED staff: handoffs for your role in Draft or Changed after signing. Below it: how many of those still have items to resolve. When patients went up to the unit before anyone signed, a red line such as "1 left without sign off" shows them: click it to list them.'],
               ['To acknowledge', 'Unit staff, in place of To sign: handoffs the ED has signed that wait for your read back.'],
               ['Arrived on unit', 'Patients who went up to a unit in the last 12 hours, so the receiving team can still review them. Canceled transfers are not counted.'],
             ]}
@@ -431,6 +432,7 @@ export const GUIDE: GuideSection[] = [
             items={[
               [<Key key="k">All · Boarding · Arrived</Key>, 'Everyone, only patients still in the ED, or only patients who already went up. The small number is how many.'],
               [<Key key="k">Both hospitals · SGH · LKS</Key>, 'One hospital or both. Unit staff do not see this, because they see only their unit.'],
+              [<Pill key="p" tone="danger">Left without sign off</Pill>, 'Shown after you click the red line under To sign: only arrived patients whose handoff for your role was never signed. You can still sign them. Press its x to clear it.'],
               ['Search', 'Type a name, a medical record number or a unit, for example 6W.'],
             ]}
           />
@@ -441,7 +443,7 @@ export const GUIDE: GuideSection[] = [
         title: 'How to read each column',
         body: (
           <>
-            <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information.</p>
+            <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information. Point at the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to a column title for a short reminder of what it shows.</p>
             <Terms
               items={[
                 ['Patient', 'Name, age, sex and medical record number (MRN).'],
@@ -450,7 +452,7 @@ export const GUIDE: GuideSection[] = [
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
                 ['Boarding', 'Time since the admit decision. The bar fills over 8 hours: blue under 4 hours, amber from 4, red from 6. For patients who already left: how long they waited.'],
                 ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed.</>],
-                ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> For the template of your role, named in the column title (SBAR for nurses, I-PASS for physicians): 58% of its items are filled, and 4 required items must be resolved before signing.</>],
+                ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> For the template of your role, named in the column title (SBAR for nurses, I-PASS for physicians): 58% of its checks are met or resolved, and 4 required items must be resolved before signing.</>],
                 ['Last update', 'When the latest draft was written, and why: Admit decision, Bed assigned, Note signed, Critical result and so on.'],
               ]}
             />
@@ -473,7 +475,7 @@ export const GUIDE: GuideSection[] = [
           <Terms
             items={[
               ['Name and severity', 'Check you have the right patient, and how sick they are.'],
-              ['Safety flags', <>Code status, allergies and isolation, for example <Key>Full Code</Key> <Pill tone="danger">Shellfish</Pill>. Red changes how you care for the patient.</>],
+              ['Safety flags', <>Code status, allergies and isolation from the chart, for example <Key>Full Code</Key> <Pill tone="danger">Shellfish</Pill>. Red changes how you care for the patient. "No allergies documented" means the chart has none on file, which is not the same as no known allergies.</>],
               ['Now in, Going to', 'The ED bed now, and the unit, bed and level of care they are going to.'],
               ['Boarding', 'How long since the admit decision.'],
             ]}
@@ -486,7 +488,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <>
             <p>
-              The same patient in three formats. <b>SBAR</b> is the nurse handoff, <b>I-PASS</b> the physician handoff, and the <b>Joint Commission minimum</b> a short format any clinician can use. Your role's tab opens first. The small icon on each tab shows its status: <StateBadge state="draft" compact /> draft, <StateBadge state="signed" compact /> signed, <StateBadge state="acknowledged" compact /> accepted.
+              The same patient in three formats. <b>SBAR</b> is the nurse handoff: the ED nurse signs it, the receiving nurse accepts it. <b>I-PASS</b> is the physician handoff: the ED physician signs it, the admitting physician accepts it. The <b>Joint Commission minimum</b> is a short format with what every handoff needs: either ED clinician signs it, either receiver accepts it. Point at a tab for a reminder. Your role's tab opens first. The small icon on each tab shows its status: <StateBadge state="draft" compact /> draft, <StateBadge state="signed" compact /> signed, <StateBadge state="acknowledged" compact /> accepted.
             </p>
             <p className="text-muted-foreground">Next to the tabs: the version number, when it was drafted and why. Each handoff is split into sections (for SBAR: Identify, Situation, Background, Assessment, Recommendation, Read back).</p>
           </>
@@ -536,7 +538,7 @@ export const GUIDE: GuideSection[] = [
             <p>An amber message under an item, such as <AmberNote>Isolation: not documented</AmberNote>, means it blocks signing. There are three kinds:</p>
             <Terms
               items={[
-                ['Not documented, with a statement', <>Tap the statement if it is true, for example <Key><Check />No known allergies confirmed</Key>. This records that you checked. The statements are a fixed list for each item.</>],
+                ['Not documented, with choices', <>Tap what is true. The first choice confirms there is nothing to add, for example <Key><Check />No known allergies confirmed</Key>. For isolation, code status and allergies the other choices enter what you found: <Key><Check />Droplet</Key>, <Key><Check />DNR/DNI</Key>, or <Key><Pencil />Other</Key> and <Key><Pencil />Add an allergy</Key>, which ask you to type it. The choices are a fixed list for each item. A wrong choice can be fixed with <b>Change</b> under the item; after signing, that means signing again. <GuideLink to="handoff-entered">Values you enter</GuideLink> explains what the receiver sees.</>],
                 [<Tag key="t" tone="warn">Stale</Tag>, <>Vital signs must be recent for the severity. The limits depend on the template: SBAR 60, 30 and 15 minutes for a stable, watcher and unstable patient; I-PASS 120, 60 and 30 minutes. The <PageLink to="/templates">Templates page</PageLink> lists them. Recheck the patient, then tap <Key><Check />Rechecked at bedside, unchanged</Key>, or chart new vital signs. A recheck counts for the same limit: after that the item is stale again and the panel says the recheck expired.</>],
                 ['Not documented, no statement', <>For a model item, press <Key><Pencil />Edit</Key> and write it. For a chart item, document it in the chart; the next draft picks it up.</>],
               ]}
@@ -548,15 +550,29 @@ export const GUIDE: GuideSection[] = [
         ),
       },
       {
+        id: 'entered',
+        title: 'Values you enter',
+        body: (
+          <>
+            <p>
+              When the chart has no isolation, code status or allergy and you enter one in the sign off, the item shows it with <Pill tone="warn">Entered by Jordan Reyes, RN, not yet in the chart</Pill>. The receiving team sees the same tag, so they know it came from you, not from the record.
+            </p>
+            <p className="text-muted-foreground">
+              Enter it in the chart as well. When a newer draft has the value from the chart, the item shows the chart value, and what you entered stays in History. Like any attestation, entering a value after you signed means you sign again.
+            </p>
+          </>
+        ),
+      },
+      {
         id: 'sign',
         title: 'The Sign off panel (ED staff)',
         body: (
           <>
-            <p>On a wide screen it sits on the right and stays in view. On a smaller screen it comes after the handoff, so scroll down.</p>
+            <p>On a wide screen it sits at the top of the right column, which scrolls on its own, so it stays in reach however long the handoff is. On a smaller screen it comes after the handoff; a bar at the bottom of the screen, such as "Sign off: 2 items to resolve", says where it stands and takes you there.</p>
             <Terms
               items={[
                 [<Ring key="r" value={0.68} blocking={2} label="68% complete" />, 'How complete the handoff is, and how many items still block signing.'],
-                ['The list', <>Every open item, marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>, with the same one tap statements. Click an item's name to jump to it.</>],
+                ['The list', <>Every open item, marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>, with the same choices as on the item. Click an item's name to jump to it.</>],
                 ['Your callback number', 'The number the receiving clinician can call you on.'],
                 [<Primary key="s"><PenLine />Sign</Primary>, 'Adds your name, callback and the time. The receiving unit can now accept it.'],
               ]}
@@ -689,6 +705,7 @@ export const GUIDE: GuideSection[] = [
             <p>
               This demo replays one past week of made up patients. The date and time <Key><CalendarClock />Wed, Oct 28 16:00</Key> is the moment you are looking at. Every page shows the hospital as it was then: who is in the ED, who is waiting for a bed, the latest draft of each handoff, and what has been signed. Times are the hospital's local time.
             </p>
+            <p className="text-muted-foreground">The first time you open the demo, a short note under the clock says so. Close it with its x; it does not come back.</p>
             <Note>In a hospital the clock reads Live and always shows the current time. There is nothing to set.</Note>
           </>
         ),
@@ -787,12 +804,13 @@ export const GUIDE: GuideSection[] = [
     topics: [
       { id: 'addendum', title: 'Addendum', body: 'A new version written after the patient left the ED, for an ED note signed late or a critical result from a test done in the ED. The ED clinician can still sign it.' },
       { id: 'admit-decision', title: 'Admit decision', body: 'The moment the ED decides the patient needs a bed. The first draft is written then.' },
-      { id: 'attest', title: 'Attest', body: 'Confirm a statement from a fixed list, such as "No known allergies confirmed". It records that you checked.' },
+      { id: 'attest', title: 'Attest', body: 'Choose from a fixed list what you checked, such as "No known allergies confirmed", or enter what you found, such as Droplet isolation. It records that you checked.' },
       { id: 'boarding', title: 'Boarding', body: 'Waiting in the ED after the admit decision, until the patient leaves for the unit.' },
       { id: 'callback', title: 'Callback', body: 'The phone or extension number the receiver can call the sender on: at least 3 digits, or an extension like x4471. Required to sign.' },
       { id: 'changed', title: 'Changed after signing', body: 'An edit, an attestation or a newer draft with different content came after the signature. The ED signs again before the receiver can accept.' },
       { id: 'completeness', title: 'Completeness', body: "The share of the template's checks that are met or resolved. Required items block signing; warnings only lower the number." },
       { id: 'contingency', title: 'Contingency plan', body: 'If this happens, do that: how the patient could get worse, and what to do about it.' },
+      { id: 'entered', title: 'Entered, not yet in the chart', body: 'A value the ED clinician entered in the sign off (isolation, code status, an allergy) because the chart had none. The chart value replaces it once a newer draft has one.' },
       { id: 'esi', title: 'ESI', body: 'Emergency Severity Index: the triage level, from 1 (most urgent) to 5.' },
       { id: 'ipass', title: 'I-PASS', body: 'Illness severity, Patient summary, Action list, Situation awareness and contingency, Synthesis by the receiver. The physician handoff format.' },
       { id: 'minimum', title: 'Joint Commission minimum', body: 'A short handoff with the items the Joint Commission says every handoff needs. Any clinician can use it.' },
@@ -805,7 +823,7 @@ export const GUIDE: GuideSection[] = [
       { id: 'severity', title: 'Severity', body: 'How sick the patient is: stable (expected to stay well), watcher (could get worse, keep a close eye) or unstable (needs action now).' },
       { id: 'source', title: 'Source', body: 'The chart record a statement came from: a note, a lab, a medication, a set of vital signs.' },
       { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after a limit that depends on the severity and the template: SBAR 60, 30 or 15 minutes for a stable, watcher or unstable patient; I-PASS 120, 60 or 30. A bedside recheck counts for the same limit.' },
-      { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it.' },
+      { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it; the board counts these under To sign as "left without sign off".' },
       { id: 'version', title: 'Version', body: 'Each time the chart changes in a way that matters, a new draft is written. The newest is shown, and History lists them all.' },
     ],
   },

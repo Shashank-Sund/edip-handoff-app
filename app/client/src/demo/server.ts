@@ -43,14 +43,14 @@ const TEMPLATES = [
 /** Request bodies (main.py's pydantic models): required and optional fields, as model_dump() returns them. */
 const BODIES: Record<string, [string[], string[]]> = {
   edit: [['element'], ['text', 'items', 'restore']],
-  attest: [['rule', 'option'], []],
+  attest: [['rule', 'option'], ['entry', 'entry_note']],
   sign: [['callback'], []],
   ack: [['readback'], ['questions']],
 };
 
 /** main.py FIELD: how the validation sentences name each field. */
 const FIELD: Record<string, string> = {
-  element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation',
+  element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation', entry: 'entered value', entry_note: 'note',
   callback: 'callback number', readback: 'read back', questions: 'questions',
 };
 const UNREADABLE = 'The request could not be read. Reload the page and try again.';

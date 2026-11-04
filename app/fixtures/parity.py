@@ -198,8 +198,9 @@ def scenarios(c, main):
         if rule["rule"] in pd["completeness"]["blocking"]:
             opts = rule.get("attest_options") or []
             if opts and rule["status"] != "missing":
+                typed = {"entry": "Penicillin", "entry_note": "Hives"} if opts[-1] in (rule.get("attest_typed") or {}) else {}
                 rec(f"physician attest {rule['rule']}", "POST", f"{url}/ipass_physician/attest", persona="ed-md",
-                    body={"rule": rule["rule"], "option": opts[-1]})
+                    body={"rule": rule["rule"], "option": opts[-1]} | typed)
             else:
                 rec(f"physician edit for {rule['rule']}", "POST", f"{url}/ipass_physician/edit", persona="ed-md",
                     body={"element": rule["element"], "text": "Written by the physician"})
@@ -249,6 +250,7 @@ def scenarios(c, main):
     rec("after reset: board", "GET", "/api/board", persona="ed-rn")
     rec("unknown api path (404)", "GET", "/api/nope")
     workflow_scenarios(rec, ds, default, boarding, units, end)
+    entered_scenarios(rec, ds, default, boarding, units)
     return rec.items
 
 
@@ -413,6 +415,81 @@ def workflow_scenarios(rec, ds, default, boarding, units, end):
         rec("branch: write the plan", "POST", f"{u}/ipass_physician/edit", at=t, persona="ed-md",
             body={"element": "E25", "text": "Watcher: if MAP under 65, bolus and call the ICU"})
     rec("wf reset end", "POST", "/api/demo/reset")
+
+
+def entered_scenarios(rec, ds, default, boarding, units):
+    """Attestation choices that enter a value (Droplet, DNR, an allergy, typed isolation), their checks, what the
+    receiver sees, and a chart value that replaces an entered one."""
+    iso = lambda t: t.isoformat()  # noqa: E731
+    rec("entered reset", "POST", "/api/demo/reset")
+    done = set()
+    for r in boarding:
+        _, case = rec(f"entered case {r['csn']}", "GET", f"/api/handoffs/{r['csn']}", persona="ed-rn")
+        d = case["templates"]["sbar_nurse"]["draft"]
+        url = f"/api/handoffs/{r['csn']}/sbar_nurse"
+        for rule in d["rules"]:
+            rid = rule["rule"]
+            if rule["status"] != "attest" or rid not in ("N05", "N06", "N07") or rid in done:
+                continue
+            done.add(rid)
+            if rid == "N07":
+                for name, body in (("Other without text (409)", {"option": "Other"}),
+                                   ("Other blank (409)", {"option": "Other", "entry": "  "}),
+                                   ("Other too long (409)", {"option": "Other", "entry": "a" * 2001}),
+                                   ("Other not text (422)", {"option": "Other", "entry": 5}),
+                                   ("Other", {"option": "Other", "entry": "  Contact and droplet  "}),
+                                   ("Droplet with ignored text", {"option": "Droplet", "entry": "ignored", "entry_note": "x"}),
+                                   ("none again", {"option": "No isolation needed"}),
+                                   ("Airborne", {"option": "Airborne"})):
+                    rec(f"entered N07 {name}", "POST", f"{url}/attest", persona="ed-rn", body={"rule": rid} | body)
+            elif rid == "N06":
+                for name, body in (("allergy without allergen (409)", {"option": "Add an allergy", "entry_note": "Hives"}),
+                                   ("allergy note too long (409)", {"option": "Add an allergy", "entry": "Latex", "entry_note": "b" * 2001}),
+                                   ("allergy note not text (422)", {"option": "Add an allergy", "entry": "Latex", "entry_note": ["x"]}),
+                                   ("allergy", {"option": "Add an allergy", "entry": " Penicillin ", "entry_note": " Hives "}),
+                                   ("allergy without reaction", {"option": "Add an allergy", "entry": "Latex", "entry_note": "  "})):
+                    rec(f"entered N06 {name}", "POST", f"{url}/attest", persona="ed-rn", body={"rule": rid} | body)
+            else:
+                rec("entered N05 DNR/DNI", "POST", f"{url}/attest", persona="ed-rn", body={"rule": rid, "option": "DNR/DNI"})
+            recv = next((u for u in units if u["unit"] == r["destination"]["pending_unit"] and u["facility"] == r["facility"]), None)
+            rec(f"entered {rid}: case", "GET", f"/api/handoffs/{r['csn']}", persona="ed-rn")
+            if recv:
+                rec(f"entered {rid}: receiver case", "GET", f"/api/handoffs/{r['csn']}", persona=recv["id"])
+            rec(f"entered {rid}: board", "GET", "/api/board", persona="ed-rn")
+        if len(done) == 3:
+            break
+    # Sign with an entered value, then enter another: sign again.
+    if boarding:
+        u = f"/api/handoffs/{boarding[0]['csn']}"
+        first = resolve(rec, u, "sbar_nurse", "ed-rn", None, "entered sign")
+        rec("entered sign: sign", "POST", f"{u}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+        r = next((x for x in first["templates"]["sbar_nurse"]["draft"]["rules"] if x["status"] == "attest"
+                  and len(x.get("attest_options") or []) > 1), None)
+        if r:
+            rec(f"entered sign: enter {r['rule']} after signing", "POST", f"{u}/sbar_nurse/attest", persona="ed-rn",
+                body={"rule": r["rule"], "option": r["attest_options"][1]})
+    # A chart value replaces an entered one; the entered one stays in History.
+    rec("entered reset 2", "POST", "/api/demo/reset")
+    flip = None
+    for csn, rows in ds.versions.items():
+        e = ds.enc[csn]
+        sb = [x for x in rows if x["template"] == "sbar_nurse" and x["status"] != "retracted"]
+        for a, b in zip(sb, sb[1:]):
+            st = lambda x: {y["rule"]: y["status"] for y in x["draft"]["rules"]}  # noqa: E731
+            if (st(a).get("N05") == "attest" and st(b).get("N05") == "pass" and b["at"] - a["at"] > timedelta(minutes=2)
+                    and (not e["ed_departure_ts"] or e["ed_departure_ts"] > b["at"])):
+                flip = (csn, a, b)
+                break
+        if flip:
+            break
+    if flip:
+        csn, a, b = flip
+        u, t0 = f"/api/handoffs/{csn}", iso(a["at"] + timedelta(minutes=1))
+        rec("chart replaces: enter DNR", "POST", f"{u}/sbar_nurse/attest", at=t0, persona="ed-rn", body={"rule": "N05", "option": "DNR"})
+        rec("chart replaces: case before", "GET", u, at=t0, persona="ed-rn")
+        rec("chart replaces: case after", "GET", u, at=iso(b["at"]), persona="ed-rn")
+        rec("chart replaces: board after", "GET", "/api/board", at=iso(b["at"]), persona="ed-rn")
+    rec("entered reset end", "POST", "/api/demo/reset")
 
 
 def main():

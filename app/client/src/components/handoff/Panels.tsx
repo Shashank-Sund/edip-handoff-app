@@ -7,14 +7,16 @@ import { Input } from '@/components/ui/input';
 import { ProgressRing, StateBadge } from '@/components/common/badges';
 import { TimeChart } from '@/components/charts/TimeChart';
 import { HelpButton } from '@/components/guide/HelpButton';
+import { Explain } from '@/components/guide/Explain';
+import { AttestChoices, type AttestFn } from './AttestChoices';
 import { callbackOk, canChange, readbackProblem } from '@/lib/checks';
 import { clinicalReason, clock, dateTime, pct, triggerLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CaseDetail, CaseTemplate, Draft, Persona, Rule } from '@/lib/types';
 
-function Section({ title, description, icon, children, className, action }: { title: string; description?: string; icon?: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
+function Section({ title, description, icon, children, className, action, id }: { title: string; description?: string; icon?: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode; id?: string }) {
   return (
-    <Card className={className}>
+    <Card id={id} tabIndex={id ? -1 : undefined} className={cn(id && 'scroll-mt-20 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', className)}>
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 pb-3 sm:pb-3">
         <div className="min-w-0">
           <CardTitle className="flex items-center gap-2 text-sm [&>svg]:size-4 [&>svg]:text-muted-foreground">
@@ -30,7 +32,22 @@ function Section({ title, description, icon, children, className, action }: { ti
   );
 }
 
-function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: (r: Rule, o: string) => void; busy?: boolean; canEdit: boolean }) {
+/** The REQUIRED and STALE labels of the Sign off list, each with what it means. */
+export function LevelTag({ level }: { level: Rule['level'] }) {
+  const stale = level === 'stale';
+  return (
+    <Explain
+      topic="handoff.resolve"
+      label={stale ? 'Stale' : 'Required'}
+      text={stale ? 'The vital signs are older than the limit for this severity. Recheck the patient, or chart new vital signs.' : 'Must be documented or confirmed before you can sign.'}
+      className={cn('shrink-0 text-[11px] font-medium uppercase tracking-wide', stale ? 'text-sev-watcher' : 'text-sev-unstable')}
+    >
+      {stale ? 'Stale' : 'Required'}
+    </Explain>
+  );
+}
+
+function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: AttestFn; busy?: boolean; canEdit: boolean }) {
   const blocking = draft.rules.filter((r) => draft.completeness.blocking.includes(r.rule));
   const resolved = draft.rules.filter((r) => r.resolution);
   if (!blocking.length) {
@@ -49,20 +66,11 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
             <a href={`#el-${r.element}`} className="text-sm font-medium hover:underline">
               {r.label}
             </a>
-            <span className={cn('text-[11px] font-medium uppercase tracking-wide', r.level === 'stale' ? 'text-sev-watcher' : 'text-sev-unstable')}>{r.level === 'stale' ? 'Stale' : 'Required'}</span>
+            <LevelTag level={r.level} />
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">{r.message}</p>
           {r.attest_expired && <ExpiredRecheck r={r} />}
-          {canEdit && (r.attest_options?.length ?? 0) > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {r.attest_options!.map((o) => (
-                <Button key={o} size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={busy} onClick={() => onAttest(r, o)}>
-                  <Check className="size-3" />
-                  {o}
-                </Button>
-              ))}
-            </div>
-          )}
+          {canEdit && <AttestChoices r={r} onAttest={onAttest} busy={busy} />}
           {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the item to write it.</p>}
         </li>
       ))}
@@ -87,7 +95,7 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
   template: string;
   phase: string;
   busy?: boolean;
-  onAttest: (r: Rule, o: string) => void;
+  onAttest: AttestFn;
   onSign: (callback: string) => void;
 }) {
   const [callback, setCallback] = useState('');
@@ -104,6 +112,7 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
   const cbBad = callback.trim() !== '' && !callbackOk(callback);
   return (
     <Section
+      id="signoff"
       title={canAck ? 'Handoff status' : 'Sign off'}
       icon={<PenLine />}
       description={`Version ${tpl.row.version}, drafted ${dateTime(tpl.row.as_of)}`}
@@ -118,7 +127,12 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
         <div className="flex items-center gap-3">
           <ProgressRing value={draft.completeness.score} size={44} stroke={4.5} blocking={blocking} />
           <div className="leading-tight">
-            <div className="text-lg font-semibold tabular-nums">{pct(draft.completeness.score)} complete</div>
+            <div className="text-lg font-semibold tabular-nums">
+              {pct(draft.completeness.score)}{' '}
+              <Explain topic="glossary.completeness" label="Completeness" text="The share of this template's checks that are met or resolved. Items to resolve block signing; warnings only lower the number." className="decoration-muted-foreground/40">
+                complete
+              </Explain>
+            </div>
             <div className="text-xs text-muted-foreground">{blocking ? `${blocking} item${blocking > 1 ? 's' : ''} to resolve before signing` : 'Nothing blocks sign off'}</div>
           </div>
         </div>
@@ -389,7 +403,7 @@ export function HistoryCard({ tpl, activity, template }: { tpl: CaseTemplate; ac
     ...acts.map((a) => ({
       at: a.at,
       title: `${a.restore ? 'Model text restored' : ACTION[a.kind] ?? a.kind} by ${a.by}`,
-      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : itemName(tpl.draft, a.detail) ?? `version ${a.version}`,
+      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : `${itemName(tpl.draft, a.detail) ?? `version ${a.version}`}${a.entered ? `: ${a.entered}${a.note ? `, ${a.note}` : ''}` : ''}`,
       kind: a.kind,
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));

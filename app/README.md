@@ -1,6 +1,6 @@
 # App
 
-The clinician app: an ED boarding board, the handoff for each patient in three templates, sign off and read back, per unit access, and analytics. FastAPI serves the API and the built React client.
+The clinician app, Healthcare Handoff: an ED boarding board, the handoff for each patient in three templates, sign off and read back, per unit access, and analytics. FastAPI serves the API and the built React client.
 
 ## Run it locally (mock mode)
 
@@ -26,7 +26,7 @@ Checks: `npm run typecheck`, `npm run lint`, `node scripts/screenshots.mjs <url>
 
 | Page | For | Shows |
 | --- | --- | --- |
-| Board | everyone | Patients boarding or arrived in the last 12 hours: severity, destination, boarding time, handoff state per template, completeness. A receiving nurse sees only patients bound for their unit. |
+| Board | everyone | Patients boarding or arrived in the last 12 hours: severity, destination, boarding time, handoff state per template, completeness, with a short explanation on each column. ED staff see how many patients left without sign off and can list them. A receiving nurse sees only patients bound for their unit. |
 | Handoff | everyone | The draft in SBAR, I-PASS or the Joint Commission minimum. Structured items come from the chart; narrative items are model drafted, with numbered chips that open each cited source and highlighted numbers the validator could not find. Sign off checklist, read back, what changed, vital sign and lab trends, history. |
 | Analytics | everyone | ED census and boarding by hour, boarding time by destination, what blocked sign off, completeness and severity at transfer. |
 | Templates | everyone | The three templates, their elements and rules, from `ai/templates`. |
@@ -34,6 +34,7 @@ Checks: `npm run typecheck`, `npm run lint`, `node scripts/screenshots.mjs <url>
 ## Rules the server enforces
 
 - Only the sending ED clinician edits, attests and signs: nurses sign SBAR, physicians sign I-PASS, either signs the custom template. Structured items and illness severity cannot be edited; they come from the chart and the rule floor. An edit cannot be empty; Restore brings back the model's text.
+- Isolation, code status and allergies offer real choices (Droplet, DNR/DNI, Add an allergy and so on), read from the current `attest` lists in `ai/templates`, so stored drafts need no redraft. Any choice but the first enters a value: the item shows it as "Entered by <name>, not yet in the chart" until a newer version has chart data, and History keeps it. Other (isolation) and Add an allergy need typed text (`entry`, and `entry_note` for the reaction).
 - Sign off is blocked until every hard and stale rule passes, is attested from its fixed list, or (for narrative items) is written by the clinician. A callback number is required: at least 3 digits, or an extension like x4471.
 - A stale vitals attestation ("Rechecked at bedside, unchanged") counts only for the rule's age limit for the patient's severity (`max_age_min` in the template); after that the item is stale again. Other attestations carry forward to newer versions.
 - In I-PASS, a watcher or unstable patient has one contingency rule (P11): the "Stable, nothing anticipated" attestation of P10 does not apply.

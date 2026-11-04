@@ -25,7 +25,7 @@ await first.click();
 await page.waitForSelector('text=Sign off');
 const panel = page.locator('aside[aria-label="Sign off and context"]');
 for (let i = 0; i < 10; i++) {
-  const btn = panel.locator('li button').first();
+  const btn = panel.locator('li button[data-choice]').first();
   if (!(await btn.count())) break;
   await btn.click();
   await page.waitForTimeout(400);

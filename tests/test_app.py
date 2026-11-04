@@ -480,3 +480,153 @@ def test_live_clock_does_not_keep_a_missed_departure_boarding(client):
     assert any(r["csn"] == e["csn"] for r in keep.board(late, person)["rows"])
     assert not any(r["csn"] == e["csn"] for r in cap.board(late, person)["rows"])
     assert cap.board(e["admit_decision_ts"] + timedelta(hours=2), person)["rows"]
+
+
+# ------------------------------------------------------------------------------- round 2: board line, real choices
+def test_left_without_sign_off_counts_arrived_patients_never_signed_for_the_role(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    ds, default = main.VIEWS.ds, main._current()[1]
+    e = min((e for e in ds.enc.values() if e["ed_departure_ts"] and e["admit_decision_ts"] and ds.versions.get(e["csn"])
+             and e["ed_departure_ts"] > default), key=lambda e: e["ed_departure_ts"])
+    at = (e["ed_departure_ts"] + timedelta(minutes=5)).isoformat()
+    for persona, tpl in (("ed-rn", "sbar_nurse"), ("ed-md", "ipass_physician")):
+        b = c.get("/api/board", params={"at": at}, headers=h(persona)).json()
+        want = sum(1 for r in b["rows"] if r["phase"] == "arrived" and r["templates"][tpl]["workflow"]["state"] == "transferred_unsigned")
+        assert b["kpis"]["left_unsigned"] == want >= 1
+    case = c.get(f"/api/handoffs/{e['csn']}", params={"at": at}).json()
+    for persona in ("viewer", "hosp-md", _receiver(main, case["summary"])):
+        assert c.get("/api/board", params={"at": at}, headers=h(persona)).json()["kpis"]["left_unsigned"] is None
+    before = c.get("/api/board", params={"at": at}).json()["kpis"]["left_unsigned"]
+    _resolve(c, e["csn"], at=at)
+    assert c.post(f"/api/handoffs/{e['csn']}/sbar_nurse/sign", params={"at": at}, json={"callback": "x4471"}).status_code == 200
+    assert c.get("/api/board", params={"at": at}).json()["kpis"]["left_unsigned"] == before - 1
+    # The physician's count follows the physician's template, which nobody signed.
+    b = c.get("/api/board", params={"at": at}, headers=h("ed-md")).json()
+    assert b["kpis"]["left_unsigned"] == sum(1 for r in b["rows"] if r["phase"] == "arrived"
+                                             and r["templates"]["ipass_physician"]["workflow"]["state"] == "transferred_unsigned")
+
+
+def _attestable(c, main, rule, template="sbar_nurse", persona="ed-rn"):
+    """A boarding patient at the default time whose rule needs an attestation."""
+    for r in c.get("/api/board", headers=h(persona)).json()["rows"]:
+        if r["phase"] != "boarding":
+            continue
+        d = c.get(f"/api/handoffs/{r['csn']}", headers=h(persona)).json()["templates"][template]["draft"]
+        x = next((x for x in d["rules"] if x["rule"] == rule and x["status"] == "attest"), None)
+        if x:
+            return r["csn"], x
+    pytest.skip(f"no boarding patient needs {rule} at the default time")
+
+
+def test_attestation_choices_come_from_the_current_templates(client):
+    import copy
+    from logic import effective
+
+    c, main = client
+    c.post("/api/demo/reset")
+    for rule, element, choices in (("N07", "E10", ["No isolation needed", "Contact", "Droplet", "Airborne", "Contact plus (enteric)",
+                                                   "Protective (neutropenic)", "Other"]),
+                                   ("N05", "E08", ["Full code confirmed with patient or family", "DNR", "DNR/DNI", "Comfort care"]),
+                                   ("N06", "E09", ["No known allergies confirmed", "Add an allergy"])):
+        csn, r = _attestable(c, main, rule)
+        assert r["attest_options"] == choices
+        # A draft written before the choices changed (only the first one) still offers the current choices.
+        row = copy.deepcopy(main.VIEWS.ds.latest_at(csn, main._current()[1])["sbar_nurse"])
+        for x in row["draft"]["rules"] + _els(row["draft"])[element]["rules"]:
+            if x["rule"] == rule:
+                x["attest_options"] = choices[:1]
+        d = effective(row, [], None, main.VIEWS.rules["sbar_nurse"])
+        assert next(x for x in d["rules"] if x["rule"] == rule)["attest_options"] == choices
+        assert next(x for x in _els(d)[element]["rules"] if x["rule"] == rule)["attest_options"] == choices
+    _, iso_rule = _attestable(c, main, "N07")
+    assert iso_rule["attest_typed"] == {"Other": {"label": "Type of isolation", "note": None}}
+    _, allergy = _attestable(c, main, "N06")
+    assert allergy["attest_typed"] == {"Add an allergy": {"label": "Allergen", "note": "Reaction (optional)"}}
+    for t, rule in (("ipass_physician", "P04"), ("custom_sea58", "C07")):
+        persona = "ed-md"
+        _, r = _attestable(c, main, rule, t, persona)
+        assert len(r["attest_options"]) > 1
+
+
+def test_an_entered_value_shows_on_the_item_resolves_the_rule_and_needs_signing_again(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    csn, _ = _attestable(c, main, "N07")
+    url = f"/api/handoffs/{csn}/sbar_nurse"
+    r = c.post(f"{url}/attest", json={"rule": "N07", "option": "Other"})
+    assert r.status_code == 409 and r.json()["detail"] == "Write the type of isolation."
+    r = c.post(f"{url}/attest", json={"rule": "N07", "option": "Other", "entry": "   "})
+    assert r.status_code == 409 and r.json()["detail"] == "Write the type of isolation."
+    r = c.post(f"{url}/attest", json={"rule": "N07", "option": "Other", "entry": "a" * 2001})
+    assert r.status_code == 409 and r.json()["detail"] == "Keep each text under 2,000 characters."
+    r = c.post(f"{url}/attest", json={"rule": "N07", "option": "Other", "entry": 5})
+    assert r.status_code == 422 and r.json()["detail"] == "The request has a value the app cannot use for the entered value."
+    out = c.post(f"{url}/attest", json={"rule": "N07", "option": "Other", "entry": "  Contact and droplet  "}).json()
+    d = out["templates"]["sbar_nurse"]["draft"]
+    rule = next(x for x in d["rules"] if x["rule"] == "N07")
+    assert rule["resolution"]["entered"] and "N07" not in d["completeness"]["blocking"]
+    e10 = _els(d)["E10"]["entered"]
+    assert e10["value"] == "Contact and droplet" and e10["option"] == "Other" and e10["by"] == "Jordan Reyes, RN"
+    # A plain choice is entered as itself; the first choice confirms nothing to add and enters nothing.
+    out = c.post(f"{url}/attest", json={"rule": "N07", "option": "Droplet", "entry": "ignored"}).json()
+    assert _els(out["templates"]["sbar_nurse"]["draft"])["E10"]["entered"]["value"] == "Droplet"
+    out = c.post(f"{url}/attest", json={"rule": "N07", "option": "No isolation needed"}).json()
+    d = out["templates"]["sbar_nurse"]["draft"]
+    assert "entered" not in _els(d)["E10"] and not next(x for x in d["rules"] if x["rule"] == "N07")["resolution"].get("entered")
+    # History keeps every entered value, in the order entered.
+    assert [x.get("entered") for x in out["activity"] if x["kind"] == "attest"] == ["Contact and droplet", "Droplet", None]
+    # An allergy: the allergen is required, the reaction is not.
+    csn2, _ = _attestable(c, main, "N06")
+    url2 = f"/api/handoffs/{csn2}/sbar_nurse"
+    r = c.post(f"{url2}/attest", json={"rule": "N06", "option": "Add an allergy", "entry_note": "Hives"})
+    assert r.status_code == 409 and r.json()["detail"] == "Write the allergen."
+    out = c.post(f"{url2}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Penicillin", "entry_note": " Hives "}).json()
+    e09 = _els(out["templates"]["sbar_nurse"]["draft"])["E09"]["entered"]
+    assert (e09["value"], e09["note"]) == ("Penicillin", "Hives")
+    assert [(x.get("entered"), x.get("note")) for x in out["activity"] if x["kind"] == "attest"] == [("Penicillin", "Hives")]
+    # The receiver sees the entered value too; after signing, entering one is a change like any attestation.
+    _resolve(c, csn2)
+    assert c.post(f"{url2}/sign", json={"callback": "x4471"}).json()["templates"]["sbar_nurse"]["workflow"]["state"] == "signed"
+    case = c.get(f"/api/handoffs/{csn2}").json()
+    unit = _receiver(main, case["summary"])
+    seen = c.get(f"/api/handoffs/{csn2}", headers=h(unit)).json()["templates"]["sbar_nurse"]["draft"]
+    assert _els(seen)["E09"]["entered"]["value"] == "Penicillin"
+    out = c.post(f"{url2}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex"}).json()
+    assert out["templates"]["sbar_nurse"]["workflow"]["state"] == "changed"
+
+
+def test_a_chart_value_replaces_an_entered_one_which_stays_in_history(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    ds = main.VIEWS.ds
+    found = None
+    for csn, rows in ds.versions.items():
+        e = ds.enc[csn]
+        sb = [r for r in rows if r["template"] == "sbar_nurse" and r["status"] != "retracted"]
+        for a, b in zip(sb, sb[1:]):
+            st = lambda r: {x["rule"]: x["status"] for x in r["draft"]["rules"]}  # noqa: E731
+            if st(a).get("N05") == "attest" and st(b).get("N05") == "pass" and (not e["ed_departure_ts"] or e["ed_departure_ts"] > b["at"]):
+                found = (csn, a, b)
+                break
+        if found:
+            break
+    if not found:
+        pytest.skip("no code status charted after an earlier draft in this world")
+    csn, a, b = found
+    t0 = (a["at"] + timedelta(minutes=1)).isoformat()
+    out = c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", params={"at": t0}, json={"rule": "N05", "option": "DNR"}).json()
+    assert _els(out["templates"]["sbar_nurse"]["draft"])["E08"]["entered"]["value"] == "DNR"
+    later = c.get(f"/api/handoffs/{csn}", params={"at": b["at"].isoformat()}).json()
+    d = later["templates"]["sbar_nurse"]["draft"]
+    assert "entered" not in _els(d)["E08"] and _els(d)["E08"]["data"]
+    assert not next(x for x in d["rules"] if x["rule"] == "N05").get("resolution")
+    assert any(x["kind"] == "attest" and x.get("entered") == "DNR" for x in later["activity"])
+
+
+def test_attestation_entries_are_kept_in_the_live_store():
+    if str(ROOT / "app/server") not in sys.path:
+        sys.path.insert(0, str(ROOT / "app/server"))
+    import lakebase
+
+    assert {"entry", "entry_note"} <= set(lakebase.DETAIL)

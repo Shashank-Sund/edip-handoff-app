@@ -35,6 +35,13 @@ EARLIER = "You are viewing an earlier time; move the clock to now to act."
 READBACK = "Write a short read back: the patient, the key risk and what you will do first."
 CALLBACK = "Add a callback number the receiver can dial: at least 3 digits, or an extension like x4471."
 UNSIGNED = ("draft", "transferred_unsigned")
+# Attestation choices that need words from the clinician. The template lists the choice (ai/templates); the app
+# asks for the text. The first choice of a rule confirms there is nothing to add ("No isolation needed"); any other
+# choice is a value the clinician entered, shown on the item until the chart has one.
+TYPED = {
+    ("E10", "Other"): {"label": "Type of isolation", "note": None, "required": "Write the type of isolation."},
+    ("E09", "Add an allergy"): {"label": "Allergen", "note": "Reaction (optional)", "required": "Write the allergen."},
+}
 
 
 class ActionError(ValueError):
@@ -127,6 +134,11 @@ def _supersede(d: dict, rules: dict) -> None:
             e["rules"] = [r for r in e["rules"] if r["rule"] not in drop]
 
 
+def _entered(a: dict, options: list | None) -> bool:
+    """An attestation that enters a value: any choice but the rule's first, which confirms there is nothing to add."""
+    return bool(options) and a["option"] != options[0] or bool(a.get("entry"))
+
+
 def _callback_ok(cb: str) -> bool:
     return len(re.findall(r"[0-9]", cb)) >= 3 or re.fullmatch(r"(?i)(x|ext\.?) ?[0-9]{2,}", cb) is not None
 
@@ -172,6 +184,13 @@ def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: di
         e = els.get(r["element"])
         if r["status"] == "stale":
             r["attest_options"] = STALE_ATTEST
+        elif r["status"] == "attest" and (rules.get(r["rule"]) or {}).get("attest"):
+            # The choices of the current templates, not the ones the draft was written with: no redraft needed.
+            r["attest_options"] = list(rules[r["rule"]]["attest"])
+        typed = {o: {"label": TYPED[(r["element"], o)]["label"], "note": TYPED[(r["element"], o)]["note"]}
+                 for o in r.get("attest_options") or [] if (r["element"], o) in TYPED}
+        if typed:
+            r["attest_typed"] = typed
         if r["status"] in ("attest", "missing", "stale"):
             a = attests.get(r["rule"])
             if a and r["status"] != "missing" and r["level"] == "stale" and a["option"] == STALE_OPTION and at is not None:
@@ -184,6 +203,11 @@ def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: di
             if a and r["status"] != "missing":
                 r["resolution"] = {"kind": "attested", "option": a["option"], "by": a["by"], "at": iso(a["at"]),
                                    "version": a["version"]}
+                if e and _entered(a, r.get("attest_options")):
+                    # A value the clinician entered (Droplet, DNR, an allergy): shown until the chart has one.
+                    r["resolution"]["entered"] = True
+                    e["entered"] = {"rule": r["rule"], "option": a["option"], "value": a.get("entry") or a["option"],
+                                    "note": a.get("entry_note"), "by": a["by"], "at": iso(a["at"]), "version": a["version"]}
             elif e and e["kind"] == "narrative" and (e.get("narrative") or {}).get("edited") and \
                     ((e["narrative"].get("text") or "").strip() or e["narrative"].get("items")):
                 r["resolution"] = {"kind": "edited", "by": e["narrative"]["edited"]["by"]}
@@ -335,6 +359,9 @@ class Views:
             "to_acknowledge": sum(1 for r in rows if state(r) == "signed") if person["can_ack"] else None,
             "blocking": sum(1 for r in to_sign if (r["templates"].get(tpl) or {}).get("blocking")) if person["can_sign"] else None,
             "arrived": sum(1 for r in rows if r["phase"] == "arrived"),
+            # ED roles: patients who went up before anyone signed their handoff for this role.
+            "left_unsigned": sum(1 for r in rows if r["phase"] == "arrived" and state(r) == "transferred_unsigned")
+            if person["can_sign"] else None,
         }
         return {"at": iso(at), "template": tpl, "kpis": kpis, "rows": rows, "scoped": bool(mine)}
 
@@ -376,8 +403,16 @@ class Views:
         log = sorted(({"kind": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
                        "version": a["version"], "detail": a.get("element") or a.get("rule") or a.get("option")}
                       | ({"restore": True} if a.get("restore") else {})
+                      | (self._entry(a) if a["kind"] == "attest" else {})
                       for a in acts), key=lambda a: a["at"], reverse=True)
         return {"summary": summary, "templates": templates, "activity": log}
+
+    def _entry(self, a: dict) -> dict:
+        """History keeps a value the clinician entered, also once the chart has one and the item shows the chart."""
+        options = ((self.rules.get(a["template"]) or {}).get(a["rule"]) or {}).get("attest")
+        if not _entered(a, options):
+            return {}
+        return {"entered": a.get("entry") or a["option"]} | ({"note": a["entry_note"]} if a.get("entry_note") else {})
 
     # ------------------------------------------------------------------------------------------ analytics
     def analytics(self, at: datetime) -> dict:
@@ -497,7 +532,16 @@ class Views:
             r = next((x for x in eff["rules"] if x["rule"] == body.get("rule")), None)
             if not r or body.get("option") not in (r.get("attest_options") or []):
                 raise ActionError("Choose one of the listed attestations for this rule.")
-            row |= {"rule": r["rule"], "option": body["option"]}
+            row |= {"rule": r["rule"], "option": body["option"], "entry": None, "entry_note": None}
+            typed = TYPED.get((r["element"], body["option"]))
+            if typed:
+                entry = (body.get("entry") or "").strip()
+                note = (body.get("entry_note") or "").strip() if typed["note"] else ""
+                if not entry:
+                    raise ActionError(typed["required"])
+                if len(entry) > MAX_TEXT or len(note) > MAX_TEXT:
+                    raise ActionError(TOO_LONG)
+                row |= {"entry": entry, "entry_note": note or None}
         elif kind == "sign":
             if eff["completeness"]["blocking"]:
                 labels = [x["label"] for x in eff["rules"] if x["rule"] in eff["completeness"]["blocking"]]

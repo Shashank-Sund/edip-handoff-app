@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/useTheme';
@@ -12,6 +12,29 @@ import { HelpButton } from '@/components/guide/HelpButton';
 import { DemoBanner } from '@/demo/Banner';
 
 const KEY = 'edip.sidebar';
+const NOTE = 'edip.replay-note';
+
+/** Shown once in replay mode, under the clock, until closed: what the clock is for. */
+export function ReplayNote() {
+  const [open, setOpen] = useState(() => readString(NOTE) !== 'closed');
+  if (!open) return null;
+  return (
+    <aside aria-label="About the replay clock" className="flex items-center justify-end gap-2 border-b bg-primary/5 py-1.5 pl-4 pr-2 text-xs text-foreground sm:pl-6 sm:pr-4">
+      <p className="min-w-0 text-right">This demo replays one recorded week. Use the clock at the top right to move through it.</p>
+      <button
+        type="button"
+        onClick={() => {
+          writeString(NOTE, 'closed');
+          setOpen(false);
+        }}
+        className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        aria-label="Close this note"
+      >
+        <X className="size-3.5" aria-hidden />
+      </button>
+    </aside>
+  );
+}
 
 export function Layout({ title, crumbs, actions, help, children }: { title: ReactNode; crumbs?: ReactNode; actions?: ReactNode; help?: string; children: ReactNode }) {
   const { theme, toggle } = useTheme();
@@ -54,6 +77,7 @@ export function Layout({ title, crumbs, actions, help, children }: { title: Reac
           )}
           <ClockControl />
         </header>
+        {config.clock === 'replay' && <ReplayNote />}
         <main id="main" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           {children}
         </main>

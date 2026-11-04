@@ -5,6 +5,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Pill, SeverityBadge } from '@/components/common/badges';
 import { SourceChip, SourceList } from './Evidence';
 import { HelpButton } from '@/components/guide/HelpButton';
+import { Explain } from '@/components/guide/Explain';
+import { AttestChoices, EnteredTag, enteredText, type AttestFn } from './AttestChoices';
 import { LEVEL_LABEL, bed, clinicalReason, clock, dateTime } from '@/lib/format';
 import { ExpiredRecheck } from './Panels';
 import { cn } from '@/lib/utils';
@@ -51,7 +53,9 @@ function ModelMark({ n }: { n: Narrative }) {
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
       <Sparkles className="size-3" aria-hidden />
-      Drafted by the model
+      <Explain topic="handoff.items" label="Drafted by the model" text="Written by the model from the chart. Read it, check the numbered sources, and press Edit if it is wrong.">
+        Drafted by the model
+      </Explain>
     </span>
   );
 }
@@ -70,7 +74,12 @@ function Severity({ n }: { n: Narrative }) {
       </div>
       {n.floor && n.floor.reasons.length > 0 && (
         <div className="rounded-lg border border-dashed px-3 py-2 text-sm">
-          <span className="font-medium">{raised ? 'Raised by rule' : 'Rule floor'}: </span>
+          <span className="font-medium">
+            <Explain topic="handoff.severity" label="Rule floor" text="The lowest severity the chart allows, set by fixed rules. The model can make the patient sicker than the floor, never less sick.">
+              {raised ? 'Raised by rule' : 'Rule floor'}
+            </Explain>
+            :{' '}
+          </span>
           {n.floor.reasons.map(clinicalReason).join('; ')}
           {raised && <span className="text-muted-foreground">. The model called it {n.model_value}; rules can raise severity, never lower it.</span>}
         </div>
@@ -145,8 +154,20 @@ const VITALS: [string, string, string][] = [
   ['hr', 'HR', 'bpm'], ['sbp', 'BP', ''], ['rr', 'RR', '/min'], ['spo2', 'SpO2', '%'], ['temp', 'Temp', '°C'], ['map', 'MAP', ''], ['gcs', 'GCS', ''], ['pain', 'Pain', '/10'],
 ];
 
+/** A value the ED clinician entered for an item the chart does not have yet, with its amber tag. */
+function Entered({ e }: { e: Element }) {
+  const x = e.entered!;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {e.id === 'E09' ? <Pill tone="danger">{enteredText(x)}</Pill> : <span className="text-sm font-medium">{enteredText(x)}</span>}
+      <EnteredTag entered={x} />
+    </div>
+  );
+}
+
 function Deterministic({ e, wf }: { e: Element; wf: CaseTemplate['workflow'] }) {
   const d = e.data as Data | Data[] | null | undefined;
+  if (e.entered && (e.id === 'E08' || e.id === 'E09' || e.id === 'E10') && !(Array.isArray(d) ? d.length : d)) return <Entered e={e} />;
   const one = (d ?? {}) as Data;
   const list = (Array.isArray(d) ? d : []) as Data[];
   const src = (x: Data) => (typeof x.src === 'string' ? <SourceChip src={x.src} /> : null);
@@ -350,18 +371,34 @@ function Collapsible({ items, empty }: { items: string[]; empty: string }) {
   );
 }
 
-export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?: (r: Rule, option: string) => void; busy?: boolean }) {
+export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?: AttestFn; busy?: boolean }) {
+  const [changing, setChanging] = useState<string | null>(null);
   const open = rules.filter((r) => r.status !== 'pass' && r.status !== 'deferred');
   if (!open.length) return null;
   return (
     <div className="mt-3 space-y-2">
       {open.map((r) => {
         if (r.resolution) {
+          // A rule with several choices can be changed: a mistaken DNR, or an allergy found after "none".
+          const canChange = onAttest && r.resolution.kind === 'attested' && (r.attest_options?.length ?? 0) > 1;
           return (
-            <p key={r.rule} className="flex items-center gap-1.5 text-xs text-sev-stable">
-              <Check className="size-3.5" aria-hidden />
-              {r.resolution.kind === 'attested' ? `Attested: ${r.resolution.option}` : 'Resolved by edit'} ({r.resolution.by})
-            </p>
+            <div key={r.rule} className="text-xs">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {!r.resolution.entered && (
+                  <span className="inline-flex items-center gap-1.5 text-sev-stable">
+                    <Check className="size-3.5" aria-hidden />
+                    {r.resolution.kind === 'attested' ? `Attested: ${r.resolution.option}` : 'Resolved by edit'} ({r.resolution.by})
+                  </span>
+                )}
+                {canChange && (
+                  <button type="button" className="rounded-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60" aria-expanded={changing === r.rule} onClick={() => setChanging(changing === r.rule ? null : r.rule)}>
+                    {changing === r.rule ? 'Keep it' : 'Change'}
+                    <span className="sr-only"> {r.label}</span>
+                  </button>
+                )}
+              </p>
+              {canChange && changing === r.rule && <AttestChoices r={r} onAttest={onAttest} busy={busy} onDone={() => setChanging(null)} />}
+            </div>
           );
         }
         const blocking = r.level !== 'soft';
@@ -372,15 +409,13 @@ export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?
               {r.message || `${r.label}: not documented`}
               {!blocking && ' (does not block)'}
             </span>
-            {onAttest &&
-              (r.attest_options ?? []).map((o) => (
-                <Button key={o} size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={busy} onClick={() => onAttest(r, o)}>
-                  <Check className="size-3" />
-                  {o}
-                </Button>
-              ))}
             {r.status === 'missing' && blocking && <span className="text-muted-foreground">Write it with Edit to resolve.</span>}
             {r.attest_expired && <ExpiredRecheck r={r} />}
+            {onAttest && (r.attest_options?.length ?? 0) > 0 && (
+              <div className="w-full">
+                <AttestChoices r={r} onAttest={onAttest} busy={busy} />
+              </div>
+            )}
           </div>
         );
       })}
@@ -431,7 +466,7 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
   canEdit: boolean;
   busy?: boolean;
   onEdit: (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) => Promise<boolean>;
-  onAttest: (r: Rule, option: string) => void;
+  onAttest: AttestFn;
 }) {
   const [editing, setEditing] = useState(false);
   const changed = tpl.changes.elements.some((c) => c.id === e.id);
@@ -450,7 +485,11 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold">{e.label}</h4>
           {e.id === 'E07' && <HelpButton topic="handoff.severity" label="About severity" className="size-6" />}
-          {changed && <Pill tone="warn">Changed</Pill>}
+          {changed && (
+            <Explain topic="questions.changes" label="Changed" text={tpl.changes.since === 'signed' ? 'Different from the version that was signed.' : 'Different from the previous version.'}>
+              <Pill tone="warn" className="underline decoration-dotted underline-offset-[3px]">Changed</Pill>
+            </Explain>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {e.kind === 'narrative' && <ModelMark n={e.narrative ?? {}} />}

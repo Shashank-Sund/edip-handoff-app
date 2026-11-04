@@ -1,4 +1,4 @@
-# ED to inpatient handoff (reference Databricks App)
+# Healthcare Handoff: ED to inpatient handoff (reference Databricks App)
 
 When the emergency department decides to admit a patient, this app drafts the handoff from the chart, as an SBAR for nurses, an I-PASS for physicians and a short Joint Commission minimum. The ED clinician reviews, edits and signs it; the receiving unit accepts it with a read back. Every statement the model writes cites the chart record it came from. All data is synthetic.
 

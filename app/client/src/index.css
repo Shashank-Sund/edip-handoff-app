@@ -229,3 +229,16 @@
     animation: enter-fade 120ms ease-out;
   }
 }
+
+/* A quiet scrollbar for a panel that scrolls on its own (the right column of the handoff page). */
+.scroll-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+}
+.scroll-subtle::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-subtle::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+}

@@ -6,6 +6,33 @@ import { linkProps } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { anchorFor, findTopic } from './content';
 
+/** One topic (or one whole section) of the guide in a side panel, with a link to the full guide. */
+export function GuideSheet({ topic, open, onOpenChange }: { topic: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const found = findTopic(topic);
+  if (!found) return null;
+  const { section, topics } = found;
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      {open && (
+        <SheetContent title={topics.length === 1 ? topics[0].title : section.title} description={topics.length === 1 ? section.title : section.summary}>
+          {/* Any link inside (to the guide, or within it) leaves the page, so the panel closes. */}
+          <div className="space-y-6 px-5 py-5 text-sm leading-relaxed" onClickCapture={(e) => (e.target as HTMLElement).closest('a') && onOpenChange(false)}>
+            {topics.map((t) => (
+              <section key={t.id} className="space-y-3">
+                {topics.length > 1 && <h3 className="font-semibold">{t.title}</h3>}
+                {t.body}
+              </section>
+            ))}
+            <a {...linkProps(`/guide#${topics.length === 1 ? anchorFor(`${section.id}.${topics[0].id}`) : section.id}`)} className="inline-block text-sm font-medium text-primary hover:underline">
+              Open the full guide
+            </a>
+          </div>
+        </SheetContent>
+      )}
+    </Sheet>
+  );
+}
+
 /** A ? button that opens one topic of the guide in a side panel, without leaving the page. */
 export function HelpButton({ topic, label = 'How to read this', className }: { topic: string; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -27,24 +54,7 @@ export function HelpButton({ topic, label = 'How to read this', className }: { t
           <CircleHelp className="size-4" aria-hidden />
         </button>
       </WithTooltip>
-      <Sheet open={open} onOpenChange={setOpen}>
-        {open && (
-          <SheetContent title={topics.length === 1 ? topics[0].title : section.title} description={topics.length === 1 ? section.title : section.summary}>
-            {/* Any link inside (to the guide, or within it) leaves the page, so the panel closes. */}
-            <div className="space-y-6 px-5 py-5 text-sm leading-relaxed" onClickCapture={(e) => (e.target as HTMLElement).closest('a') && setOpen(false)}>
-              {topics.map((t) => (
-                <section key={t.id} className="space-y-3">
-                  {topics.length > 1 && <h3 className="font-semibold">{t.title}</h3>}
-                  {t.body}
-                </section>
-              ))}
-              <a {...linkProps(`/guide#${topics.length === 1 ? anchorFor(`${section.id}.${topics[0].id}`) : section.id}`)} className="inline-block text-sm font-medium text-primary hover:underline">
-                Open the full guide
-              </a>
-            </div>
-          </SheetContent>
-        )}
-      </Sheet>
+      <GuideSheet topic={topic} open={open} onOpenChange={setOpen} />
     </>
   );
 }
