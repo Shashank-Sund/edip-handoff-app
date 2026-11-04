@@ -20,7 +20,7 @@ import {
 } from 'lightweight-charts';
 import { useIsDark, useReducedMotion } from '@/hooks/useMedia';
 import { resolveColor, withAlpha } from '@/lib/colors';
-import { FACILITY_TZ } from '@/lib/format';
+import { timeZone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export interface Line {
@@ -38,7 +38,16 @@ export interface Line {
 }
 
 const FONT = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
-const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-US', { timeZone: FACILITY_TZ, ...o });
+/** A formatter in the facility time zone (from /api/config), built again if the zone changes. */
+function fmt(o: Intl.DateTimeFormatOptions) {
+  let zone = '', f: Intl.DateTimeFormat | null = null;
+  return {
+    format: (d: Date) => {
+      if (!f || zone !== timeZone()) f = new Intl.DateTimeFormat('en-US', { timeZone: (zone = timeZone()), ...o });
+      return f.format(d);
+    },
+  };
+}
 const HM = fmt({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const WD = fmt({ weekday: 'short' });
 const DN = fmt({ day: 'numeric' });

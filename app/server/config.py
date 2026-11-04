@@ -9,14 +9,24 @@ for user actions, on behalf of the signed in user (Databricks Apps forwards the 
                    live: the clock is the current time, for feeds that are flowing now
   EDIP_DEMO_PERSONAS  true (default): anyone can switch between demo personas; actions also record the signed in
                    user's email. false: the signed in user's role comes from EDIP_ROLE_MAP
-  EDIP_ROLE_MAP    JSON {"email": "persona id"}, for example {"rn@example.org": "unit-sgh-micu"}; anyone not in it
-                   gets the read only viewer role
+  EDIP_ROLE_MAP    JSON {"email": "persona id"}, for example {"rn@example.org": "unit-sgh-micu"}; emails match
+                   without regard to case; anyone not in it, or mapped to a persona id that does not exist, gets the
+                   read only viewer role (persona ids: app/README.md)
   EDIP_SYNTHETIC_DATA  true only when the data is synthetic: required for demo personas and the replay clock
+  EDIP_TIMEZONE    the facilities' time zone, an IANA name (default America/New_York); the server shows times in it
+                   and the client gets it from /api/config
+  EDIP_STALE_BOARDING_HOURS  with EDIP_CLOCK_MODE=live: a patient with an admit decision and no ED departure for
+                   longer than this (default 24) is left off the board and the boarding counts, as a feed that
+                   missed the departure would otherwise keep them boarding forever
+  EDIP_ACTIONS_TTL live mode: seconds the app reuses the clinician actions it read from Lakebase before reading them
+                   again (default 2), so every app process sees the actions the others saved
   EDIP_PG_ENDPOINT live mode: projects/<p>/branches/<b>/endpoints/<e> (PGHOST and the rest come from the app's
                    postgres resource)
 """
+import logging
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[2]
 MODE = os.getenv("EDIP_MODE", "mock")
@@ -30,3 +40,17 @@ CLOCK_MODE = os.getenv("EDIP_CLOCK_MODE", "replay") if SYNTHETIC else "live"
 DEMO_PERSONAS = SYNTHETIC and os.getenv("EDIP_DEMO_PERSONAS", "true").lower() == "true"
 ROLE_MAP = os.getenv("EDIP_ROLE_MAP", "{}")
 STATIC = Path(os.getenv("EDIP_STATIC", Path(__file__).resolve().parent / "static"))
+
+
+def _timezone(name: str) -> str:
+    try:
+        ZoneInfo(name)
+        return name
+    except (ZoneInfoNotFoundError, ValueError):
+        logging.getLogger("edip").warning("EDIP_TIMEZONE %r is not a known time zone; using America/New_York", name)
+        return "America/New_York"
+
+
+TIMEZONE = _timezone(os.getenv("EDIP_TIMEZONE") or "America/New_York")
+STALE_BOARDING_HOURS = float(os.getenv("EDIP_STALE_BOARDING_HOURS", "24"))
+ACTIONS_TTL = float(os.getenv("EDIP_ACTIONS_TTL", "2"))

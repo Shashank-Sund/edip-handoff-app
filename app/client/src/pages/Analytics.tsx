@@ -10,7 +10,7 @@ import { HelpButton } from '@/components/guide/HelpButton';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
 import { api } from '@/lib/api';
-import { dateTime, duration, pct } from '@/lib/format';
+import { dateTime, duration, pct, span } from '@/lib/format';
 
 const unitConfig: ChartConfig = {
   median_min: { label: 'Median', color: 'var(--series-1)' },
@@ -35,19 +35,24 @@ function Panel({ title, description, children, className, help }: { title: strin
 
 export default function Analytics() {
   const { at, version } = useApp();
-  const { data, error } = useLoad(() => api.analytics(at), [at, version]);
+  const { data, error, retry } = useLoad(() => api.analytics(at), [at, version]);
   const title = 'Analytics';
-  if (error && !data) return <Layout title={title}><ErrorState message={error} /></Layout>;
+  if (error && !data) return <Layout title={title}><ErrorState message={error} onRetry={retry} /></Layout>;
   if (!data) return <Layout title={title}><PageSkeleton /></Layout>;
   const sev = data.severity_at_transfer;
   const units = data.units.filter((u) => u.n > 0);
   const total = Object.values(sev).reduce((a, b) => a + b, 0);
   const peak = data.series.reduce((m, p) => (p.boarding > m.boarding ? p : m), data.series[0] ?? { boarding: 0, t: at, ed: 0 });
   return (
-    <Layout title={title} crumbs={`The reference week through ${dateTime(at)}`} help="analytics">
+    <Layout title={title} crumbs={`Both hospitals, all units: the reference week through ${dateTime(at)}`} help="analytics">
       <div className="space-y-5 sm:space-y-6">
         <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <Stat label="Admitted from the ED" value={data.admitted} icon={<BedDouble />} hint="Transferred to an inpatient or observation bed" />
+          <Stat
+            label="Admitted from the ED"
+            value={data.admitted}
+            icon={<BedDouble />}
+            hint={data.admitted ? `${data.signed_before_transfer} signed before transfer, ${data.transferred_without_sign_off} transferred without sign off` : 'Transferred to an inpatient or observation bed'}
+          />
           <Stat label="Peak boarding" value={peak.boarding} icon={<Activity />} hint={peak.boarding ? `at ${dateTime(peak.t)}` : 'No boarding yet'} />
           <Stat label="Median completeness" value={pct(data.completeness_at_transfer.median)} icon={<FileCheck2 />} hint="Model draft at transfer, before clinician edits" />
           <Stat label="Model calls" value={data.model_calls} icon={<Bot />} hint={`${data.drafts} drafts across 3 templates; ${data.addenda} addenda after transfer`} />
@@ -64,7 +69,7 @@ export default function Analytics() {
           />
           <p className="mt-3 text-xs text-muted-foreground">
             {data.series.length
-              ? `Over ${Math.round(data.series.length / 24)} days the ED held up to ${Math.max(...data.series.map((p) => p.ed))} patients at once, and up to ${peak.boarding} were boarding.`
+              ? `Over ${span(data.series.length)} the ED held up to ${Math.max(...data.series.map((p) => p.ed))} patients at once, and up to ${peak.boarding} were boarding.`
               : 'The week has not started yet.'}
           </p>
         </Panel>

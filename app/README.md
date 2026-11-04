@@ -33,12 +33,15 @@ Checks: `npm run typecheck`, `npm run lint`, `node scripts/screenshots.mjs <url>
 
 ## Rules the server enforces
 
-- Only the sending ED clinician edits, attests and signs: nurses sign SBAR, physicians sign I-PASS, either signs the custom template. Structured items cannot be edited; they come from the chart.
-- Sign off is blocked until every hard and stale rule passes, is attested from its fixed list, or (for narrative items) is written by the clinician. A callback number is required.
-- Only the receiving clinician acknowledges, after sign off, with a read back of at least a sentence.
-- A draft that arrives after sign off or acknowledgement is flagged until it is signed or acknowledged again. Edits and attestations carry forward to newer versions; an edit is flagged when the model's text changed underneath it.
-- After the patient leaves the ED the handoff is final, except for ED addenda (a late ED note or a critical result collected in the ED).
-- Every action carries the time it applies to, so the replay clock shows the board as it was.
+- Only the sending ED clinician edits, attests and signs: nurses sign SBAR, physicians sign I-PASS, either signs the custom template. Structured items and illness severity cannot be edited; they come from the chart and the rule floor. An edit cannot be empty; Restore brings back the model's text.
+- Sign off is blocked until every hard and stale rule passes, is attested from its fixed list, or (for narrative items) is written by the clinician. A callback number is required: at least 3 digits, or an extension like x4471.
+- A stale vitals attestation ("Rechecked at bedside, unchanged") counts only for the rule's age limit for the patient's severity (`max_age_min` in the template); after that the item is stale again. Other attestations carry forward to newer versions.
+- In I-PASS, a watcher or unstable patient has one contingency rule (P11): the "Stable, nothing anticipated" attestation of P10 does not apply.
+- Any edit or attestation after a signature, or a newer version whose clinical content differs from the signed one, puts the template in state `changed` ("Changed after signing"): the signature stays in History, and the receiver cannot accept until the ED signs again. Clinical content is the effective text (clinician edits included) of every item except location and bed (E04, E28), ignoring a value charted again unchanged.
+- Only the receiving clinician acknowledges, after sign off, with a read back of at least a sentence (three words, fifteen letters).
+- After the patient leaves the ED the handoff is final, except for ED addenda (a late ED note or a critical result collected in the ED) and a handoff the ED never signed (`transferred_unsigned`, "Transferred without sign off") or signed on an older version: the ED can still complete and sign those.
+- Every action carries the time it applies to, so the replay clock shows the board as it was. An action cannot be earlier than one already recorded for that patient and template.
+- Free text is at most 2,000 characters. A request body the API cannot use gets a 422 with one plain sentence; unknown `/api` paths get a JSON 404.
 
 ## Live mode (deployed)
 
@@ -48,7 +51,19 @@ The bundle (`databricks.yml`) deploys the app with `EDIP_MODE=live` and a postgr
 - writes every clinician action to `app.handoff_action` (append only: edits, attestations, sign offs and read backs, with the persona, the role and the signed in user's email), which it creates on first start;
 - authenticates to Postgres as the app's service principal with a short lived token (`EDIP_PG_ENDPOINT`); the setup job grants it read access to the synced tables.
 
-Settings (`config.env` of the app in `databricks.yml`): `EDIP_CLOCK_MODE=replay` keeps the replay clock for the synthetic week (`live` follows the current time, for real feeds); `EDIP_DEMO_PERSONAS=true` lets viewers switch roles (`false` takes the role from `EDIP_ROLE_MAP`, a JSON map of email to persona id, and shows the signed in user).
+Settings (`config.env` of the app in `databricks.yml`): `EDIP_CLOCK_MODE=replay` keeps the replay clock for the synthetic week (`live` follows the current time, for real feeds); `EDIP_DEMO_PERSONAS=true` lets viewers switch roles (`false` takes the role from `EDIP_ROLE_MAP`, a JSON map of email to persona id, and shows the signed in user); `EDIP_TIMEZONE` (default `America/New_York`) is the facilities' time zone for the server and the client.
+
+With `EDIP_CLOCK_MODE=live`, a patient with an admit decision and no ED departure for more than `EDIP_STALE_BOARDING_HOURS` (default 24) is left off the board and out of the boarding counts: a departure the feeds never sent would otherwise keep them boarding forever. Clinician actions are read again from Lakebase when the copy in memory is older than `EDIP_ACTIONS_TTL` seconds (default 2) and before every action, so several app processes agree. If Lakebase cannot be reached at start up the app still starts, shows "not loaded yet" and retries.
+
+Persona ids for `EDIP_ROLE_MAP` (emails match without regard to case; an unknown id gets the read only viewer role and a warning in the app log, and the map is checked at start up):
+
+| Persona id | Role |
+| --- | --- |
+| `ed-rn` | ED nurse: edits, attests and signs SBAR and the custom template |
+| `ed-md` | ED physician: edits, attests and signs I-PASS and the custom template |
+| `hosp-md` | Admitting physician: accepts I-PASS and the custom template |
+| `unit-<facility>-<unit>` | Receiving nurse of one unit, lowercased, for example `unit-sgh-micu`: sees patients bound for that unit, accepts SBAR and the custom template. A mapped unit keeps its persona when it has no patients. |
+| `viewer` | Read only |
 
 The app is built from the repository root: `package.json` builds the client into `app/server/static`, `requirements.txt` installs the server, and the command is `uvicorn main:app --app-dir app/server`.
 

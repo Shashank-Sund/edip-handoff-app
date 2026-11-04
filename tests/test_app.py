@@ -162,6 +162,321 @@ def test_static_files_never_leave_the_static_folder(tmp_path):
             assert "secret" not in r.text, path
         assert c.get("/handoff/123").text.endswith("index")
         assert c.get("/api/nope").status_code == 404
+        assert c.get("/api/nope").json() == {"detail": "Not Found"}       # as FastAPI and the static demo answer
     finally:
         for m in ("config", "main"):
             sys.modules.pop(m, None)
+
+
+# ------------------------------------------------------------------------------- sign off follows the content
+def _els(draft):
+    return {e["id"]: e for s in draft["sections"] for e in s["elements"]}
+
+
+def _resolve(c, csn, template="sbar_nurse", persona="ed-rn", at=None):
+    """Attest or write every item that blocks sign off, as the clinician would."""
+    params = {"at": at} if at else None
+    d = c.get(f"/api/handoffs/{csn}", params=params, headers=h(persona)).json()["templates"][template]["draft"]
+    for rule in d["rules"]:
+        if rule["rule"] in d["completeness"]["blocking"]:
+            opts = rule.get("attest_options") or []
+            if opts and rule["status"] != "missing":
+                body, kind = {"rule": rule["rule"], "option": opts[0]}, "attest"
+            else:
+                body, kind = {"element": rule["element"], "text": "Written by the clinician"}, "edit"
+            assert c.post(f"/api/handoffs/{csn}/{template}/{kind}", params=params, json=body, headers=h(persona)).status_code == 200
+    return d
+
+
+def _receiver(main, row):
+    dest = row["destination"]["pending_unit"]
+    return next(p["id"] for p in main._current()[0] if p["unit"] == dest and p["facility"] == row["facility"])
+
+
+def test_any_change_after_signing_needs_a_new_signature(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = [r for r in c.get("/api/board").json()["rows"] if r["phase"] == "boarding"][0]
+    csn, unit = row["csn"], _receiver(main, row)
+    url = f"/api/handoffs/{csn}/sbar_nurse"
+    _resolve(c, csn)
+    signed = c.post(f"{url}/sign", json={"callback": "x4471"}).json()["templates"]["sbar_nurse"]
+    before = _els(signed["draft"])["E25"]["narrative"]["text"]
+    edited = c.post(f"{url}/edit", json={"element": "E25", "text": "Call the ED if SBP under 90"}).json()["templates"]["sbar_nurse"]
+    wf = edited["workflow"]
+    assert wf["state"] == "changed" and wf["edited_since_signed"] and wf["signed"]["callback"] == "x4471"
+    # What changed: the text the ED signed against the text now, clinician edits included.
+    assert edited["changes"]["since"] == "signed"
+    assert [(e["id"], e["before"], e["after"]) for e in edited["changes"]["elements"]] == [("E25", before, "Call the ED if SBP under 90")]
+    r = c.post(f"{url}/ack", json={"readback": "Watcher, will recheck vitals on arrival"}, headers=h(unit))
+    assert r.status_code == 409 and "sign again" in r.json()["detail"]
+    board = c.get("/api/board").json()
+    assert board["kpis"]["to_sign"] == sum(1 for x in board["rows"] if x["phase"] == "boarding"
+                                           and x["templates"]["sbar_nurse"]["workflow"]["state"] in ("draft", "changed"))
+    assert any(x["csn"] == csn for x in board["rows"] if x["templates"]["sbar_nurse"]["workflow"]["state"] == "changed")
+    assert c.post(f"{url}/sign", json={"callback": "x4471"}).json()["templates"]["sbar_nurse"]["workflow"]["state"] == "signed"
+    assert c.get("/api/board", headers=h(unit)).json()["kpis"]["to_acknowledge"] >= 1
+    acked = c.post(f"{url}/ack", json={"readback": "Watcher, will recheck vitals on arrival"}, headers=h(unit)).json()
+    assert acked["templates"]["sbar_nurse"]["workflow"]["state"] == "acknowledged"
+    # An attestation after signing is a change too.
+    d = acked["templates"]["sbar_nurse"]["draft"]
+    rule = next((x for x in d["rules"] if x.get("attest_options") and x["status"] != "missing"), None)
+    if rule:
+        after = c.post(f"{url}/attest", json={"rule": rule["rule"], "option": rule["attest_options"][0]}).json()
+        assert after["templates"]["sbar_nurse"]["workflow"]["state"] == "changed"
+
+
+def test_empty_edits_are_refused_and_restore_brings_back_the_model_text(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    csn = [r for r in c.get("/api/board").json()["rows"] if r["phase"] == "boarding"][0]["csn"]
+    url = f"/api/handoffs/{csn}/sbar_nurse"
+    model = _els(c.get(f"/api/handoffs/{csn}").json()["templates"]["sbar_nurse"]["draft"])["E25"]["narrative"]["text"]
+    for body in ({"element": "E25", "text": ""}, {"element": "E25", "text": "  "}, {"element": "E25"},
+                 {"element": "E25", "items": []}, {"element": "E25", "items": [{"text": " "}]}):
+        r = c.post(f"{url}/edit", json=body)
+        assert r.status_code == 409 and r.json()["detail"] == "Write the text, or use Restore to bring back the model's text.", body
+    assert c.post(f"{url}/edit", json={"element": "E07", "text": "stable"}).status_code == 409
+    assert c.post(f"{url}/edit", json={"element": "E25", "restore": True}).status_code == 409
+    c.post(f"{url}/edit", json={"element": "E25", "text": "  Call the ED if SBP under 90  "})
+    e25 = _els(c.get(f"/api/handoffs/{csn}").json()["templates"]["sbar_nurse"]["draft"])["E25"]["narrative"]
+    assert e25["text"] == "Call the ED if SBP under 90" and e25["edited"]
+    restored = c.post(f"{url}/edit", json={"element": "E25", "restore": True}).json()
+    e25 = _els(restored["templates"]["sbar_nurse"]["draft"])["E25"]["narrative"]
+    assert e25["text"] == model and not e25.get("edited")
+    assert any(a.get("restore") for a in restored["activity"])
+
+
+def test_a_new_version_needs_signing_again_only_when_clinical_content_changed(client):
+    import copy
+    from datetime import datetime, timezone
+    from logic import workflow
+
+    c, main = client
+    row = next(r for rows in main.VIEWS.ds.versions.values() for r in rows if r["template"] == "sbar_nurse")
+    t = row["at"]
+    sign = {"kind": "sign", "template": "sbar_nurse", "version": row["version"], "at": t, "recorded_ts": datetime.now(timezone.utc),
+            "by": "RN", "role": "ed_nurse", "callback": "x4471"}
+
+    def newer(change):
+        r = copy.deepcopy(row)
+        r["version"] += 1
+        change(_els(r["draft"]))
+        return r
+
+    def moved(els):                            # the transfer: where the patient is, and code status charted again
+        els["E04"]["data"] = {**(els["E04"].get("data") or {}), "unit": "MICU", "room": "3010"}
+        if isinstance(els["E08"].get("data"), dict):
+            els["E08"]["data"]["recorded_ts"] = "2026-01-01T00:00:00Z"
+
+    def redrafted(els):
+        els["E06"]["narrative"] = {**(els["E06"].get("narrative") or {}), "text": "A different working diagnosis"}
+
+    assert workflow(newer(moved), [sign], [row])["state"] == "signed"
+    assert workflow(newer(redrafted), [sign], [row])["state"] == "changed"
+    # The clinician's own text carries forward: a redraft of an item they edited before signing is no change.
+    edit = {**sign, "kind": "edit", "element": "E06", "text": "Sepsis, urinary source", "items": None,
+            "model_before": {}, "recorded_ts": datetime(2000, 1, 1, tzinfo=timezone.utc)}
+    assert workflow(newer(redrafted), [edit, sign], [row])["state"] == "signed"
+
+
+def test_transferred_without_sign_off_and_the_ed_can_still_sign(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    ds, default = main.VIEWS.ds, main._current()[1]
+    e = min((e for e in ds.enc.values() if e["ed_departure_ts"] and e["admit_decision_ts"] and ds.versions.get(e["csn"])
+             and e["ed_departure_ts"] > default), key=lambda e: e["ed_departure_ts"])
+    at = (e["ed_departure_ts"] + timedelta(minutes=5)).isoformat()
+    case = c.get(f"/api/handoffs/{e['csn']}", params={"at": at}).json()
+    assert case["summary"]["phase"] == "arrived"
+    assert case["templates"]["sbar_nurse"]["workflow"]["state"] == "transferred_unsigned"
+    a = c.get("/api/analytics", params={"at": at}).json()
+    assert a["transferred_without_sign_off"] == a["admitted"] - a["signed_before_transfer"]
+    unit = _receiver(main, case["summary"])
+    r = c.post(f"/api/handoffs/{e['csn']}/sbar_nurse/ack", params={"at": at}, json={"readback": "Arrived, vitals rechecked, all as handed off"},
+               headers=h(unit))
+    assert r.status_code == 409 and "not been signed" in r.json()["detail"]
+    _resolve(c, e["csn"], at=at)
+    signed = c.post(f"/api/handoffs/{e['csn']}/sbar_nurse/sign", params={"at": at}, json={"callback": "x4471"})
+    assert signed.status_code == 200 and signed.json()["templates"]["sbar_nurse"]["workflow"]["state"] == "signed"
+    # Signed and the newest version: final again.
+    assert c.post(f"/api/handoffs/{e['csn']}/sbar_nurse/edit", params={"at": at},
+                  json={"element": "E25", "text": "Late"}).status_code == 409
+    acked = c.post(f"/api/handoffs/{e['csn']}/sbar_nurse/ack", params={"at": at},
+                   json={"readback": "Arrived, vitals rechecked, all as handed off"}, headers=h(unit))
+    assert acked.json()["templates"]["sbar_nurse"]["workflow"]["state"] == "acknowledged"
+
+
+def test_a_stale_vitals_recheck_expires_after_the_rule_limit(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    ds = main.VIEWS.ds
+    found = None
+    for csn, rows in ds.versions.items():
+        for i, r in enumerate(rows):
+            if r["template"] != "sbar_nurse" or r["status"] == "retracted":
+                continue
+            if not any(x["rule"] == "N08" and x["status"] == "stale" for x in r["draft"]["rules"]):
+                continue
+            nxt = next((x["at"] for x in rows[i + 1:] if x["template"] == "sbar_nurse"), None)
+            stop = min(x for x in (nxt, ds.enc[csn]["ed_departure_ts"], ds.end) if x)
+            if stop - r["at"] > timedelta(minutes=125):
+                found = (csn, r)
+                break
+        if found:
+            break
+    assert found, "the stand in world has a stale vitals rule"
+    csn, r = found
+    limit = main.VIEWS.rules["sbar_nurse"]["N08"]["max_age_min"][r["severity"] or "watcher"]
+    t0 = r["at"] + timedelta(minutes=1)
+    assert c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", params={"at": t0.isoformat()},
+                  json={"rule": "N08", "option": "Rechecked at bedside, unchanged"}).status_code == 200
+
+    def n08(minutes):
+        d = c.get(f"/api/handoffs/{csn}", params={"at": (t0 + timedelta(minutes=minutes)).isoformat()}).json()
+        d = d["templates"]["sbar_nurse"]["draft"]
+        return next(x for x in d["rules"] if x["rule"] == "N08"), d["completeness"]["blocking"]
+    rule, blocking = n08(limit - 1)
+    assert rule.get("resolution") and "N08" not in blocking
+    rule, blocking = n08(limit + 1)
+    assert not rule.get("resolution") and "N08" in blocking and rule["attest_expired"]["limit_min"] == limit
+
+
+def test_the_high_risk_branch_shows_one_contingency_rule_without_the_stable_option(client):
+    import copy
+    from logic import effective
+
+    c, main = client
+    row = copy.deepcopy(next(r for rows in main.VIEWS.ds.versions.values() for r in rows if r["template"] == "ipass_physician"
+                             and any(x["rule"] == "P11" for x in r["draft"]["rules"])))
+    for r in row["draft"]["rules"] + _els(row["draft"])["E25"]["rules"]:
+        if r["rule"] == "P10":
+            r.update(status="attest", attest_options=["Stable, nothing anticipated"])
+        if r["rule"] == "P11":
+            r.update(status="missing", attest_options=[])
+    d = effective(row, [], None, main.VIEWS.rules["ipass_physician"])
+    assert [r["rule"] for r in d["rules"] if r["element"] == "E25"] == ["P11"]
+    assert [r["rule"] for r in _els(d)["E25"]["rules"]] == ["P11"]
+    assert "P10" not in d["completeness"]["blocking"] and "P11" in d["completeness"]["blocking"]
+
+
+def test_an_action_cannot_go_before_one_already_recorded(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    csn = [r for r in c.get("/api/board").json()["rows"] if r["phase"] == "boarding"][0]["csn"]
+    now = main._current()[1]
+    assert c.post(f"/api/handoffs/{csn}/sbar_nurse/edit", json={"element": "E25", "text": "Plan at now"}).status_code == 200
+    r = c.post(f"/api/handoffs/{csn}/sbar_nurse/edit", params={"at": (now - timedelta(minutes=5)).isoformat()},
+               json={"element": "E25", "text": "Plan earlier"})
+    assert r.status_code == 409 and r.json()["detail"] == "You are viewing an earlier time; move the clock to now to act."
+    assert c.post(f"/api/handoffs/{csn}/ipass_physician/edit", params={"at": (now - timedelta(minutes=5)).isoformat()},
+                  json={"element": "E25", "text": "Other template"}, headers=h("ed-md")).status_code == 200
+
+
+def test_board_counts_follow_the_role(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    for at in (None, main.VIEWS.ds.end.isoformat()):
+        b = c.get("/api/board", params={"at": at} if at else None, headers=h("viewer")).json()
+        assert b["kpis"]["to_sign"] is None and b["kpis"]["to_acknowledge"] is None and b["kpis"]["blocking"] is None
+        assert b["kpis"]["arrived"] == sum(1 for r in b["rows"] if r["phase"] == "arrived")
+    b = c.get("/api/board").json()
+    todo = [r for r in b["rows"] if r["phase"] == "boarding" and r["templates"]["sbar_nurse"]["workflow"]["state"] in ("draft", "changed")]
+    assert b["kpis"]["blocking"] == sum(1 for r in todo if r["templates"]["sbar_nurse"]["blocking"])
+
+
+def test_read_back_callback_and_request_checks(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = [r for r in c.get("/api/board").json()["rows"] if r["phase"] == "boarding"][0]
+    csn, unit = row["csn"], _receiver(main, row)
+    url = f"/api/handoffs/{csn}/sbar_nurse"
+    _resolve(c, csn)
+    for cb in ("x1", "12", "5" * 41):
+        r = c.post(f"{url}/sign", json={"callback": cb})
+        assert r.status_code == 409 and "at least 3 digits" in r.json()["detail"], cb
+    r = c.post(f"{url}/sign", json={})
+    assert r.status_code == 422 and r.json()["detail"] == "The request is missing the callback number."
+    r = c.post(f"{url}/sign", json={"callback": 4471})
+    assert r.status_code == 422 and r.json()["detail"] == "The request has a value the app cannot use for the callback number."
+    r = c.post(f"{url}/edit", json={"element": "E25", "items": [{"text": 5}]})
+    assert r.status_code == 422 and "action items" in r.json()["detail"]
+    r = c.post(f"{url}/edit", json={"element": "E25", "text": "a" * 2001})
+    assert r.status_code == 409 and r.json()["detail"] == "Keep each text under 2,000 characters."
+    assert c.post(f"{url}/sign", json={"callback": "(617) 555-0142"}).status_code == 200
+    for rb in ("Watcher patient", "aaaa aaaa aaaa aaaa", "ok 12 34 56 78", "x" * 20):
+        r = c.post(f"{url}/ack", json={"readback": rb}, headers=h(unit))
+        assert r.status_code == 409 and r.json()["detail"].startswith("Write a short read back"), rb
+    assert c.post(f"{url}/ack", json={"readback": "Watcher, recheck vitals on arrival"}, headers=h(unit)).status_code == 200
+
+
+def _fresh_main(monkeypatch, **env):
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("EDIP_STATIC", "/nonexistent")
+    if str(ROOT / "app/server") not in sys.path:
+        sys.path.insert(0, str(ROOT / "app/server"))
+    for m in ("config", "data", "logic", "personas", "workflow", "main", "lakebase"):
+        sys.modules.pop(m, None)
+    main = importlib.import_module("main")
+    from fastapi.testclient import TestClient
+    return TestClient(main.app), main
+
+
+@pytest.fixture
+def fresh(monkeypatch):
+    yield lambda **env: _fresh_main(monkeypatch, **env)
+    for m in ("config", "data", "logic", "personas", "workflow", "main", "lakebase"):
+        sys.modules.pop(m, None)
+
+
+def test_role_map_matches_email_case_and_falls_back_to_viewer(client, fresh, caplog):
+    import json
+
+    caplog.set_level("WARNING", logger="edip")
+    c, main = fresh(EDIP_DEMO_PERSONAS="false", EDIP_ROLE_MAP=json.dumps({
+        "RN.Reyes@example.org": "ed-rn", "md@example.org": "nobody", "unit@example.org": "unit-zzz-9w"}))
+    assert any("nobody" in r.message for r in caplog.records)          # checked at start up
+    me = lambda email: c.get("/api/me", headers={"x-forwarded-email": email}).json()  # noqa: E731
+    assert me("rn.REYES@example.org")["role"] == "ed_nurse"
+    assert me("md@example.org")["role"] == "viewer"
+    assert me("someone@example.org")["role"] == "viewer"
+    # A mapped unit with no patients in the data keeps its persona.
+    unit = me("unit@example.org")
+    assert unit["id"] == "unit-zzz-9w" and unit["role"] == "unit_nurse" and unit["unit"] == "9W"
+
+
+def test_role_map_problems_are_reported():
+    if str(ROOT / "app/server") not in sys.path:
+        sys.path.insert(0, str(ROOT / "app/server"))
+    from personas import parse_role_map
+
+    assert parse_role_map("not json")[0] == {} and parse_role_map("not json")[1]
+    assert parse_role_map("[]")[1]
+    m, problems = parse_role_map('{"A@example.org": "ed-md", "b@example.org": 3, "c@example.org": "made-up"}')
+    assert m == {"a@example.org": "ed-md", "c@example.org": "made-up"} and len(problems) == 2
+
+
+def test_time_zone_from_the_environment(client, fresh):
+    c, main = fresh(EDIP_TIMEZONE="America/Chicago")
+    cfg = c.get("/api/config").json()
+    assert cfg["timezone"] == "America/Chicago"
+    assert cfg["default_at"].endswith(("-05:00", "-06:00"))
+
+
+def test_live_clock_does_not_keep_a_missed_departure_boarding(client):
+    import copy
+    from logic import Views
+    from workflow import MemoryStore
+
+    c, main = client
+    ds = copy.copy(main.VIEWS.ds)
+    e = next(e for e in ds.enc.values() if e["ed_departure_ts"] and ds.versions.get(e["csn"]))
+    ds.enc = {**ds.enc, e["csn"]: {**e, "ed_departure_ts": None, "left_ts": None}}
+    late = e["admit_decision_ts"] + timedelta(hours=30)
+    person = main._current()[0][0]
+    keep = Views(ds, MemoryStore(), main._templates())
+    cap = Views(ds, MemoryStore(), main._templates(), timedelta(hours=24))
+    assert any(r["csn"] == e["csn"] for r in keep.board(late, person)["rows"])
+    assert not any(r["csn"] == e["csn"] for r in cap.board(late, person)["rows"])
+    assert cap.board(e["admit_decision_ts"] + timedelta(hours=2), person)["rows"]

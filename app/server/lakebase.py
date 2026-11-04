@@ -15,7 +15,9 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+import config
 from data import Dataset
+from workflow import StoreUnavailable
 
 DDL = [
     "CREATE SCHEMA IF NOT EXISTS app",
@@ -34,7 +36,8 @@ DDL = [
     )""",
     "CREATE INDEX IF NOT EXISTS ix_action_csn ON app.handoff_action (csn, at)",
 ]
-DETAIL = ("element", "text", "items", "model_before", "rule", "option", "callback", "readback", "questions")
+DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "callback", "readback", "questions")
+UNREACHABLE = "The handoff database cannot be reached right now. Wait a minute and try again."
 
 
 class Pg:
@@ -99,23 +102,42 @@ def meta_from(encounters, drafts) -> dict:
 
 
 class LakebaseStore:
-    """Same interface as workflow.MemoryStore; every action is a row in app.handoff_action."""
+    """Same interface as workflow.MemoryStore; every action is a row in app.handoff_action.
+
+    Several app processes (and app instances) write the same table, so the rows read are reused for at most
+    `ttl` seconds (EDIP_ACTIONS_TTL) and every action is checked against a fresh read. Lakebase being unreachable
+    at start up does not stop the app: the table is created on the first use that reaches it."""
     kind = "lakebase"
 
-    def __init__(self):
+    def __init__(self, ttl: float | None = None):
         self._lock = threading.Lock()
         self._rows: list[dict] | None = None
-        with PG.connect() as conn:
-            for s in DDL:
-                conn.execute(s)
+        self._read = 0.0
+        self.ttl = config.ACTIONS_TTL if ttl is None else ttl
+        self._ready = False
+        try:
+            self._ensure()
+        except Exception as exc:          # Lakebase unreachable or not set up yet: retried on use
+            print(f"Lakebase actions table not ready ({type(exc).__name__}); retrying on use. {str(exc)[:200]}")
 
-    def _all(self) -> list[dict]:
+    def _ensure(self):
+        if not self._ready:
+            with PG.connect() as conn:
+                for s in DDL:
+                    conn.execute(s)
+            self._ready = True
+
+    def _all(self, fresh: bool = False) -> list[dict]:
         with self._lock:
-            if self._rows is None:
-                from psycopg.rows import dict_row
-                with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-                    rows = cur.execute("SELECT * FROM app.handoff_action ORDER BY at, action_id").fetchall()
-                self._rows = [self._row(r) for r in rows]
+            if fresh or self._rows is None or time.time() - self._read > self.ttl:
+                try:
+                    self._ensure()
+                    from psycopg.rows import dict_row
+                    with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                        rows = cur.execute("SELECT * FROM app.handoff_action ORDER BY at, action_id").fetchall()
+                except Exception as exc:
+                    raise StoreUnavailable(UNREACHABLE) from exc
+                self._rows, self._read = [self._row(r) for r in rows], time.time()
             return list(self._rows)
 
     @staticmethod
@@ -127,17 +149,21 @@ class LakebaseStore:
     def add(self, kind: str, row: dict) -> dict:
         from psycopg.types.json import Jsonb
         detail = {k: row[k] for k in DETAIL if row.get(k) is not None}
-        with PG.connect() as conn:
-            conn.execute("INSERT INTO app.handoff_action (csn, template, version, kind, at, by_name, role, user_email, detail) "
-                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                         (row["csn"], row["template"], row["version"], kind, row["at"], row["by"], row["role"],
-                          row.get("user_email"), Jsonb(detail)))
+        try:
+            self._ensure()
+            with PG.connect() as conn:
+                conn.execute("INSERT INTO app.handoff_action (csn, template, version, kind, at, by_name, role, user_email, "
+                             "detail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                             (row["csn"], row["template"], row["version"], kind, row["at"], row["by"], row["role"],
+                              row.get("user_email"), Jsonb(detail)))
+        except Exception as exc:
+            raise StoreUnavailable(UNREACHABLE) from exc
         with self._lock:
             self._rows = None
         return row
 
-    def actions(self, csn: str, at: datetime | None = None) -> list[dict]:
-        return [r for r in self._all() if r["csn"] == csn and (at is None or r["at"] <= at)]
+    def actions(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
+        return [r for r in self._all(fresh) if r["csn"] == csn and (at is None or r["at"] <= at)]
 
     def all_actions(self, at: datetime | None = None) -> list[dict]:
         return [r for r in self._all() if at is None or r["at"] <= at]

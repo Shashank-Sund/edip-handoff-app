@@ -37,9 +37,9 @@ function Handoffs({ row }: { row: CaseSummary }) {
         const s = row.templates[t];
         if (!s) return null;
         return (
-          <div key={t} className="flex items-center gap-2">
-            <span className="w-16 text-xs text-muted-foreground">{TEMPLATE_SHORT[t]}</span>
-            <StateBadge state={s.workflow.state} changed={s.workflow.changed_since_signed || s.workflow.changed_since_acknowledged} />
+          <div key={t} className="flex flex-col items-start gap-0.5">
+            <span className="text-[11px] leading-none text-muted-foreground">{TEMPLATE_SHORT[t]}</span>
+            <StateBadge state={s.workflow.state} changed={s.workflow.changed_since_acknowledged} wrap />
           </div>
         );
       })}
@@ -47,7 +47,7 @@ function Handoffs({ row }: { row: CaseSummary }) {
   );
 }
 
-function Completeness({ row, template }: { row: CaseSummary; template: string }) {
+function Completeness({ row, template, label }: { row: CaseSummary; template: string; label?: string }) {
   const s = row.templates[template];
   if (!s) return null;
   const n = s.blocking.length;
@@ -55,7 +55,10 @@ function Completeness({ row, template }: { row: CaseSummary; template: string })
     <div className="flex items-center gap-2.5">
       <ProgressRing value={s.score} blocking={n} />
       <div className="leading-tight">
-        <div className="text-sm font-medium tabular-nums">{pct(s.score)}</div>
+        <div className="text-sm font-medium tabular-nums">
+          {label && <span className="mr-1 text-xs font-normal text-muted-foreground">{label}</span>}
+          {pct(s.score)}
+        </div>
         <div className={cn('whitespace-nowrap text-xs', n ? 'text-sev-watcher' : 'text-muted-foreground')}>{n ? `${n} open` : 'Ready'}</div>
       </div>
     </div>
@@ -101,7 +104,7 @@ function Safety({ row }: { row: CaseSummary }) {
 
 export default function Board() {
   const { at, persona, version, config } = useApp();
-  const { data, error } = useLoad(() => api.board(at), [at, persona.id, version]);
+  const { data, error, retry } = useLoad(() => api.board(at), [at, persona.id, version]);
   const [view, setView] = useState<View>('all');
   const [facility, setFacility] = useState<string>('all');
   const [q, setQ] = useState('');
@@ -117,20 +120,21 @@ export default function Board() {
   const scope = persona.unit ? `${persona.facility} ${persona.unit}` : 'All units';
   const title = persona.role === 'unit_nurse' ? `Incoming to ${persona.facility} ${persona.unit}` : 'ED boarding board';
 
-  if (error && !data) return <Layout title={title}><ErrorState message={error} /></Layout>;
+  if (error && !data) return <Layout title={title}><ErrorState message={error} onRetry={retry} /></Layout>;
   if (!data) return <Layout title={title}><PageSkeleton /></Layout>;
   const k = data.kpis;
   const ack = persona.can_ack.length > 0;
+  const sign = persona.can_sign.length > 0;
+  const tplName = config.templates.find((t) => t.id === data.template)?.name ?? data.template;
   return (
     <Layout title={title} crumbs={`${scope} · ${persona.name}`} help="board">
       <div className="space-y-5 sm:space-y-6">
-        <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <section aria-label="Summary" className={cn('grid grid-cols-2 gap-3 sm:gap-4', ack || sign ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
           <Stat label="Boarding now" value={k.boarding} icon={<BedDouble />} hint={k.median_boarding_min != null ? `Median ${duration(k.median_boarding_min)} since admit decision` : 'No one is boarding'} />
           <Stat label="Unstable" value={k.unstable} tone="danger" icon={<ShieldAlert />} hint="Rule floor or model call" />
-          {ack ? (
-            <Stat label="To acknowledge" value={k.to_acknowledge ?? 0} tone="warn" icon={<ClipboardCheck />} hint="Signed by the ED, waiting for your read back" />
-          ) : (
-            <Stat label="To sign" value={k.to_sign ?? 0} icon={<ClipboardCheck />} hint={`${k.blocking} with items to resolve first`} />
+          {ack && <Stat label="To acknowledge" value={k.to_acknowledge ?? 0} tone="warn" icon={<ClipboardCheck />} hint={`${tplName} handoffs signed by the ED, waiting for your read back`} />}
+          {sign && !ack && (
+            <Stat label="To sign" value={k.to_sign ?? 0} icon={<ClipboardCheck />} hint={`${tplName} drafts and changed after signing; ${k.blocking ?? 0} with items to resolve first`} />
           )}
           <Stat label="Arrived on unit" value={k.arrived} icon={<Users />} hint="Transferred in the last 12 hours" />
         </section>
@@ -194,7 +198,9 @@ export default function Board() {
                       <th scope="col" className="px-3 py-2.5 font-medium">Destination</th>
                       <th scope="col" className="px-3 py-2.5 font-medium">Boarding</th>
                       <th scope="col" className="px-3 py-2.5 font-medium">Handoffs</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Completeness</th>
+                      <th scope="col" className="px-3 py-2.5 font-medium">
+                        Completeness <span className="font-normal">({tplName})</span>
+                      </th>
                       <th scope="col" className="py-2.5 pl-3 pr-4 font-medium lg:pr-5">Last update</th>
                     </tr>
                   </thead>
@@ -262,7 +268,7 @@ export default function Board() {
                       <Destination row={r} />
                       <div className="flex items-center justify-between gap-3">
                         {r.phase === 'arrived' ? <span className="text-sm">Arrived after {duration(r.minutes_boarding)}</span> : <BoardingTime minutes={r.minutes_boarding} />}
-                        <Completeness row={r} template={data.template} />
+                        <Completeness row={r} template={data.template} label={tplName} />
                       </div>
                       <Handoffs row={r} />
                     </a>

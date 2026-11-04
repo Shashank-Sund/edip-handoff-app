@@ -39,10 +39,42 @@ describe('SignPanel', () => {
     expect(onSign).toHaveBeenCalledWith('   x4471');
   });
 
-  it('has no sign form once the patient left the ED', () => {
-    sign(caseTemplate(), edNurse, 'arrived');
+  it('has no sign form once the patient left the ED with the newest version signed', () => {
+    const signedTpl = caseTemplate({ workflow: { state: 'signed', signed: { by: 'Jordan Reyes, RN', role: 'ed_nurse', callback: 'x4471', at: '2026-03-10T14:50:00Z', version: 2 } } });
+    sign(signedTpl, edNurse, 'arrived');
     expect(screen.queryByRole('button', { name: 'Sign' })).not.toBeInTheDocument();
     expect(screen.getByText(/this handoff is final/)).toBeInTheDocument();
+  });
+
+  it('still lets the ED sign a patient transferred without sign off', () => {
+    sign(caseTemplate({ workflow: { state: 'transferred_unsigned' } }), edNurse, 'arrived');
+    expect(screen.getByText('Transferred without sign off.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign' })).toBeInTheDocument();
+  });
+
+  it('asks to sign again after a change, and explains why', () => {
+    const changed = caseTemplate({
+      workflow: { state: 'changed', edited_since_signed: true, changed_since_signed: false, signed: { by: 'Jordan Reyes, RN', role: 'ed_nurse', callback: 'x4471', at: '2026-03-10T14:50:00Z', version: 2 } },
+    });
+    sign(changed);
+    expect(screen.getByText('Changed after signing, sign again.')).toBeInTheDocument();
+    expect(screen.getByText(/An edit or attestation was made after signing/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign again' })).toBeInTheDocument();
+  });
+
+  it('refuses a callback without a number to dial', async () => {
+    const user = userEvent.setup();
+    sign(caseTemplate());
+    await user.type(screen.getByLabelText('Your callback number'), 'x1');
+    expect(screen.getByRole('button', { name: 'Sign' })).toBeDisabled();
+    expect(screen.getByText('At least 3 digits, or an extension like x4471.')).toBeInTheDocument();
+  });
+
+  it('says when a bedside recheck expired', () => {
+    const r = rule({ rule: 'N08', element: 'E14', level: 'stale', status: 'stale', label: 'Vital signs', attest_options: ['Rechecked at bedside, unchanged'],
+      attest_expired: { by: 'Jordan Reyes, RN', at: '2026-03-10T14:00:00Z', until: '2026-03-10T14:30:00Z', limit_min: 30, severity: 'watcher' } });
+    sign(caseTemplate({ draft: draft({ rules: [r], completeness: { score: 0.7, blocking: ['N08'], model_score: 0.7 } }) }));
+    expect(screen.getByText(/counts for 30 minutes, so it expired at 10:30. Recheck again./)).toBeInTheDocument();
   });
 
   it('has no sign form for a role that cannot sign', () => {
@@ -61,21 +93,32 @@ describe('AckPanel', () => {
     expect(screen.queryByRole('button', { name: 'Accept handoff' })).not.toBeInTheDocument();
   });
 
-  it('requires a read back of at least 10 characters, ignoring spaces at the ends', async () => {
+  it('requires a read back of at least a sentence and says why Accept is not ready', async () => {
     const user = userEvent.setup();
     const onAck = vi.fn();
     wrap(<AckPanel tpl={signed} onAck={onAck} />);
     const box = screen.getByRole('textbox', { name: 'Read back' });
     const button = screen.getByRole('button', { name: 'Accept handoff' });
     expect(button).toBeDisabled();
-    await user.type(box, '  123456789  ');
-    expect(button).toBeDisabled();
+    expect(screen.getByText('Write your read back to accept.')).toBeInTheDocument();
+    for (const text of ['1234567890', 'Watcher patient', 'aaaa aaaa aaaa aaaa']) {
+      await user.clear(box);
+      await user.type(box, text);
+      expect(button).toBeDisabled();
+      expect(screen.getByText(/Write at least a short sentence/)).toBeInTheDocument();
+    }
     await user.clear(box);
-    await user.type(box, '1234567890');
+    await user.type(box, '  Watcher, recheck vitals on arrival  ');
     expect(button).toBeEnabled();
     await user.type(screen.getByRole('textbox', { name: 'Questions for the sender' }), 'Lines?');
     await user.click(button);
-    expect(onAck).toHaveBeenCalledWith('1234567890', 'Lines?');
+    expect(onAck).toHaveBeenCalledWith('  Watcher, recheck vitals on arrival  ', 'Lines?');
+  });
+
+  it('waits for the ED to sign again after a change', () => {
+    wrap(<AckPanel tpl={caseTemplate({ workflow: { state: 'changed', edited_since_signed: true } })} onAck={vi.fn()} />);
+    expect(screen.getByText(/Waiting for the ED to sign again/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Accept handoff' })).not.toBeInTheDocument();
   });
 
   it('shows the read back once acknowledged', () => {

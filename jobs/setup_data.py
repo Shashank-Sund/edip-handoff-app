@@ -29,11 +29,12 @@ def main():
     a = ap.parse_args()
     code = Path(a.code_path)
     sys.path[:0] = [str(code / "setup"), str(code / "synthetic")]
+    from load_bronze import check_catalog, load
+
+    cat = check_catalog(a.catalog)            # before any compute: a hyphen in the name would break the SQL
     from pyspark.sql import SparkSession
-    from load_bronze import load
 
     spark = SparkSession.builder.getOrCreate()
-    cat = a.catalog
 
     def sql(statement, quiet=False):
         rows = spark.sql(statement).collect()

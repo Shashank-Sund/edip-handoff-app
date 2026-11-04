@@ -13,7 +13,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("America/New_York")
+from config import TIMEZONE
+
+TZ = ZoneInfo(TIMEZONE)
 TS_FIELDS = ("arrival_ts", "admit_decision_ts", "ed_departure_ts", "last_event_ts")
 
 

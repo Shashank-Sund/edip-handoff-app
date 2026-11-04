@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, BedDouble, Clock3, ShieldAlert } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { SectionBadge } from '@/components/common/SectionBadge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Layout } from '@/components/layout/Layout';
@@ -15,6 +16,7 @@ import { useLoad } from '@/hooks/useLoad';
 import { ApiError, api } from '@/lib/api';
 import { LEVEL_LABEL, bed, dateTime, duration, triggerLabel } from '@/lib/format';
 import { linkProps } from '@/lib/router';
+import { canChange } from '@/lib/checks';
 import type { CaseDetail, CaseSummary, NarrativeItem, Rule } from '@/lib/types';
 
 const ORDER = ['sbar_nurse', 'ipass_physician', 'custom_sea58'];
@@ -76,7 +78,7 @@ function Banner({ s }: { s: CaseSummary }) {
 
 export default function Handoff({ csn }: { csn: string }) {
   const { at, persona, version, bump, config } = useApp();
-  const { data, error, setData } = useLoad(() => api.case(csn, at), [csn, at, persona.id, version]);
+  const { data, error, setData, retry } = useLoad(() => api.case(csn, at), [csn, at, persona.id, version]);
   const [tab, setTab] = useState(persona.default_template);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
@@ -112,7 +114,7 @@ export default function Handoff({ csn }: { csn: string }) {
   if (error && !data) {
     return (
       <Layout title="Handoff" crumbs={back}>
-        <ErrorState message={error} />
+        <ErrorState message={error} onRetry={retry} />
         <div className="mt-4 text-center">
           <Button variant="outline" asChild>
             <a {...linkProps('/')}>Back to the board</a>
@@ -126,10 +128,11 @@ export default function Handoff({ csn }: { csn: string }) {
   const tabs = ORDER.filter((t) => data.templates[t]);
   const current = data.templates[tab] ? tab : tabs[0];
   const tpl = data.templates[current];
-  const canEdit = persona.can_sign.includes(current) && (s.phase === 'boarding' || tpl.row.status === 'addendum');
+  const canEdit = persona.can_sign.includes(current) && canChange(tpl, s.phase);
   const canAck = persona.can_ack.includes(current);
   const onAttest = (r: Rule, option: string) => run('attest', { rule: r.rule, option }, `${r.label}: attested`);
-  const onEdit = (element: string, body: { text?: string; items?: NarrativeItem[] }) => run('edit', { element, ...body }, 'Saved');
+  const onEdit = (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) =>
+    run('edit', { element, ...body }, body.restore ? 'Model text restored' : 'Saved');
 
   return (
     <Layout title={s.patient.name} crumbs={back} help="handoff">
@@ -172,7 +175,7 @@ export default function Handoff({ csn }: { csn: string }) {
                       {tpl.draft.sections.map((sec) => (
                         <Card key={sec.id} className="overflow-hidden">
                           <div className="flex items-center gap-2.5 border-b bg-muted/30 px-4 py-2.5 sm:px-5">
-                            <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-[11px] font-bold text-primary">{sec.id}</span>
+                            <SectionBadge id={sec.id} label={sec.label} />
                             <h3 className="text-sm font-semibold">{sec.label}</h3>
                           </div>
                           <div className="divide-y">
@@ -184,7 +187,7 @@ export default function Handoff({ csn }: { csn: string }) {
                       ))}
                     </div>
                     <aside className="min-w-0 space-y-5 xl:sticky xl:top-20 xl:self-start" aria-label="Sign off and context">
-                      <SignPanel tpl={tpl} persona={persona} template={current} phase={s.phase} busy={busy} onAttest={onAttest} onSign={(callback) => run('sign', { callback }, 'Signed. The receiving unit can now acknowledge.')} />
+                      <SignPanel tpl={tpl} persona={persona} template={current} phase={s.phase} busy={busy} onAttest={onAttest} onSign={(callback) => run('sign', { callback }, 'Signed. The receiving team can now accept it.')} />
                       {canAck && <AckPanel tpl={tpl} busy={busy} onAck={(readback, questions) => run('ack', { readback, questions }, 'Handoff accepted')} />}
                       <ChangesCard tpl={tpl} />
                       <VitalsCard draft={tpl.draft} />

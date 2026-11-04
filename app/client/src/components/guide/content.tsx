@@ -26,7 +26,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
-import { Key, Primary, Tag, AmberNote, GreyNote, ModelMark, Chip, Highlight, Ring, GuideLink, Terms, Checks, Note, SeeDo, ColorRow, WhoDoesWhat } from './cues';
+import { Key, Primary, Tag, AmberNote, GreyNote, ModelMark, Chip, Highlight, Ring, GuideLink, PageLink, Terms, Checks, Note, SeeDo, ColorRow, WhoDoesWhat } from './cues';
 
 export interface Topic {
   id: string;
@@ -184,7 +184,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <SeeDo
             see={<>The date and time at the top right, for example <Key><CalendarClock />Wed, Oct 28 16:00</Key>. Every page shows the hospital at that moment.</>}
-            act={<>Press <Key label="forward"><ChevronRight /></Key> to go forward one hour, or <Key label="play"><Play /></Key> to play. Boarding times grow, new drafts may arrive and show <StateBadge state="signed" changed />, and patients leave for their unit.</>}
+            act={<>Press <Key label="forward"><ChevronRight /></Key> to go forward one hour, or <Key label="play"><Play /></Key> to play. Boarding times grow, new drafts may arrive and show <StateBadge state="changed" /> on a signed handoff, and patients leave for their unit.</>}
           />
         ),
       },
@@ -202,7 +202,7 @@ export const GUIDE: GuideSection[] = [
         title: 'If you are the ED nurse',
         body: (
           <>
-            <p>You see every patient waiting for a bed, at both hospitals. Your tab is <b>SBAR</b>. The <b>To sign</b> box counts nurse handoffs still in Draft.</p>
+            <p>You see every patient waiting for a bed, at both hospitals. Your tab is <b>SBAR</b>. The <b>To sign</b> box counts nurse handoffs in Draft or Changed after signing.</p>
             <p className="font-medium">Before you sign, check:</p>
             <Checks
               items={[
@@ -213,7 +213,7 @@ export const GUIDE: GuideSection[] = [
                 'No Required or Stale items left, and your callback number is in.',
               ]}
             />
-            <p className="text-muted-foreground">If a signed handoff later shows <StateBadge state="signed" changed />, read what changed and sign again.</p>
+            <p className="text-muted-foreground">If a signed handoff later shows <StateBadge state="changed" />, something changed after your signature: your own edit or attestation, or a newer draft with different content. Read what changed and press Sign again; the receiver cannot accept until you do.</p>
           </>
         ),
       },
@@ -252,7 +252,7 @@ export const GUIDE: GuideSection[] = [
                 'Use the callback number on the signature if you have questions.',
               ]}
             />
-            <p className="text-muted-foreground">If it shows Updated after you accepted, read what changed and accept again.</p>
+            <p className="text-muted-foreground">If it shows <StateBadge state="changed" />, wait: the ED has to sign it again before you can accept. If the ED signs again after you accepted, the panel says Acknowledge the update; read what changed and accept again.</p>
           </>
         ),
       },
@@ -291,6 +291,7 @@ export const GUIDE: GuideSection[] = [
                 <SeverityBadge value="unstable" />
                 <Pill tone="danger">DNR/DNI</Pill>
                 <Tag tone="danger">Required</Tag>
+                <StateBadge state="transferred_unsigned" />
                 <span>a critical lab, boarding 6 hours or more</span>
               </ColorRow>
               <ColorRow swatch="bg-sev-watcher" title="Amber: needs your attention before you go on">
@@ -298,7 +299,7 @@ export const GUIDE: GuideSection[] = [
                 <AmberNote>Isolation: not documented</AmberNote>
                 <Tag tone="warn">Stale</Tag>
                 <Pill tone="warn">Changed</Pill>
-                <StateBadge state="signed" changed />
+                <StateBadge state="changed" />
                 <Highlight>2.8</Highlight>
                 <span>an abnormal lab, boarding 4 hours or more</span>
               </ColorRow>
@@ -327,9 +328,10 @@ export const GUIDE: GuideSection[] = [
             <Checks
               items={[
                 <>Nothing is left in the Sign off list. Each open item says <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>; <GuideLink to="handoff-resolve">see how to resolve them</GuideLink>.</>,
-                'You typed a callback number.',
+                'You typed a callback number the receiver can dial: at least 3 digits, or an extension like x4471.',
                 'It is your handoff. ED nurses sign SBAR, ED physicians sign I-PASS, and either signs the Joint Commission minimum. On another tab the panel says "Your role does not sign this template."',
-                <>The patient is still in the ED. Once they leave, the panel shows <Lock className="inline size-3.5 align-middle" aria-hidden /> "The patient left the ED; this handoff is final." The one exception is an addendum.</>,
+                <>The patient is still in the ED. Once they leave, the panel shows <Lock className="inline size-3.5 align-middle" aria-hidden /> "The patient left the ED; this handoff is final." The exceptions: an addendum, and a handoff that was never signed (<StateBadge state="transferred_unsigned" />) or was signed on an older version. Those you can still complete and sign.</>,
+                <>The clock is not earlier than something already recorded on this handoff. If it is, the app says "You are viewing an earlier time; move the clock to now to act."</>,
               ]}
             />
             <p className="text-muted-foreground">Staff on the receiving unit never sign. They accept.</p>
@@ -343,7 +345,8 @@ export const GUIDE: GuideSection[] = [
           <Checks
             items={[
               'The ED has to sign first. Until then the panel says "Waiting for the ED clinician to sign."',
-              <>Your read back needs at least a short sentence. <Primary><CheckCheck />Accept handoff</Primary> stays pale until then.</>,
+              'The handoff did not change after it was signed. If it did, the panel says "Waiting for the ED to sign again." You can accept once the ED signs the new text.',
+              <>Your read back needs at least a short sentence: three words or more and fifteen letters. <Primary><CheckCheck />Accept handoff</Primary> stays pale until then, and the line under it says what is missing.</>,
               'It is your handoff. Receiving nurses accept SBAR, admitting physicians accept I-PASS, and either accepts the Joint Commission minimum.',
             ]}
           />
@@ -364,7 +367,7 @@ export const GUIDE: GuideSection[] = [
               Every model sentence names its sources as numbered chips <Chip n={1} /> <Chip n={2} />. Hover one to see the record, click to read it. A <Highlight>highlighted number</Highlight> was not found in those sources, often a total the model added up. Check it before you sign.
             </p>
             <p className="text-muted-foreground">
-              Before anyone sees a draft, a checker removes references to records that do not exist and highlights the numbers it cannot find. When you edit an item, it says <span className="inline-flex items-center gap-1 align-middle text-xs"><Pencil className="size-3" aria-hidden />Edited by</span> your name, and your text is kept in later versions.
+              Before anyone sees a draft, a checker removes references to records that do not exist and highlights the numbers it cannot find. When you edit an item, it says <span className="inline-flex items-center gap-1 align-middle text-xs"><Pencil className="size-3" aria-hidden />Edited by</span> your name, and your text is kept in later versions. An edit cannot be empty: to go back to the model's text, press <Key><RotateCcw />Restore</Key> on the item.
             </p>
           </>
         ),
@@ -378,9 +381,11 @@ export const GUIDE: GuideSection[] = [
               When something important happens (a new result, a bed assigned, a note signed), the app writes a new version of the draft. Items that differ are marked <Pill tone="warn">Changed</Pill> with a thin amber line on their left.
             </p>
             <p>
-              The <b>What changed</b> panel lists them in two groups: <b>Updated from the chart</b>, and <b>Redrafted by the model</b> with the old text <span className="line-through">crossed out</span>. Click an item to jump to it. Once you have signed, it compares with the version you signed.
+              The <b>What changed</b> panel lists them in two groups: <b>Updated from the chart</b>, and <b>Redrafted by the model</b> with the old text <span className="line-through">crossed out</span>. Click an item to jump to it. Once a signed handoff has changed, it compares the text you signed, your edits included, with the text now.
             </p>
-            <p className="text-muted-foreground">On the board, a handoff that changed after it was signed or accepted shows <StateBadge state="signed" changed />. Open it, read the changes, and sign or accept again.</p>
+            <p className="text-muted-foreground">
+              Any edit or attestation after signing, or a newer version whose clinical content differs, puts a signed handoff in <StateBadge state="changed" />: the ED signs again, then the receiver accepts. The signature stays in History. A new version that only records the move to the unit, or the same code status charted again, does not count as a change.
+            </p>
           </>
         ),
       },
@@ -409,11 +414,11 @@ export const GUIDE: GuideSection[] = [
         body: (
           <Terms
             items={[
-              ['Boarding now', 'Patients with an admit decision who are still in the ED. Below the number: the median wait since the admit decision.'],
+              ['Boarding now', 'Patients with an admit decision who are still in the ED. Below the number: the median wait since the admit decision. The read only viewer sees this, Unstable and Arrived, without the To sign or To acknowledge box.'],
               ['Unstable', 'Boarding patients marked unstable, by the rule floor or by the model. Look at these first.'],
-              ['To sign', 'ED staff: handoffs for your role still in Draft. Below it: how many still have items to resolve.'],
+              ['To sign', 'ED staff: handoffs for your role in Draft or Changed after signing. Below it: how many of those still have items to resolve.'],
               ['To acknowledge', 'Unit staff, in place of To sign: handoffs the ED has signed that wait for your read back.'],
-              ['Arrived on unit', 'Patients who went up to a unit in the last 12 hours, so the receiving team can still review them.'],
+              ['Arrived on unit', 'Patients who went up to a unit in the last 12 hours, so the receiving team can still review them. Canceled transfers are not counted.'],
             ]}
           />
         ),
@@ -444,8 +449,8 @@ export const GUIDE: GuideSection[] = [
                 ['Reason for visit', <>The chief complaint, with safety flags underneath: <Pill tone="danger">DNR/DNI</Pill> any code status other than full code, <Pill tone="warn">Contact</Pill> isolation, <Pill>2 allergies</Pill> allergies on file.</>],
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
                 ['Boarding', 'Time since the admit decision. The bar fills over 8 hours: blue under 4 hours, amber from 4, red from 6. For patients who already left: how long they waited.'],
-                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, and <StateBadge state="signed" changed /> if it changed after that.</>],
-                ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> 58% of the template's items are filled, and 4 required items must be resolved before signing.</>],
+                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed.</>],
+                ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> For the template of your role, named in the column title (SBAR for nurses, I-PASS for physicians): 58% of its items are filled, and 4 required items must be resolved before signing.</>],
                 ['Last update', 'When the latest draft was written, and why: Admit decision, Bed assigned, Note signed, Critical result and so on.'],
               ]}
             />
@@ -532,7 +537,7 @@ export const GUIDE: GuideSection[] = [
             <Terms
               items={[
                 ['Not documented, with a statement', <>Tap the statement if it is true, for example <Key><Check />No known allergies confirmed</Key>. This records that you checked. The statements are a fixed list for each item.</>],
-                [<Tag key="t" tone="warn">Stale</Tag>, <>Vital signs must be recent for the severity: 60 minutes if stable, 30 if watcher, 15 if unstable. Recheck the patient, then tap <Key><Check />Rechecked at bedside, unchanged</Key>, or chart new vital signs.</>],
+                [<Tag key="t" tone="warn">Stale</Tag>, <>Vital signs must be recent for the severity. The limits depend on the template: SBAR 60, 30 and 15 minutes for a stable, watcher and unstable patient; I-PASS 120, 60 and 30 minutes. The <PageLink to="/templates">Templates page</PageLink> lists them. Recheck the patient, then tap <Key><Check />Rechecked at bedside, unchanged</Key>, or chart new vital signs. A recheck counts for the same limit: after that the item is stale again and the panel says the recheck expired.</>],
                 ['Not documented, no statement', <>For a model item, press <Key><Pencil />Edit</Key> and write it. For a chart item, document it in the chart; the next draft picks it up.</>],
               ]}
             />
@@ -556,7 +561,9 @@ export const GUIDE: GuideSection[] = [
                 [<Primary key="s"><PenLine />Sign</Primary>, 'Adds your name, callback and the time. The receiving unit can now accept it.'],
               ]}
             />
-            <p className="text-muted-foreground">If a newer draft arrives after you signed, the panel says "A newer draft arrived after signing." Read what changed and sign again. Unit staff see this panel as <b>Handoff status</b>, without the Sign button.</p>
+            <p className="text-muted-foreground">
+              If anything changes after you sign (your edit or attestation, or a newer draft with different content), the panel says "Changed after signing, sign again" and why. Read what changed and press <Primary><PenLine />Sign again</Primary>. If the patient left the ED before anyone signed, it says "Transferred without sign off", and you can still sign. Unit staff see this panel as <b>Handoff status</b>, without the Sign button.
+            </p>
           </>
         ),
       },
@@ -567,10 +574,10 @@ export const GUIDE: GuideSection[] = [
           <>
             <Checks
               items={[
-                'Before the ED signs, the panel says "Waiting for the ED clinician to sign." You can read the draft, but it may still change.',
+                'Before the ED signs, the panel says "Waiting for the ED clinician to sign." You can read the draft, but it may still change. If it changed after signing, it says "Waiting for the ED to sign again."',
                 'Once it is signed, read it, especially severity, pending results, the action list and the contingency plan.',
-                'Write a short read back in your own words: who the patient is, the main risk, and what you will do first. Add any questions for the sender.',
-                <>Press <Primary><CheckCheck />Accept handoff</Primary>. If the handoff changes later, the panel becomes <b>Acknowledge the update</b>, and you accept it again.</>,
+                'Write a short read back in your own words, at least a sentence: who the patient is, the main risk, and what you will do first. Add any questions for the sender.',
+                <>Press <Primary><CheckCheck />Accept handoff</Primary>. If the handoff changes later, the ED signs again and the panel becomes <b>Acknowledge the update</b>; you accept it again.</>,
               ]}
             />
             <Note>Example read back: "72 F with sepsis from a urinary source, watcher; lactate trending down. I will repeat vitals on arrival and follow the pending blood cultures."</Note>
@@ -583,10 +590,10 @@ export const GUIDE: GuideSection[] = [
         body: (
           <Terms
             items={[
-              ['What changed', <>Compared with the previous version, or the one you signed: items <b>Updated from the chart</b>, and items <b>Redrafted by the model</b> with the old text crossed out. Click an item to jump to it.</>],
+              ['What changed', <>Compared with the previous version, or, once a signed handoff changed, with the text that was signed (clinician edits included): items <b>Updated from the chart</b>, and text that changed with the old text crossed out. Click an item to jump to it.</>],
               ['Vital signs', 'Every set taken in the ED. Top: heart rate and blood pressure. Bottom: oxygen saturation and breathing rate. Point at the chart to read the values at that time; click a name above it to hide or show that line.'],
               ['Lab trends', 'Each result that was ever abnormal: the latest value (red if critical, amber if abnormal), a small trend line, and first to latest.'],
-              ['History', 'Every version and why it was written, and every edit, attestation, signature and acceptance, newest first.'],
+              ['History', 'Every version and why it was written, and every edit, restore, attestation, signature and acceptance with the name of the item, newest first.'],
             ]}
           />
         ),
@@ -605,7 +612,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <Terms
             items={[
-              ['Admitted from the ED', 'Patients who went up to an inpatient or observation bed so far.'],
+              ['Admitted from the ED', 'Patients who went up to an inpatient or observation bed so far, at both hospitals and all units; below it, how many were signed before transfer and how many were transferred without sign off.'],
               ['Peak boarding', 'The most patients waiting for a bed at the same time, and when.'],
               ['Median completeness', 'How complete the model drafts were at transfer, before anyone edited them. Clinicians fill the rest.'],
               ['Model calls', 'How many drafts were written, and how many were addenda after the patient left the ED.'],
@@ -694,7 +701,7 @@ export const GUIDE: GuideSection[] = [
             items={[
               [<span key="k" className="inline-flex gap-1"><Key label="back"><ChevronLeft /></Key><Key label="forward"><ChevronRight /></Key></span>, 'Back or forward one hour.'],
               [<Key key="k"><Play />Play</Key>, 'Moves the clock forward 15 minutes every 1.5 seconds, so you can watch patients arrive, get beds and go up. Press again to pause.'],
-              [<Key key="k"><CalendarClock />Date</Key>, <>Opens a panel: drag the slider to any time in the week, pick a day, go back to the <b>Busiest hour</b>, or <Key><RotateCcw />Clear my actions</Key>.</>],
+              [<Key key="k"><CalendarClock />Date</Key>, <>Opens a panel: drag the slider to any time in the week, pick a day (midnight to midnight at the hospital; the time of day stays the same, even across a clock change), go back to the <b>Busiest hour</b>, or <Key><RotateCcw />Clear all demo actions</Key>, which asks first.</>],
             ]}
           />
         ),
@@ -704,7 +711,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Your actions and the clock',
         body: (
           <p>
-            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. Once a patient leaves the ED, their handoff is final. To start the demo over, open the date panel and press Clear my actions.
+            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions.
           </p>
         ),
       },
@@ -782,7 +789,8 @@ export const GUIDE: GuideSection[] = [
       { id: 'admit-decision', title: 'Admit decision', body: 'The moment the ED decides the patient needs a bed. The first draft is written then.' },
       { id: 'attest', title: 'Attest', body: 'Confirm a statement from a fixed list, such as "No known allergies confirmed". It records that you checked.' },
       { id: 'boarding', title: 'Boarding', body: 'Waiting in the ED after the admit decision, until the patient leaves for the unit.' },
-      { id: 'callback', title: 'Callback', body: 'The phone or extension number the receiver can call the sender on. Required to sign.' },
+      { id: 'callback', title: 'Callback', body: 'The phone or extension number the receiver can call the sender on: at least 3 digits, or an extension like x4471. Required to sign.' },
+      { id: 'changed', title: 'Changed after signing', body: 'An edit, an attestation or a newer draft with different content came after the signature. The ED signs again before the receiver can accept.' },
       { id: 'completeness', title: 'Completeness', body: "The share of the template's checks that are met or resolved. Required items block signing; warnings only lower the number." },
       { id: 'contingency', title: 'Contingency plan', body: 'If this happens, do that: how the patient could get worse, and what to do about it.' },
       { id: 'esi', title: 'ESI', body: 'Emergency Severity Index: the triage level, from 1 (most urgent) to 5.' },
@@ -791,12 +799,13 @@ export const GUIDE: GuideSection[] = [
       { id: 'level-of-care', title: 'Level of care', body: 'ICU, step down, telemetry, med surg or observation.' },
       { id: 'model', title: 'Model', body: 'The AI language model that writes the narrative parts of each draft from the chart. A person always checks and signs.' },
       { id: 'mrn', title: 'MRN', body: 'Medical record number.' },
-      { id: 'read-back', title: 'Read back', body: 'The receiver repeats the key points in their own words, to show they understood. Required to accept.' },
+      { id: 'read-back', title: 'Read back', body: 'The receiver repeats the key points in their own words, to show they understood: at least a sentence. Required to accept.' },
       { id: 'rule-floor', title: 'Rule floor', body: 'The lowest severity the chart allows, set by fixed rules. The model can raise severity above it, never lower.' },
       { id: 'sbar', title: 'SBAR', body: 'Situation, Background, Assessment, Recommendation. The nurse handoff format.' },
       { id: 'severity', title: 'Severity', body: 'How sick the patient is: stable (expected to stay well), watcher (could get worse, keep a close eye) or unstable (needs action now).' },
       { id: 'source', title: 'Source', body: 'The chart record a statement came from: a note, a lab, a medication, a set of vital signs.' },
-      { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after 60, 30 or 15 minutes for a stable, watcher or unstable patient.' },
+      { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after a limit that depends on the severity and the template: SBAR 60, 30 or 15 minutes for a stable, watcher or unstable patient; I-PASS 120, 60 or 30. A bedside recheck counts for the same limit.' },
+      { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it.' },
       { id: 'version', title: 'Version', body: 'Each time the chart changes in a way that matters, a new draft is written. The newest is shown, and History lists them all.' },
     ],
   },

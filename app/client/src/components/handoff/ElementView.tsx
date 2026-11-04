@@ -1,11 +1,12 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import { AlertTriangle, Check, CircleAlert, Clock, Pencil, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Check, CircleAlert, Clock, Pencil, RotateCcw, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Pill, SeverityBadge } from '@/components/common/badges';
 import { SourceChip, SourceList } from './Evidence';
 import { HelpButton } from '@/components/guide/HelpButton';
-import { LEVEL_LABEL, bed, clock, dateTime } from '@/lib/format';
+import { LEVEL_LABEL, bed, clinicalReason, clock, dateTime } from '@/lib/format';
+import { ExpiredRecheck } from './Panels';
 import { cn } from '@/lib/utils';
 import type { CaseTemplate, Element, Narrative, NarrativeItem, Rule } from '@/lib/types';
 
@@ -58,7 +59,9 @@ function ModelMark({ n }: { n: Narrative }) {
 function Severity({ n }: { n: Narrative }) {
   const raised = n.floor && n.model_value && n.value !== n.model_value;
   // The rule floor writes "<Level> by rule: <reasons>." ahead of the model's own text; show them apart.
-  const own = (n.text ?? '').replace(/^(Stable|Watcher|Unstable) by rule: [^.]*\.\s*/, '');
+  const text = n.text ?? '';
+  const prefix = n.floor?.reasons.length ? `${n.floor.value[0].toUpperCase()}${n.floor.value.slice(1)} by rule: ${n.floor.reasons.join('; ')}.` : null;
+  const own = (prefix && text.startsWith(prefix) ? text.slice(prefix.length) : text.replace(/^(Stable|Watcher|Unstable) by rule: [^.]*\.(?=\s|$)/, '')).trim();
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -68,7 +71,7 @@ function Severity({ n }: { n: Narrative }) {
       {n.floor && n.floor.reasons.length > 0 && (
         <div className="rounded-lg border border-dashed px-3 py-2 text-sm">
           <span className="font-medium">{raised ? 'Raised by rule' : 'Rule floor'}: </span>
-          {n.floor.reasons.join('; ')}
+          {n.floor.reasons.map(clinicalReason).join('; ')}
           {raised && <span className="text-muted-foreground">. The model called it {n.model_value}; rules can raise severity, never lower it.</span>}
         </div>
       )}
@@ -171,7 +174,7 @@ function Deterministic({ e, wf }: { e: Element; wf: CaseTemplate['workflow'] }) 
     case 'E31':
       return <Empty>Saved with time and version on every change.</Empty>;
     case 'E03':
-      return <KV items={[['Service', one.service as string], ['Admitting provider', one.admitting_id ? `ID ${one.admitting_id}` : null]]} />;
+      return <KV items={[['Service', one.service as string], ['Admitting provider', (one.admitting_name as string) || (one.admitting_id ? `Provider ${one.admitting_id}` : null)]]} />;
     case 'E04':
       return (
         <KV
@@ -377,6 +380,7 @@ export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?
                 </Button>
               ))}
             {r.status === 'missing' && blocking && <span className="text-muted-foreground">Write it with Edit to resolve.</span>}
+            {r.attest_expired && <ExpiredRecheck r={r} />}
           </div>
         );
       })}
@@ -390,6 +394,12 @@ function Editor({ e, onSave, onCancel, busy }: { e: Element; onSave: (body: { te
   const isItems = Array.isArray(n.items) || e.id === 'E24';
   const initial = isItems ? (n.items ?? []).map((i) => [i.text, i.owner ?? '', i.due ?? ''].join(' | ')).join('\n') : n.text ?? '';
   const [v, setV] = useState(initial);
+  const items = v
+    .split('\n')
+    .map((l) => l.split('|').map((x) => x.trim()))
+    .filter((p) => p[0])
+    .map(([text, owner, due]) => ({ text, owner: owner || null, due: due || null }));
+  const empty = isItems ? items.length === 0 : !v.trim();
   return (
     <div className="space-y-2">
       <textarea
@@ -401,24 +411,9 @@ function Editor({ e, onSave, onCancel, busy }: { e: Element; onSave: (body: { te
         autoFocus
       />
       {isItems && <p className="text-xs text-muted-foreground">One action per line: what | owner | when.</p>}
+      {empty && <p className="text-xs text-sev-watcher">Write the text, or use Restore to bring back the model's text.</p>}
       <div className="flex gap-2">
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={() =>
-            onSave(
-              isItems
-                ? {
-                    items: v
-                      .split('\n')
-                      .map((l) => l.split('|').map((x) => x.trim()))
-                      .filter((p) => p[0])
-                      .map(([text, owner, due]) => ({ text, owner: owner || null, due: due || null })),
-                  }
-                : { text: v.trim() },
-            )
-          }
-        >
+        <Button size="sm" disabled={busy || empty} onClick={() => onSave(isItems ? { items } : { text: v.trim() })}>
           Save
         </Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>
@@ -435,7 +430,7 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
   tpl: CaseTemplate;
   canEdit: boolean;
   busy?: boolean;
-  onEdit: (element: string, body: { text?: string; items?: NarrativeItem[] }) => Promise<boolean>;
+  onEdit: (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) => Promise<boolean>;
   onAttest: (r: Rule, option: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -460,6 +455,12 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
         <div className="flex items-center gap-2">
           {e.kind === 'narrative' && <ModelMark n={e.narrative ?? {}} />}
           {e.kind === 'narrative' && e.id === 'E11' && <HelpButton topic="handoff.items" label="Chips and highlights" className="size-6" />}
+          {editable && !editing && e.narrative?.edited && (
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy} onClick={() => onEdit(e.id, { restore: true })} aria-label={`Restore the model's text for ${e.label}`}>
+              <RotateCcw className="size-3.5" />
+              Restore
+            </Button>
+          )}
           {editable && !editing && (
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
               <Pencil className="size-3.5" />

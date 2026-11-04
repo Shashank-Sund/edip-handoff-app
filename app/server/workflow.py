@@ -13,7 +13,11 @@ import threading
 from collections import defaultdict
 from datetime import datetime, timezone
 
-KINDS = ("edit", "attest", "sign", "ack")
+KINDS = ("edit", "attest", "sign", "ack")       # a Restore is an edit with restore set: the model's text again
+
+
+class StoreUnavailable(RuntimeError):
+    """The action store cannot be read or written now (live mode: Lakebase unreachable); the message is shown."""
 
 
 class MemoryStore:
@@ -30,7 +34,7 @@ class MemoryStore:
             self._rows[row["csn"]].append(row)
         return row
 
-    def actions(self, csn: str, at: datetime | None = None) -> list[dict]:
+    def actions(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
         with self._lock:
             rows = list(self._rows.get(csn, []))
         return [r for r in rows if at is None or r["at"] <= at]

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCheck, CircleDot, Eye, FilePen, Loader2, PenLine, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCheck, CircleAlert, CircleDot, Eye, FilePen, Loader2, PenLine, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Severity, WorkflowState } from '@/lib/types';
 
@@ -30,14 +30,16 @@ const STATE: Record<WorkflowState, { label: string; cls: string; Icon: typeof Ci
   drafting: { label: 'Drafting', cls: 'text-state-draft bg-muted ring-border', Icon: Loader2 },
   draft: { label: 'Draft', cls: 'text-state-draft bg-muted ring-border', Icon: FilePen },
   signed: { label: 'Signed', cls: 'text-state-signed bg-state-signed/10 ring-state-signed/25', Icon: PenLine },
+  changed: { label: 'Changed after signing', cls: 'text-flag bg-flag/12 ring-flag/30', Icon: AlertTriangle },
   acknowledged: { label: 'Acknowledged', cls: 'text-state-ack bg-state-ack/10 ring-state-ack/25', Icon: CheckCheck },
+  transferred_unsigned: { label: 'Transferred without sign off', cls: 'text-sev-unstable bg-sev-unstable/10 ring-sev-unstable/25', Icon: CircleAlert },
 };
 
-export function StateBadge({ state, changed, compact }: { state: WorkflowState; changed?: boolean; compact?: boolean }) {
+export function StateBadge({ state, changed, compact, wrap }: { state: WorkflowState; changed?: boolean; compact?: boolean; wrap?: boolean }) {
   const s = STATE[state];
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap [&>svg]:size-3.5', s.cls)}>
+      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium ring-1 ring-inset [&>svg]:size-3.5 [&>svg]:shrink-0', wrap ? 'w-max max-w-[9.5rem] rounded-lg leading-tight' : 'rounded-full whitespace-nowrap', s.cls)}>
         <s.Icon aria-hidden />
         {!compact && s.label}
         {compact && <span className="sr-only">{s.label}</span>}

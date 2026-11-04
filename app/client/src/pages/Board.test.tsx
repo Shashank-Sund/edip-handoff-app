@@ -124,9 +124,11 @@ describe('Board', () => {
     expect(window.location.pathname).toBe('/handoff/1002');
   });
 
-  it('links the patient name for keyboard and new tab use', async () => {
+  it('links the patient name for keyboard and new tab use, at the replay time', async () => {
     const table = await renderBoard();
-    expect(within(table).getByRole('link', { name: 'Doe, Alex' })).toHaveAttribute('href', '/handoff/1001');
+    // The replay time travels in the address (?at=), so a new tab or a shared link opens at the same moment.
+    expect(within(table).getByRole('link', { name: 'Doe, Alex' })).toHaveAttribute('href', `/handoff/1001?at=${encodeURIComponent(config.default_at)}`);
+    expect(new URLSearchParams(window.location.search).get('at')).toBe(config.default_at);
   });
 
   it('gives the clock and persona buttons names that include their visible text', async () => {

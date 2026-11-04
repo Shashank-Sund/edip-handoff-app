@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { ProgressRing, StateBadge } from '@/components/common/badges';
 import { TimeChart } from '@/components/charts/TimeChart';
 import { HelpButton } from '@/components/guide/HelpButton';
-import { clock, dateTime, pct, triggerLabel } from '@/lib/format';
+import { callbackOk, canChange, readbackProblem } from '@/lib/checks';
+import { clinicalReason, clock, dateTime, pct, triggerLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CaseDetail, CaseTemplate, Draft, Persona, Rule } from '@/lib/types';
 
@@ -51,6 +52,7 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
             <span className={cn('text-[11px] font-medium uppercase tracking-wide', r.level === 'stale' ? 'text-sev-watcher' : 'text-sev-unstable')}>{r.level === 'stale' ? 'Stale' : 'Required'}</span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">{r.message}</p>
+          {r.attest_expired && <ExpiredRecheck r={r} />}
           {canEdit && (r.attest_options?.length ?? 0) > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {r.attest_options!.map((o) => (
@@ -61,11 +63,21 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
               ))}
             </div>
           )}
-          {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the element to write it.</p>}
+          {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the item to write it.</p>}
         </li>
       ))}
       {resolved.length > 0 && <li className="px-1 text-xs text-muted-foreground">{resolved.length} resolved by attestation or edit.</li>}
     </ul>
+  );
+}
+
+/** A bedside recheck counts only as long as the vital signs limit for the severity. */
+export function ExpiredRecheck({ r }: { r: Rule }) {
+  const x = r.attest_expired!;
+  return (
+    <p className="mt-1 text-xs text-sev-watcher">
+      Rechecked by {x.by} at {clock(x.at)}. For a {x.severity} patient a recheck counts for {x.limit_min} minutes, so it expired at {clock(x.until)}. Recheck again.
+    </p>
   );
 }
 
@@ -82,9 +94,14 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
   const { draft, workflow: wf } = tpl;
   const canSign = persona.can_sign.includes(template);
   const canAck = persona.can_ack.includes(template);
-  const final = phase !== 'boarding' && tpl.row.status !== 'addendum';
+  const final = !canChange(tpl, phase);
   const blocking = draft.completeness.blocking.length;
-  const needsResign = wf.state !== 'draft' && wf.changed_since_signed;
+  const needsResign = wf.state === 'changed';
+  const unsigned = wf.state === 'draft' || wf.state === 'transferred_unsigned';
+  const why = wf.edited_since_signed && wf.changed_since_signed
+    ? 'It was edited after signing and a newer draft with different content arrived.'
+    : wf.edited_since_signed ? 'An edit or attestation was made after signing.' : 'A newer draft with different content arrived after signing.';
+  const cbBad = callback.trim() !== '' && !callbackOk(callback);
   return (
     <Section
       title={canAck ? 'Handoff status' : 'Sign off'}
@@ -92,7 +109,7 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
       description={`Version ${tpl.row.version}, drafted ${dateTime(tpl.row.as_of)}`}
       action={
         <span className="flex items-center gap-1">
-          <StateBadge state={wf.state} changed={wf.changed_since_signed} />
+          <StateBadge state={wf.state} changed={wf.changed_since_acknowledged} />
           <HelpButton topic={canAck ? 'handoff.ack' : 'handoff.sign'} label="How sign off works" />
         </span>
       }
@@ -116,11 +133,21 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
         {needsResign && (
           <p className="flex items-start gap-2 rounded-lg bg-flag/12 px-3 py-2 text-sm">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-flag" aria-hidden />
-            A newer draft arrived after signing. Review what changed{canSign ? ' and sign again' : ''}.
+            <span>
+              <span className="font-medium">Changed after signing{canSign ? ', sign again' : ''}.</span> {why} {canSign ? 'Review what changed and sign again; the receiver cannot accept until you do.' : 'The receiver cannot accept until the ED signs again.'}
+            </span>
+          </p>
+        )}
+        {wf.state === 'transferred_unsigned' && (
+          <p className="flex items-start gap-2 rounded-lg bg-sev-unstable/10 px-3 py-2 text-sm">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-sev-unstable" aria-hidden />
+            <span>
+              <span className="font-medium">Transferred without sign off.</span> The patient left the ED before this handoff was signed.{canSign ? ' You can still complete and sign it.' : ''}
+            </span>
           </p>
         )}
         <Blockers draft={draft} onAttest={onAttest} busy={busy} canEdit={canSign && !final} />
-        {canSign && !final && (wf.state === 'draft' || needsResign) && (
+        {canSign && !final && (unsigned || needsResign) && (
           <form
             className="space-y-2 border-t pt-4"
             onSubmit={(e) => {
@@ -132,12 +159,13 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
               Your callback number
             </label>
             <div className="flex gap-2">
-              <Input id="callback" value={callback} onChange={(e) => setCallback(e.target.value)} placeholder="x4471" inputMode="tel" className="flex-1" />
-              <Button type="submit" disabled={busy || blocking > 0 || !callback.trim()}>
+              <Input id="callback" value={callback} onChange={(e) => setCallback(e.target.value)} placeholder="x4471" inputMode="tel" className="flex-1" aria-describedby={cbBad ? 'callback-help' : undefined} aria-invalid={cbBad || undefined} />
+              <Button type="submit" disabled={busy || blocking > 0 || !callback.trim() || cbBad}>
                 <PenLine />
-                Sign
+                {needsResign ? 'Sign again' : 'Sign'}
               </Button>
             </div>
+            {cbBad && <p id="callback-help" className="text-xs text-sev-watcher">At least 3 digits, or an extension like x4471.</p>}
             <p className="text-xs text-muted-foreground">Signing as {persona.name}. The receiver sees your name and callback.</p>
           </form>
         )}
@@ -157,10 +185,19 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
   const [readback, setReadback] = useState('');
   const [questions, setQuestions] = useState('');
   const wf = tpl.workflow;
-  if (wf.state === 'draft' || wf.state === 'drafting') {
+  if (wf.state === 'draft' || wf.state === 'drafting' || wf.state === 'transferred_unsigned') {
     return (
       <Section title="Acknowledge" icon={<CheckCheck />} action={<HelpButton topic="handoff.ack" label="How accepting works" />}>
-        <p className="text-sm text-muted-foreground">Waiting for the ED clinician to sign. You can read the draft now; it may still change.</p>
+        <p className="text-sm text-muted-foreground">
+          {wf.state === 'transferred_unsigned' ? 'The patient was transferred without sign off. Waiting for the ED clinician to sign; you can read the draft now.' : 'Waiting for the ED clinician to sign. You can read the draft now; it may still change.'}
+        </p>
+      </Section>
+    );
+  }
+  if (wf.state === 'changed') {
+    return (
+      <Section title="Acknowledge" icon={<CheckCheck />} action={<HelpButton topic="handoff.ack" label="How accepting works" />}>
+        <p className="text-sm text-muted-foreground">Waiting for the ED to sign again: the handoff changed after it was signed. What changed shows the difference.</p>
       </Section>
     );
   }
@@ -174,6 +211,7 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
       </Section>
     );
   }
+  const problem = readbackProblem(readback) ?? (questions.trim().length > 2000 ? 'Keep the questions under 2,000 characters.' : null);
   return (
     <Section title={wf.changed_since_acknowledged ? 'Acknowledge the update' : 'Acknowledge'} icon={<CheckCheck />} description="Read back in your own words: the patient, the key risk and what you will do first." action={<HelpButton topic="handoff.ack" label="How accepting works" />}>
       <form
@@ -192,10 +230,15 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
           aria-label="Read back"
         />
         <Input value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Questions for the sender (optional)" aria-label="Questions for the sender" />
-        <Button type="submit" className="w-full" disabled={busy || readback.trim().length < 10}>
+        <Button type="submit" className="w-full" disabled={busy || problem !== null} aria-describedby={problem ? 'accept-why' : undefined}>
           <CheckCheck />
           Accept handoff
         </Button>
+        {problem && (
+          <p id="accept-why" className="text-xs text-muted-foreground">
+            {problem}
+          </p>
+        )}
       </form>
     </Section>
   );
@@ -203,6 +246,11 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
 
 function show(v: unknown): string {
   if (v == null) return 'none';
+  if (typeof v === 'object' && v && 'value' in v && 'text' in v) {
+    // Illness severity: "<Level> by rule: <reasons>." ahead of the model's text, in clinical words.
+    const t = String((v as { text?: string }).text ?? '').replace(/^((?:Stable|Watcher|Unstable) by rule: )(.*?)\.(?= |$)/, (_, a: string, r: string) => a + r.split('; ').map(clinicalReason).join('; ') + '.');
+    return [(v as { value?: string }).value, t].filter(Boolean).join(': ');
+  }
   if (typeof v === 'string') return v;
   if (typeof v === 'object' && v && 'text' in v) return [(v as { value?: string }).value, (v as { text?: string }).text].filter(Boolean).join(': ');
   if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' && x ? Object.values(x).filter((y) => y != null && typeof y !== 'object').join(' ') : String(x))).join('; ');
@@ -235,7 +283,7 @@ export function ChangesCard({ tpl }: { tpl: CaseTemplate }) {
           )}
           {text.length > 0 && (
             <div>
-              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Redrafted by the model</p>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">{c.since === 'signed' ? 'Text changed since signing' : 'Redrafted by the model'}</p>
               <ul className="space-y-3">
                 {text.slice(0, 5).map((e) => (
                   <li key={e.id} className="text-sm">
@@ -325,11 +373,25 @@ export function LabsCard({ draft }: { draft: Draft }) {
 
 const ACTION: Record<string, string> = { edit: 'Edited', attest: 'Attested', sign: 'Signed', ack: 'Acknowledged' };
 
+/** "Contingency plan" for E25, "Vital signs" for the rule N08: the names clinicians read, not ids. */
+function itemName(draft: Draft, id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  const rule = draft.rules.find((r) => r.rule === id);
+  if (rule) return rule.label;
+  for (const s of draft.sections) for (const e of s.elements) if (e.id === id) return e.label;
+  return id;
+}
+
 export function HistoryCard({ tpl, activity, template }: { tpl: CaseTemplate; activity: CaseDetail['activity']; template: string }) {
   const acts = activity.filter((a) => a.template === template);
   const events = [
     ...tpl.versions.map((v) => ({ at: v.as_of, title: `Version ${v.version}`, detail: `${triggerLabel(v.trigger)}${v.status === 'addendum' ? ', addendum' : v.status === 'final' ? ', final' : ''}`, kind: 'version' })),
-    ...acts.map((a) => ({ at: a.at, title: `${ACTION[a.kind] ?? a.kind} by ${a.by}`, detail: a.detail ? `${a.detail}` : `version ${a.version}`, kind: a.kind })),
+    ...acts.map((a) => ({
+      at: a.at,
+      title: `${a.restore ? 'Model text restored' : ACTION[a.kind] ?? a.kind} by ${a.by}`,
+      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : itemName(tpl.draft, a.detail) ?? `version ${a.version}`,
+      kind: a.kind,
+    })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
   return (
     <Section title="History" icon={<History />} action={<HelpButton topic="handoff.context" />} description={`${tpl.versions.length} version${tpl.versions.length > 1 ? 's' : ''} drafted by ${tpl.row.model}`}>

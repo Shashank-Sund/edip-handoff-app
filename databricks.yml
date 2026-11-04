@@ -11,7 +11,7 @@ bundle:
 
 variables:
   catalog:
-    description: Unity Catalog catalog for bronze, silver, gold and the synthetic truth (created by setup if missing)
+    description: Unity Catalog catalog for bronze, silver, gold and the synthetic truth (created by setup if missing); letters, digits and underscores only, no hyphens
     default: edip
   lakebase_project:
     description: Lakebase Autoscaling project id (lowercase letters, digits and hyphens)

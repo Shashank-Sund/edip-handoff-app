@@ -1,5 +1,6 @@
 import { Cog, Database, Sparkles } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { SectionBadge } from '@/components/common/SectionBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Layout } from '@/components/layout/Layout';
 import { Pill } from '@/components/common/badges';
@@ -28,7 +29,7 @@ function TemplateView({ t }: { t: Def }) {
         {t.sections.map((s) => (
           <Card key={s.id} className="overflow-hidden">
             <div className="flex items-center gap-2.5 border-b bg-muted/30 px-4 py-2.5 sm:px-5">
-              <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-[11px] font-bold text-primary">{s.id}</span>
+              <SectionBadge id={s.id} label={s.label} />
               <h2 className="text-sm font-semibold">{s.label}</h2>
             </div>
             <ul className="divide-y">
@@ -89,8 +90,8 @@ function TemplateView({ t }: { t: Def }) {
 }
 
 export default function Templates() {
-  const { data, error } = useLoad(() => api.templates() as Promise<Def[]>, []);
-  if (error && !data) return <Layout title="Templates"><ErrorState message={error} /></Layout>;
+  const { data, error, retry } = useLoad(() => api.templates() as Promise<Def[]>, []);
+  if (error && !data) return <Layout title="Templates"><ErrorState message={error} onRetry={retry} /></Layout>;
   if (!data) return <Layout title="Templates"><PageSkeleton /></Layout>;
   return (
     <Layout title="Templates" crumbs="31 shared elements, three templates" help="templates">

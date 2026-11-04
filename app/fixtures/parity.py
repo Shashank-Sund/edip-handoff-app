@@ -170,7 +170,10 @@ def scenarios(c, main):
         body={"element": "E25", "text": "  If SBP under 90 or HR over 130, call the ED  "})
     if with_items:
         rec(f"edit items {with_items['id']}", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn",
-            body={"element": with_items["id"], "items": [{"text": "Repeat lactate", "owner": "RN", "due": "18:00"}, {"owner": "MD"}]})
+            body={"element": with_items["id"], "items": [{"text": "Repeat lactate", "owner": "RN", "due": "18:00"},
+                                                         {"text": " Call family ", "owner": " ", "extra": 1}]})
+        rec(f"edit items without text (422) {with_items['id']}", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn",
+            body={"element": with_items["id"], "items": [{"text": "Repeat lactate"}, {"owner": "MD"}]})
     blocking = d["completeness"]["blocking"]
     for rule in d["rules"]:
         if rule["rule"] in blocking:
@@ -244,7 +247,172 @@ def scenarios(c, main):
     rec("reset again", "POST", "/api/demo/reset")
     rec("after reset: case", "GET", url, persona="ed-rn")
     rec("after reset: board", "GET", "/api/board", persona="ed-rn")
+    rec("unknown api path (404)", "GET", "/api/nope")
+    workflow_scenarios(rec, ds, default, boarding, units, end)
     return rec.items
+
+
+def resolve(rec, url, template, persona, at, label):
+    """Attest or write every item that blocks sign off, as the clinician would."""
+    _, case = rec(f"{label}: case", "GET", url, at=at, persona=persona)
+    if "templates" not in case:
+        return case
+    d = case["templates"][template]["draft"]
+    for rule in d["rules"]:
+        if rule["rule"] in d["completeness"]["blocking"]:
+            opts = rule.get("attest_options") or []
+            if opts and rule["status"] != "missing":
+                rec(f"{label}: attest {rule['rule']}", "POST", f"{url}/{template}/attest", at=at, persona=persona,
+                    body={"rule": rule["rule"], "option": opts[0]})
+            else:
+                rec(f"{label}: edit for {rule['rule']}", "POST", f"{url}/{template}/edit", at=at, persona=persona,
+                    body={"element": rule["element"], "text": "Written by the clinician"})
+    return case
+
+
+def workflow_scenarios(rec, ds, default, boarding, units, end):
+    """Sign again after a change, Restore, read back and callback rules, validation sentences, the replay clock,
+    transfer without sign off, and a stale vitals recheck that expires."""
+    iso = lambda t: t.isoformat()  # noqa: E731
+    rec("wf reset", "POST", "/api/demo/reset")
+    p = boarding[1] if len(boarding) > 1 else boarding[0]
+    url = f"/api/handoffs/{p['csn']}"
+    recv = next(u for u in units if u["unit"] == p["destination"]["pending_unit"] and u["facility"] == p["facility"])
+    first = resolve(rec, url, "sbar_nurse", "ed-rn", None, "wf")
+    attestable = next((r for r in first["templates"]["sbar_nurse"]["draft"]["rules"]
+                       if r.get("attest_options") and r["status"] == "attest"), None)
+    for name, body in (("sign callback x1 (409)", {"callback": "x1"}), ("sign callback 12 (409)", {"callback": "12"}),
+                       ("sign callback too long (409)", {"callback": "5" * 41}), ("sign callback missing (422)", {}),
+                       ("sign callback not text (422)", {"callback": 4471}), ("sign callback null (422)", {"callback": None}),
+                       ("sign body a list (422)", [1]), ("sign callback ext 12", {"callback": "ext. 12"})):
+        rec(f"wf {name}", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body=body)
+    rec("wf sign", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "(617) 555-0142"})
+    rec("wf edit after signing", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn", body={"element": "E25", "text": "Call the ED if SBP under 90"})
+    rec("wf receiver blocked after the change (409)", "POST", f"{url}/sbar_nurse/ack", persona=recv["id"],
+        body={"readback": "Watcher, will recheck vitals on arrival"})
+    rec("wf case changed: receiver", "GET", url, persona=recv["id"])
+    rec("wf board changed: ed", "GET", "/api/board", persona="ed-rn")
+    rec("wf board changed: receiver", "GET", "/api/board", persona=recv["id"])
+    for name, body in (("empty text (409)", {"element": "E25", "text": ""}), ("blank text (409)", {"element": "E25", "text": "   "}),
+                       ("no text (409)", {"element": "E25"}), ("empty items (409)", {"element": "E25", "items": []}),
+                       ("blank item (409)", {"element": "E25", "items": [{"text": " "}]}),
+                       ("too long (409)", {"element": "E25", "text": "a" * 2001}),
+                       ("item text not text (422)", {"element": "E25", "items": [{"text": 5}]}),
+                       ("items not a list (422)", {"element": "E25", "items": "x"}),
+                       ("restore not a boolean (422)", {"element": "E25", "restore": "yes"}),
+                       ("severity (409)", {"element": "E07", "text": "stable"}),
+                       ("restore with no edit (409)", {"element": "E06", "restore": True}),
+                       ("restore", {"element": "E25", "restore": True}),
+                       ("restore again (409)", {"element": "E25", "restore": True})):
+        rec(f"wf edit {name}", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn", body=body)
+    rec("wf sign again", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    for name, body in (("two words (409)", {"readback": "Watcher patient"}), ("one letter (409)", {"readback": "aaaa aaaa aaaa aaaa"}),
+                       ("few letters (409)", {"readback": "ok 12 34 56 78 90"}), ("too long (409)", {"readback": "Watcher, recheck " * 130}),
+                       ("questions too long (409)", {"readback": "Watcher, will recheck vitals", "questions": "q" * 2001}),
+                       ("readback not text (422)", {"readback": ["a"]}), ("missing (422)", {"questions": "x"})):
+        rec(f"wf ack {name}", "POST", f"{url}/sbar_nurse/ack", persona=recv["id"], body=body)
+    rec("wf ack", "POST", f"{url}/sbar_nurse/ack", persona=recv["id"], body={"readback": "Watcher, will recheck vitals on arrival"})
+    if attestable:
+        rec("wf attest after acknowledging", "POST", f"{url}/sbar_nurse/attest", persona="ed-rn",
+            body={"rule": attestable["rule"], "option": attestable["attest_options"][0]})
+    rec("wf case after attest", "GET", url, persona="ed-rn")
+    rec("wf sign a third time", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    rec("wf board to acknowledge again", "GET", "/api/board", persona=recv["id"])
+    rec("wf earlier action (409)", "POST", f"{url}/sbar_nurse/edit", at=iso(default - timedelta(minutes=5)), persona="ed-rn",
+        body={"element": "E25", "text": "Earlier"})
+    rec("wf earlier ack (409)", "POST", f"{url}/sbar_nurse/ack", at=iso(default - timedelta(minutes=5)), persona=recv["id"],
+        body={"readback": "Watcher, will recheck vitals on arrival"})
+    # Later versions of the same patient: a change of clinical content needs a new signature, location alone does not.
+    for x in [r for r in ds.rows_at(p["csn"], end) if r["at"] > default and r["template"] == "sbar_nurse"][:4]:
+        rec(f"wf later v{x['version']} {x['trigger']}", "GET", url, at=iso(x["at"]), persona=recv["id"])
+        rec(f"wf later v{x['version']} board", "GET", "/api/board", at=iso(x["at"]), persona="ed-rn")
+    enc = ds.enc[p["csn"]]
+    if enc["ed_departure_ts"]:
+        t = iso(enc["ed_departure_ts"] + timedelta(minutes=10))
+        rec("wf after transfer: case", "GET", url, at=t, persona="ed-rn")
+        rec("wf after transfer: ack", "POST", f"{url}/sbar_nurse/ack", at=t, persona=recv["id"],
+            body={"readback": "Arrived, vitals rechecked, all as handed off"})
+        resolve(rec, url, "sbar_nurse", "ed-rn", t, "wf after transfer")
+        rec("wf after transfer: sign", "POST", f"{url}/sbar_nurse/sign", at=t, persona="ed-rn", body={"callback": "x4471"})
+        rec("wf after transfer: sign again (409 when final)", "POST", f"{url}/ipass_physician/sign", at=t, persona="ed-md",
+            body={"callback": "x2210"})
+        rec("wf after transfer: ack", "POST", f"{url}/sbar_nurse/ack", at=t, persona=recv["id"],
+            body={"readback": "Arrived, vitals rechecked, all as handed off"})
+
+    # A patient who left the ED with no sign off at all: the ED can still sign it.
+    rec("wf reset 2", "POST", "/api/demo/reset")
+    left = sorted((e for e in ds.enc.values() if e["ed_departure_ts"] and e["admit_decision_ts"] and ds.versions.get(e["csn"])
+                   and default < e["ed_departure_ts"] < end - timedelta(hours=1)), key=lambda e: e["ed_departure_ts"])
+    if left:
+        e = left[0]
+        t = iso(e["ed_departure_ts"] + timedelta(minutes=5))
+        u = f"/api/handoffs/{e['csn']}"
+        rec("unsigned transfer: board", "GET", "/api/board", at=t, persona="ed-rn")
+        rec("unsigned transfer: board physician", "GET", "/api/board", at=t, persona="ed-md")
+        rec("unsigned transfer: analytics", "GET", "/api/analytics", at=t)
+        _, c = rec("unsigned transfer: case", "GET", u, at=t, persona="ed-rn")
+        resolve(rec, u, "sbar_nurse", "ed-rn", t, "unsigned transfer")
+        rec("unsigned transfer: sign", "POST", f"{u}/sbar_nurse/sign", at=t, persona="ed-rn", body={"callback": "x4471"})
+        rec("unsigned transfer: sign again (409)", "POST", f"{u}/sbar_nurse/edit", at=t, persona="ed-rn",
+            body={"element": "E25", "text": "After signing"})
+        if "summary" in c:
+            dest = c["summary"]["destination"]
+            r2 = next((x for x in units if x["unit"] == dest["pending_unit"] and x["facility"] == e["facility"]), None)
+            if r2:
+                rec("unsigned transfer: ack", "POST", f"{u}/sbar_nurse/ack", at=t, persona=r2["id"],
+                    body={"readback": "Arrived, vitals rechecked, all as handed off"})
+        rec("unsigned transfer: analytics after", "GET", "/api/analytics", at=t)
+
+    # A stale vitals recheck counts only within the rule's limit for the patient's severity.
+    rec("wf reset 3", "POST", "/api/demo/reset")
+    stale = None
+    for csn, rows in ds.versions.items():
+        e = ds.enc[csn]
+        for i, r in enumerate(rows):
+            if r["template"] != "sbar_nurse" or not any(x["rule"] == "N08" and x["status"] == "stale" for x in r["draft"]["rules"]):
+                continue
+            nxt = next((x for x in rows[i + 1:] if x["template"] == "sbar_nurse"), None)
+            stop = min([x for x in (nxt and nxt["at"], e["ed_departure_ts"]) if x] or [end])
+            if stop - r["at"] > timedelta(minutes=75) and r["status"] != "retracted":
+                stale = (csn, r, stop)
+                break
+        if stale:
+            break
+    if stale:
+        csn, r, stop = stale
+        u = f"/api/handoffs/{csn}"
+        t0 = r["at"] + timedelta(minutes=1)
+        rec("stale: case", "GET", u, at=iso(t0), persona="ed-rn")
+        rec("stale: recheck", "POST", f"{u}/sbar_nurse/attest", at=iso(t0), persona="ed-rn",
+            body={"rule": "N08", "option": "Rechecked at bedside, unchanged"})
+        for m in (14, 16, 29, 31, 59, 61, 74):
+            if t0 + timedelta(minutes=m) < stop:
+                rec(f"stale: case {m} min after the recheck", "GET", u, at=iso(t0 + timedelta(minutes=m)), persona="ed-rn")
+                rec(f"stale: board {m} min after", "GET", "/api/board", at=iso(t0 + timedelta(minutes=m)), persona="ed-rn")
+        rec("stale: sign after expiry (409 when expired)", "POST", f"{u}/sbar_nurse/sign", at=iso(t0 + timedelta(minutes=74)),
+            persona="ed-rn", body={"callback": "x4471"})
+    # I-PASS high risk branch: a watcher or unstable patient has one contingency rule, and no "Stable" attestation.
+    rec("wf reset 4", "POST", "/api/demo/reset")
+    branch = None
+    for csn, rows in ds.versions.items():
+        e = ds.enc[csn]
+        for i, r in enumerate(rows):
+            st = {x["rule"]: x["status"] for x in r["draft"]["rules"]} if r["template"] == "ipass_physician" else {}
+            if st.get("P10") == "attest" and "P11" in st and r["status"] != "retracted" and (
+                    not e["ed_departure_ts"] or e["ed_departure_ts"] > r["at"] + timedelta(minutes=2)):
+                branch = (csn, r)
+                break
+        if branch:
+            break
+    if branch:
+        csn, r = branch
+        u, t = f"/api/handoffs/{csn}", iso(r["at"] + timedelta(minutes=1))
+        rec("branch: case", "GET", u, at=t, persona="ed-md")
+        rec("branch: attest stable (409)", "POST", f"{u}/ipass_physician/attest", at=t, persona="ed-md",
+            body={"rule": "P10", "option": "Stable, nothing anticipated"})
+        rec("branch: write the plan", "POST", f"{u}/ipass_physician/edit", at=t, persona="ed-md",
+            body={"element": "E25", "text": "Watcher: if MAP under 65, bolus and call the ICU"})
+    rec("wf reset end", "POST", "/api/demo/reset")
 
 
 def main():

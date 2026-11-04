@@ -11,7 +11,7 @@
 import { Dataset, type Fixtures } from './data';
 import { ActionError, Views } from './logic';
 import { demoPersonas } from './personas';
-import { iso, parseTs } from './py';
+import { iso, parseTs, TZ } from './py';
 import { MemoryStore } from './workflow';
 
 export interface Request {
@@ -42,16 +42,36 @@ const TEMPLATES = [
 
 /** Request bodies (main.py's pydantic models): required and optional fields, as model_dump() returns them. */
 const BODIES: Record<string, [string[], string[]]> = {
-  edit: [['element'], ['text', 'items']],
+  edit: [['element'], ['text', 'items', 'restore']],
   attest: [['rule', 'option'], []],
   sign: [['callback'], []],
   ack: [['readback'], ['questions']],
 };
 
+/** main.py FIELD: how the validation sentences name each field. */
+const FIELD: Record<string, string> = {
+  element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation',
+  callback: 'callback number', readback: 'read back', questions: 'questions',
+};
+const UNREADABLE = 'The request could not be read. Reload the page and try again.';
+const missing = (k: string) => `The request is missing the ${FIELD[k] ?? k}.`;
+const invalid = (k: string) => `The request has a value the app cannot use for the ${FIELD[k] ?? k}.`;
+
+const isStr = (v: unknown) => typeof v === 'string';
+const optStr = (v: unknown) => v === null || v === undefined || typeof v === 'string';
+
+/** main.Item: text a string, owner and due a string or null; other keys dropped. */
+function item(v: unknown): any {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  if (!isStr(o.text) || !optStr(o.owner) || !optStr(o.due)) return null;
+  return { text: o.text, owner: o.owner ?? null, due: o.due ?? null };
+}
+
 export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { clock?: string | null } = {}) {
   const ds = new Dataset(fixtures);
   const store = new MemoryStore();
-  const views = new Views(ds, store);
+  const views = new Views(ds, store, fixtures.templates);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
 
@@ -73,18 +93,31 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
     return Math.min(Math.max(t, ds.start), ds.end);
   }
 
+  /** Validation as pydantic does it (strict strings and booleans), with main.plain_validation's sentences. */
   function dump(kind: string, body: any): any {
     const [required, optional] = BODIES[kind];
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(422, 'The request body is not valid.');
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(422, UNREADABLE);
     const out: any = {};
     for (const k of required) {
-      if (typeof body[k] !== 'string') throw new HttpError(422, `The request body needs ${k}.`);
+      if (!(k in body)) throw new HttpError(422, missing(k));
+      if (!isStr(body[k])) throw new HttpError(422, invalid(k));
       out[k] = body[k];
     }
     for (const k of optional) {
       const v = body[k] ?? null;
-      if (k === 'items' ? v !== null && !(Array.isArray(v) && v.every((i) => typeof i === 'object' && i !== null && !Array.isArray(i)))
-        : v !== null && typeof v !== 'string') throw new HttpError(422, `The request body has an invalid ${k}.`);
+      if (k === 'items') {
+        if (v !== null) {
+          if (!Array.isArray(v)) throw new HttpError(422, invalid(k));
+          const items = v.map(item);
+          if (items.some((i) => i === null)) throw new HttpError(422, invalid(k));
+          out[k] = items;
+          continue;
+        }
+      } else if (k === 'restore') {
+        if (v !== null && typeof v !== 'boolean') throw new HttpError(422, invalid(k));
+      } else if (!optStr(v)) {
+        throw new HttpError(422, invalid(k));
+      }
       out[k] = v;
     }
     return out;
@@ -102,7 +135,7 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
         mode: 'mock', clock: 'replay', demo_personas: true, ready: !ds.error, detail: ds.error, source: ds.source,
         drafts_from: ds.meta.drafts_from ?? null, models: ds.meta.models ?? [], window: { start: iso(ds.start), end: iso(ds.end) },
         default_at: iso(defaultAt), facilities: ds.meta.facilities ?? [], units: ds.meta.units ?? [], personas, store: store.kind,
-        templates: TEMPLATES,
+        timezone: TZ, templates: TEMPLATES,
       };
     }
     if (key === 'templates') {

@@ -1,5 +1,5 @@
 export type Severity = 'stable' | 'watcher' | 'unstable';
-export type WorkflowState = 'drafting' | 'draft' | 'signed' | 'acknowledged';
+export type WorkflowState = 'drafting' | 'draft' | 'signed' | 'changed' | 'acknowledged' | 'transferred_unsigned';
 export type Phase = 'boarding' | 'arrived' | 'canceled';
 
 export interface Persona {
@@ -44,6 +44,11 @@ export interface AppConfig {
   personas: Persona[];
   templates: TemplateInfo[];
   store: string;
+  /** False until the data is loaded (live mode before setup finishes); detail says why. */
+  ready?: boolean;
+  detail?: string | null;
+  /** The facilities' time zone (IANA name); times are shown in it. */
+  timezone?: string;
 }
 
 export interface Workflow {
@@ -51,7 +56,11 @@ export interface Workflow {
   version?: number;
   signed?: { by: string; role: string; callback?: string; at: string; version: number };
   acknowledged?: { by: string; at: string; version: number; readback?: string; questions?: string | null };
+  /** A newer version whose clinical content differs from the signed one. */
   changed_since_signed?: boolean;
+  /** An edit or attestation after the signature. */
+  edited_since_signed?: boolean;
+  /** Signed again after the receiver had accepted an earlier signature. */
   changed_since_acknowledged?: boolean;
 }
 
@@ -97,7 +106,7 @@ export interface Board {
     unstable: number;
     to_sign: number | null;
     to_acknowledge: number | null;
-    blocking: number;
+    blocking: number | null;
     arrived: number;
   };
   rows: CaseSummary[];
@@ -113,6 +122,8 @@ export interface Rule {
   evidence?: string[];
   attest_options?: string[];
   resolution?: { kind: 'attested' | 'edited'; option?: string; by: string; at?: string; version?: number };
+  /** A bedside recheck older than the rule's limit for the severity: it no longer counts. */
+  attest_expired?: { by: string; at: string; until: string; limit_min: number; severity: string };
 }
 
 export interface NarrativeItem {
@@ -206,7 +217,7 @@ export interface CaseTemplate {
 export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
-  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string }[];
+  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean }[];
 }
 
 export interface Analytics {
@@ -219,6 +230,7 @@ export interface Analytics {
   blocking_at_transfer: { label: string; n: number }[];
   severity_at_transfer: Record<string, number>;
   signed_before_transfer: number;
+  transferred_without_sign_off: number;
   drafts: number;
   model_calls: number;
   addenda: number;

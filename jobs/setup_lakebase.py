@@ -13,6 +13,7 @@ but no access to synced tables, which belong to the identity that created them. 
 grants the app SELECT on schema gold. The app creates its own tables (schema app) when it starts.
 """
 import argparse
+import re
 import time
 
 SYNCED = [("encounter_state_pg", "silver.encounter_state", ["csn"]),
@@ -76,6 +77,8 @@ def main():
     ap.add_argument("--database", default="databricks_postgres")
     ap.add_argument("--delete", action="store_true", help="delete the synced tables (before bundle destroy) and exit")
     a = ap.parse_args()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", a.catalog):     # same check as setup/load_bronze.check_catalog
+        raise SystemExit(f"Catalog name {a.catalog!r} cannot be used: use only letters, digits and underscores.")
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.errors import NotFound
     from databricks.sdk.service import postgres as pg

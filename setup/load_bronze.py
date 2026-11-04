@@ -18,9 +18,22 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import sys
 import time
 from pathlib import Path
+
+CATALOG_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def check_catalog(name: str) -> str:
+    """The setup, the pipeline and the handoff job write the catalog name into SQL unquoted, so it must be a plain
+    identifier: letters, digits and underscores, not starting with a digit (a hyphen breaks the SQL)."""
+    if not CATALOG_NAME.fullmatch(name or ""):
+        raise SystemExit(f"Catalog name {name!r} cannot be used: use only letters, digits and underscores, not starting "
+                         f"with a digit (for example {re.sub(r'[^A-Za-z0-9_]', '_', name or 'edip')!r}). Deploy again with "
+                         f"--var catalog=<that name>.")
+    return name
 
 
 FHIR_DDL = """CREATE TABLE IF NOT EXISTS {cat}.bronze.redox_fhir_events (
@@ -82,6 +95,7 @@ def spark_type(t):
 
 
 def load(world: Path, cat: str, sql, put, snapshot="latest", fhir="batch") -> int:
+    check_catalog(cat)
     """sql(statement, quiet=False) -> rows; put(remote_path, data: bytes). Returns the number of count mismatches."""
     vol = f"/Volumes/{cat}/bronze/landing"
     print("schemas and volume")
@@ -163,6 +177,7 @@ def main():
     ap.add_argument("--fhir", choices=["batch", "zerobus"], default="batch",
                     help="batch: load the FHIR events now; zerobus: leave the table empty for the replayer")
     a = ap.parse_args()
+    check_catalog(a.catalog)
     from databricks.sdk import WorkspaceClient
     w = WorkspaceClient()
     sql = Sql(w, a.warehouse)

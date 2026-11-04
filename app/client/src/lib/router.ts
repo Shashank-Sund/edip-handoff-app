@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 
+/** `to` with the replay time of the current address (?at=), so in app links keep the clock. */
+export function withAt(to: string): string {
+  const at = new URLSearchParams(window.location.search).get('at');
+  if (!at || !to.startsWith('/') || /[?&]at=/.test(to)) return to;
+  const [path, hash] = to.split('#');
+  return `${path}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(at)}${hash !== undefined ? `#${hash}` : ''}`;
+}
+
 /** A minimal history router: five routes do not need a library. */
 export function navigate(to: string) {
+  to = withAt(to);
   if (to === window.location.pathname + window.location.search) return;
   window.history.pushState({}, '', to);
   window.dispatchEvent(new PopStateEvent('popstate'));
@@ -33,7 +42,7 @@ export function match(path: string, pattern: string): Record<string, string> | n
 /** Click handler for in app links that keeps modifier clicks (new tab) working. */
 export function linkProps(to: string) {
   return {
-    href: to,
+    href: withAt(to),
     onClick: (e: React.MouseEvent) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
       e.preventDefault();

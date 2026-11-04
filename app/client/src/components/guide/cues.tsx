@@ -86,6 +86,15 @@ export function GuideLink({ to, children }: { to: string; children: ReactNode })
   );
 }
 
+/** A link to another page of the app, such as the Templates page. */
+export function PageLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <a {...linkProps(to)} className="font-medium text-primary underline-offset-4 hover:underline">
+      {children}
+    </a>
+  );
+}
+
 // ------------------------------------------------------------------------------------ layout helpers
 
 export function Terms({ items }: { items: [ReactNode, ReactNode][] }) {

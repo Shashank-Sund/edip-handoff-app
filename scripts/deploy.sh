@@ -32,6 +32,8 @@ vars="$(databricks bundle validate -t "$target" "${extra[@]+"${extra[@]}"}" -o j
   fail "the bundle does not validate (see the message above). Check the target name and the --var flags."
 var() { echo "$vars" | python3 -c 'import json,sys; print(json.load(sys.stdin)["variables"][sys.argv[1]]["value"])' "$1"; }
 catalog="$(var catalog)"; model="$(var model)"; app="$(var app_name)"
+[[ "$catalog" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+  fail "the catalog name $catalog cannot be used: only letters, digits and underscores (for example ${catalog//[^A-Za-z0-9_]/_}). Re-run with --var catalog=<that name>."
 databricks serving-endpoints get "$model" >/dev/null 2>&1 ||
   fail "the model endpoint $model is not in this workspace (Serving lists the ones you have). Re-run with --var model=<a chat endpoint from Serving>."
 echo "== target $target as $me: catalog $catalog, app $app, model $model"

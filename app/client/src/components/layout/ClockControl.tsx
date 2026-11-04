@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { CalendarClock, ChevronLeft, ChevronRight, Pause, Play, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WithTooltip } from '@/components/ui/tooltip';
 import { useApp } from '@/hooks/useApp';
 import { api } from '@/lib/api';
-import { clock, day } from '@/lib/format';
+import { clock, day, facilityDays, onDay, timeZoneName } from '@/lib/format';
 import { HelpButton } from '@/components/guide/HelpButton';
 
 const HOUR = 3600000;
@@ -12,6 +13,7 @@ const HOUR = 3600000;
 /** Replay clock: the mock data is a reference week, so the app can be viewed at any moment of it. */
 export function ClockControl() {
   const { config, at, setAt, playing, setPlaying, bump } = useApp();
+  const [confirm, setConfirm] = useState(false);
   if (config.clock === 'live') {
     return (
       <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
@@ -24,8 +26,8 @@ export function ClockControl() {
   const end = new Date(config.window.end).getTime();
   const now = new Date(at).getTime();
   const shift = (h: number) => setAt(new Date(now + h * HOUR).toISOString());
-  const days: number[] = [];
-  for (let t = start; t < end; t += 24 * HOUR) days.push(t);
+  // Calendar days at the facility, midnight to midnight in its time zone (23 or 25 hours on a clock change).
+  const days = facilityDays(config.window.start, config.window.end);
   return (
     <div className="flex items-center gap-1">
       <WithTooltip label="Back 1 hour">
@@ -48,7 +50,7 @@ export function ClockControl() {
           <div>
             <p className="text-sm font-medium">Replay the reference week</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              The board, handoffs and analytics show the hospital as it was at this time. Facility time (Eastern).
+              The board, handoffs and analytics show the hospital as it was at this time. Facility time ({timeZoneName()}).
             </p>
           </div>
           <input
@@ -62,36 +64,56 @@ export function ClockControl() {
             aria-label="Replay time"
           />
           <div className="grid grid-cols-4 gap-1.5">
-            {days.map((t) => (
-              <Button
-                key={t}
-                variant={now >= t && now < t + 24 * HOUR ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-7 px-1 text-xs"
-                onClick={() => setAt(new Date(t + (now - start) % (24 * HOUR)).toISOString())}
-              >
-                {day(new Date(t).toISOString()).replace(/,.*/, '')}
-              </Button>
-            ))}
+            {days.map((d) => {
+              const today = now >= d.start && now < d.end;
+              return (
+                <Button
+                  key={d.start}
+                  variant={today ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-1 text-xs"
+                  aria-pressed={today}
+                  onClick={() => setAt(onDay(at, d))}
+                >
+                  {d.label}
+                </Button>
+              );
+            })}
           </div>
           <div className="flex items-center justify-between gap-2 border-t pt-3">
             <Button variant="ghost" size="sm" onClick={() => setAt(config.default_at)}>
               Busiest hour
             </Button>
-            {config.mode === 'mock' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  await api.reset();
-                  bump();
-                }}
-              >
+            {config.mode === 'mock' && !confirm && (
+              <Button variant="ghost" size="sm" onClick={() => setConfirm(true)}>
                 <RotateCcw />
-                Clear my actions
+                Clear all demo actions
               </Button>
             )}
           </div>
+          {config.mode === 'mock' && confirm && (
+            <div role="alertdialog" aria-label="Clear all demo actions" className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-xs">
+                Clear every edit, attestation, sign off and read back in this demo{__STATIC_DEMO__ ? '' : ', for everyone using it'}? This cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirm(false)} autoFocus>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    await api.reset();
+                    setConfirm(false);
+                    bump();
+                  }}
+                >
+                  Clear all
+                </Button>
+              </div>
+            </div>
+          )}
         </PopoverContent>
       </Popover>
       <WithTooltip label="Forward 1 hour">

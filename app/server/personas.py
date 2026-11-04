@@ -43,3 +43,52 @@ def sees(person: dict, facility: str | None, dest_unit: str | None) -> bool:
     if person["role"] != "unit_nurse":
         return True
     return dest_unit == person["unit"] and (person.get("facility") in (None, facility))
+
+
+# ------------------------------------------------------------------------------------------------ role map
+FIXED_IDS = ("ed-rn", "ed-md", "hosp-md", "viewer")
+
+
+def unit_id(facility: str, code: str) -> str:
+    return f"unit-{facility}-{code}".lower()
+
+
+def parse_role_map(raw: str | None) -> tuple[dict[str, str], list[str]]:
+    """EDIP_ROLE_MAP as {lowercased email: persona id}, and the problems found in it (logged at start up).
+    Emails match without regard to case. A broken map gives everyone the read only viewer role."""
+    import json
+
+    problems: list[str] = []
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError as exc:
+        return {}, [f"EDIP_ROLE_MAP is not valid JSON ({exc}); everyone gets the read only viewer role"]
+    if not isinstance(data, dict):
+        return {}, ["EDIP_ROLE_MAP must be a JSON object of email to persona id; everyone gets the read only viewer role"]
+    out: dict[str, str] = {}
+    for email, pid in data.items():
+        if not isinstance(pid, str) or not pid.strip():
+            problems.append(f"EDIP_ROLE_MAP: the persona for {email} is not a persona id; they get the viewer role")
+            continue
+        key, pid = email.strip().lower(), pid.strip()
+        if key in out and out[key] != pid:
+            problems.append(f"EDIP_ROLE_MAP: {email} is listed twice with different personas; using {pid}")
+        if pid not in FIXED_IDS and not (pid.startswith("unit-") and pid.count("-") >= 2):
+            problems.append(f"EDIP_ROLE_MAP: {email} maps to {pid}, which is not a persona id (see app/README.md); "
+                            f"they get the viewer role")
+        out[key] = pid
+    return out, problems
+
+
+def mapped_units(role_map: dict[str, str], known: set[str]) -> list[dict]:
+    """Receiving units named in the role map that the data does not list (no patients bound there yet), so their
+    nurses keep their role. The persona id is unit-<facility>-<unit code>, lowercased."""
+    out, seen = [], set(known)
+    for pid in role_map.values():
+        if pid.startswith("unit-") and pid not in seen:
+            fac, _, code = pid[len("unit-"):].partition("-")
+            if fac and code:
+                seen.add(pid)
+                out.append({"dept_id": pid, "facility": fac.upper(), "code": code.upper(), "name": f"{fac.upper()} {code.upper()}",
+                            "level": "", "beds": 0})
+    return out

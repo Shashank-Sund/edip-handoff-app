@@ -65,6 +65,17 @@ export function strip(s: string): string {
   return s.replace(STRIP, '');
 }
 
+/** str.split() with no argument: runs of str.isspace() characters, no empty parts. */
+const SPLIT = new RegExp(`[${PY_WS}]+`);
+export function pySplit(s: string): string[] {
+  return s.split(SPLIT).filter((x) => x !== '');
+}
+
+/** The characters of s that str.isalpha() accepts (Unicode letters). */
+export function letters(s: string): string[] {
+  return s.match(/\p{L}/gu) ?? [];
+}
+
 /** len(str): code points, not UTF-16 units. */
 export function pyLen(s: string): number {
   return [...s].length;
