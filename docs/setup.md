@@ -108,14 +108,23 @@ Open the repo in Genie Code, Claude Code or similar and say "deploy this app". `
 | `population` | `synthea` | `synthea`: the committed Synthea population (the reference dataset); `standin`: the built in population |
 | `drafts` | `reference` | `reference`: load the handoffs shipped in `ai/reference/` when they match (minutes); `model`: the model writes every handoff (30 to 75 minutes) |
 | `fhir_mode` | `batch` | `batch`: load FHIR events during setup; `zerobus`: stream them yourself ([zerobus.md](zerobus.md)) |
+| `role_map` | `{}` | The app's `EDIP_ROLE_MAP`: a JSON map of signed in email to persona id ([app/README.md](../app/README.md)), used when `EDIP_DEMO_PERSONAS` is `false` |
 
 Pass them per command (`--var model=databricks-claude-sonnet-5-5`) or set them per target in `databricks.yml`. The `cleanroom` target is an example of a second, independent copy in the same workspace.
+
+`role_map` holds staff emails, so keep it out of `databricks.yml` and git. Put it in `.databricks/bundle/<target>/variable-overrides.json`, which git ignores and every `databricks bundle` command (and `scripts/deploy.sh`) reads for that target:
+
+```json
+{"role_map": "{\"rn@example.org\": \"ed-rn\", \"md@example.org\": \"ed-md\", \"micu@example.org\": \"unit-sgh-micu\"}"}
+```
+
+Or set it for one terminal: `export BUNDLE_VAR_role_map='{"rn@example.org": "ed-rn"}'`. The CLI's `--var` flag splits its value at commas and refuses double quotes, so it cannot carry a JSON map. Run `databricks bundle deploy`, then `databricks bundle run edip_app` (or `scripts/deploy.sh`) after any change. Anyone who can view the app's settings in the workspace can read the map.
 
 App settings live in `databricks.yml` under the app's `config.env`:
 
 - `EDIP_SYNTHETIC_DATA`: `true` for this synthetic data. It is what allows the replay clock and demo personas; before any real patient data, follow [Moving to real data](#moving-to-real-data).
 - `EDIP_CLOCK_MODE`: `replay` shows the synthetic week with a clock you can move; `live` uses the current time.
-- `EDIP_DEMO_PERSONAS`: `true` lets anyone switch roles. `false` maps signed in users to roles with `EDIP_ROLE_MAP`; anyone not in the map can only read.
+- `EDIP_DEMO_PERSONAS`: `true` lets anyone switch roles (synthetic data only). `false` maps signed in users to roles with `EDIP_ROLE_MAP` (the `role_map` variable above); anyone not in the map can only read.
 
 Every app setting, and what changes with real data: [Moving to real data](#moving-to-real-data), step 2.
 
@@ -125,6 +134,7 @@ Every app setting, and what changes with real data: [Moving to real data](#movin
 - **Redraft handoffs** (after changing a template or the model): delete the rows in `gold.handoff_draft`, then run the job `edip-handoff-generator-dev` (its `drafts` parameter is `model`; `workers` sets how many model calls run at once, 4 by default; lower it if the log shows HTTP 429). It skips drafts that exist and refreshes Lakebase when it finishes.
 - **Live updates.** The handoff job's trigger is paused, so a deploy never starts model calls by itself. To draft new handoffs as data arrives (Zerobus replays or real feeds), see step 3 of [Moving to real data](#moving-to-real-data).
 - **Change the code**: `databricks bundle deploy -t dev`, then `databricks bundle run edip_app -t dev` for app changes.
+- **Lakebase only**: `databricks bundle run edip_lakebase_setup -t dev` runs the `lakebase` task of setup alone (synced tables, a full refresh, the app's read grant; about 3 minutes), without loading data. Use it for a catalog with real data, where `edip_setup` must not run, and once after an upgrade that adds a column to the drafts, when the handoff job's log asks for it (docs/data-model.md, section 3).
 - In the workspace, jobs and pipelines of the `dev` target show with a `[dev <your name>]` prefix; that is normal for development targets.
 
 ## Moving to real data

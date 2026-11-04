@@ -22,7 +22,7 @@ Turns the silver tables into draft handoffs for three templates: nurse SBAR, phy
    - every finalize (transfer to the unit);
    - regenerate triggers, debounced (5 minutes live; at most hourly when backfilling a past week).
 
-   A retract (canceled registration) marks the drafts retracted. It writes every version to `gold.handoff_draft` (change data feed on, synced to Lakebase as `gold.handoff_draft_pg` for the app) and the newest per encounter and template to `gold.handoff_latest` (a convenience table for SQL; the app does not read it).
+   A retract (canceled registration) marks the drafts retracted, with the cancel's time in `retracted_ts` and each draft's status before in `prior_status` (the app shows them retracted from then on, and as they were before). It writes every version to `gold.handoff_draft` (change data feed on, synced to Lakebase as `gold.handoff_draft_pg` for the app) and the newest per encounter and template to `gold.handoff_latest` (a convenience table for SQL; the app does not read it).
 
 ## Templates
 

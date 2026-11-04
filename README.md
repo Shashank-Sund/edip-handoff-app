@@ -49,13 +49,30 @@ Hospital feeds (synthetic): HL7 v2, Redox FHIR (batch or Zerobus), Clarity night
 
 Every table, the Lakebase schema and ready to run queries: [docs/data-model.md](docs/data-model.md).
 
+## Which guide to read
+
+| If you want to | Read |
+| --- | --- |
+| Deploy the app to your workspace, step by step, and fix setup problems | [docs/setup.md](docs/setup.md) |
+| Run it on real patient data: every setting to change, and how to check it worked | [docs/setup.md, Moving to real data](docs/setup.md#moving-to-real-data) |
+| Know what each table holds, where a handoff's facts come from, and query them | [docs/data-model.md](docs/data-model.md) |
+| Check which Databricks features are GA or preview, and what to confirm for HIPAA | [docs/feature-status.md](docs/feature-status.md) |
+| Connect your own hospital feeds instead of the synthetic ones (start here) | [docs/ingestion/README.md](docs/ingestion/README.md) |
+| Send HL7 v2 from your interface engine (Rhapsody, Cloverleaf, Mirth, Bridges) | [docs/ingestion/hl7v2.md](docs/ingestion/hl7v2.md) |
+| Receive FHIR events from Redox | [docs/ingestion/fhir-redox.md](docs/ingestion/fhir-redox.md) |
+| Load nightly Epic Clarity history (problems, home meds, allergies) | [docs/ingestion/clarity.md](docs/ingestion/clarity.md) |
+| Try streaming the demo's FHIR events through Zerobus (optional) | [docs/zerobus.md](docs/zerobus.md) |
+| Plan writing signed handoffs back to Epic (future work, not built) | [docs/ingestion/epic-writeback.md](docs/ingestion/epic-writeback.md) |
+| Learn why it was built this way, and its known limits | [docs/how-it-was-built.md](docs/how-it-was-built.md) |
+| Let an AI coding assistant deploy or change it | [AGENTS.md](AGENTS.md) |
+
 | Folder | Read |
 | --- | --- |
 | `synthetic/` | [synthetic/README.md](synthetic/README.md): the generator, 32 logged edge cases, realism tests |
 | `pipelines/` | [pipelines/README.md](pipelines/README.md): bronze to gold, deduplication, daylight saving time |
 | `ai/` | [ai/README.md](ai/README.md): templates, prompt, validator, evaluation results, cost |
 | `app/` | [app/README.md](app/README.md): pages, rules the server enforces, local runs |
-| `docs/` | [setup.md](docs/setup.md) (deploy), [data-model.md](docs/data-model.md) (every table, Lakebase, where to look, with queries), [how-it-was-built.md](docs/how-it-was-built.md), [zerobus.md](docs/zerobus.md), [ingestion/](docs/ingestion/README.md) (connecting real feeds), [feature-status.md](docs/feature-status.md) |
+| `docs/` | The guides above |
 
 ## Tests
 

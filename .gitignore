@@ -15,7 +15,7 @@ __pycache__/
 .pytest_cache/
 node_modules/
 dist/
-# bundle state
+# bundle state, and per deploy settings such as the role map (.databricks/bundle/<target>/variable-overrides.json)
 .databricks/
 .DS_Store
 *.egg-info/

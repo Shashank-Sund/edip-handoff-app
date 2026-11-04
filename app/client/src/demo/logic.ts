@@ -15,7 +15,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Dataset, Row } from './data';
+import { statusAt, type Dataset, type Row } from './data';
 import { ACKS, SIGNS, sees } from './personas';
 import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy } from './py';
 import type { Action, MemoryStore } from './workflow';
@@ -416,7 +416,7 @@ export class Views {
     if (dep === null && this.staleBoarding !== null && at - e.admit_decision_ts > this.staleBoarding) return null;
     if (!latest.size) return null; // the first draft is not written yet
     const anyRow = latest.values().next().value as Row;
-    const phase = anyRow.status === 'retracted' ? 'canceled' : dep !== null ? 'arrived' : 'boarding';
+    const phase = statusAt(anyRow, at) === 'retracted' ? 'canceled' : dep !== null ? 'arrived' : 'boarding';
     const els = elements(anyRow.draft);
     const dest = or(get(or(els.get('E04') ?? null, {}), 'data'), {}) as any;
     if (!sees(person, e.facility, or(get(dest, 'pending_unit'), dep !== null ? get(dest, 'unit') : null))) return null;
@@ -428,7 +428,7 @@ export class Views {
     for (const [tid, row] of latest) {
       const eff = effective(row, acts, ref, this.rules[tid] ?? null, pat);
       templates[tid] = {
-        version: row.version, as_of: iso(row.at), status: row.status, trigger: row.trigger, score: eff.completeness.score,
+        version: row.version, as_of: iso(row.at), status: statusAt(row, at), trigger: row.trigger, score: eff.completeness.score,
         blocking: eff.completeness.blocking, workflow: workflow(row, acts, rows, phase === 'arrived', this.rules[tid] ?? null, this.rules),
       };
     }
@@ -528,10 +528,10 @@ export class Views {
       }
       templates[tid] = {
         draft,
-        row: { ...pick(row, ['version', 'status', 'trigger', 'model']), as_of: iso(row.at) },
+        row: { ...pick(row, ['version', 'trigger', 'model']), status: statusAt(row, at), as_of: iso(row.at) },
         workflow: wf,
         changes: { since, version: base ? base[0] : null, elements: diff(base ? base[1] : null, draft) },
-        versions: versions.map((v) => ({ version: v.version, as_of: iso(v.at), trigger: v.trigger, status: v.status, severity: v.severity, score: v.score })),
+        versions: versions.map((v) => ({ version: v.version, as_of: iso(v.at), trigger: v.trigger, status: statusAt(v, at), severity: v.severity, score: v.score })),
       };
     }
     const log = acts.map((a) => ({
@@ -562,9 +562,9 @@ export class Views {
     for (let t = ds.start; t <= stop; t += HOUR) {
       let ed = 0, board = 0;
       for (const e of encs) {
-        if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && e.status !== 'canceled') ed++;
+        if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && !ds.canceledAt(e, t)) ed++;
         if (e.admit_decision_ts !== null && e.admit_decision_ts <= t && (e.ed_departure_ts === null || e.ed_departure_ts > t) && truthy(ds.versions.get(e.csn) ?? null)
-          && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
+          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
       }
       series.push({ t: iso(t), ed, boarding: board });
     }
@@ -616,7 +616,7 @@ export class Views {
       transferred_without_sign_off: done.length - signedBefore,
       drafts: drafts.length,
       model_calls: new Set(drafts.map((r) => `${r.csn}|${r.at}`)).size,
-      addenda: new Set(drafts.filter((r) => r.status === 'addendum').map((r) => `${r.csn}|${r.at}`)).size,
+      addenda: new Set(drafts.filter((r) => statusAt(r, at) === 'addendum').map((r) => `${r.csn}|${r.at}`)).size,
     };
   }
 
@@ -638,7 +638,7 @@ export class Views {
       // After the patient leaves the ED the handoff is final, except for an addendum, or when the ED never signed it
       // or signed an older version: then the ED can still complete and sign it.
       const unsigned = arrived && (!truthy(get(wf, 'signed')) || wf.signed.version < latest.version);
-      if (summary.phase !== 'boarding' && latest.status !== 'addendum' && !unsigned) throw new ActionError('The patient has left the ED; the handoff is final.');
+      if (summary.phase !== 'boarding' && statusAt(latest, at) !== 'addendum' && !unsigned) throw new ActionError('The patient has left the ED; the handoff is final.');
     } else if (kind === 'ack') {
       if (!(ACKS[person.role] ?? []).includes(template)) throw new ActionError('Only the receiving clinician can acknowledge this handoff.');
     } else {
