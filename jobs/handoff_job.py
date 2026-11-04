@@ -11,7 +11,8 @@ never describes a different chart. --drafts model always calls the model (redraf
 
 For each encounter with a handoff start, the generation points are the start, then regenerate triggers spaced
 at least --backfill-interval-min apart (the live debounce from ai/config.yaml when running continuously), and
-every finalize. A retract marks the encounter's drafts retracted without a model call. Each point builds the
+every finalize. A retract (a canceled admission) marks the encounter's drafts retracted without a model call, with
+the cancel's time in retracted_ts (the app shows them retracted from then on). Each point builds the
 chart packet as of that time (state folded from ADT events up to it), calls the model once, validates, and
 writes one row per template to gold.handoff_draft; gold.handoff_latest keeps the newest per encounter and
 template (change data feed on, for the Lakebase sync). Already generated points are skipped, so reruns resume.
@@ -78,13 +79,14 @@ def main():
     spark.sql(f"""CREATE TABLE IF NOT EXISTS {cat}.gold.handoff_draft (
         csn STRING, template STRING, version INT, status STRING, trigger STRING, as_of TIMESTAMP, created_ts TIMESTAMP,
         model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING, validation STRING,
-        prompt_tokens INT, completion_tokens INT, seconds DOUBLE) COMMENT 'Every generated handoff version'
-        TBLPROPERTIES (delta.enableChangeDataFeed = true)""")
+        prompt_tokens INT, completion_tokens INT, seconds DOUBLE, retracted_ts TIMESTAMP)
+        COMMENT 'Every generated handoff version' TBLPROPERTIES (delta.enableChangeDataFeed = true)""")
     spark.sql(f"""CREATE TABLE IF NOT EXISTS {cat}.gold.handoff_latest (
         csn STRING NOT NULL, template STRING NOT NULL, version INT, status STRING, trigger STRING, as_of TIMESTAMP,
         created_ts TIMESTAMP, model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING,
-        CONSTRAINT handoff_latest_pk PRIMARY KEY (csn, template))
+        retracted_ts TIMESTAMP, CONSTRAINT handoff_latest_pk PRIMARY KEY (csn, template))
         COMMENT 'Newest handoff per encounter and template' TBLPROPERTIES (delta.enableChangeDataFeed = true)""")
+    added = add_retracted_ts(spark, cat)
 
     # Silver into memory, as contract shaped dicts.
     t0 = time.time()
@@ -134,11 +136,12 @@ def main():
                                    "model STRING, severity STRING, score DOUBLE, blocking ARRAY<STRING>, draft STRING, "
                                    "validation STRING, prompt_tokens INT, completion_tokens INT, seconds DOUBLE")
         df.createOrReplaceTempView("new_drafts")
-        spark.sql(f"""INSERT INTO {cat}.gold.handoff_draft
+        spark.sql(f"""INSERT INTO {cat}.gold.handoff_draft (csn, template, version, status, trigger, as_of, created_ts,
+                model, severity, score, blocking, draft, validation, prompt_tokens, completion_tokens, seconds, retracted_ts)
             SELECT n.csn, n.template,
                    CAST(coalesce(m.v, 0) + row_number() OVER (PARTITION BY n.csn, n.template ORDER BY n.as_of) AS INT),
                    n.status, n.trigger, n.as_of, current_timestamp(), n.model, n.severity, n.score, n.blocking, n.draft,
-                   n.validation, n.prompt_tokens, n.completion_tokens, n.seconds
+                   n.validation, n.prompt_tokens, n.completion_tokens, n.seconds, CAST(NULL AS TIMESTAMP)
             FROM new_drafts n LEFT JOIN (SELECT csn, template, max(version) v FROM {cat}.gold.handoff_draft GROUP BY ALL) m
               ON n.csn = m.csn AND n.template = m.template""")
 
@@ -162,21 +165,23 @@ def main():
                 batch = []
                 print(f"  {i}/{len(todo)} points written, {time.time() - t1:.0f}s")
     flush(batch)
-    if retracted:
-        ids = ",".join(f"'{c}'" for c in sorted(retracted) if str(c).isalnum())
-    if retracted and ids:
-        spark.sql(f"UPDATE {cat}.gold.handoff_draft SET status = 'retracted' WHERE csn IN ({ids})")
+    retract = retract_sql(cat, triggers, retracted)
+    if retract:
+        spark.sql(retract)
     spark.sql(f"""MERGE INTO {cat}.gold.handoff_latest t USING (
             SELECT * EXCEPT (rn) FROM (SELECT *, row_number() OVER (PARTITION BY csn, template ORDER BY version DESC) rn
                                       FROM {cat}.gold.handoff_draft) WHERE rn = 1) s
         ON t.csn = s.csn AND t.template = s.template
-        WHEN MATCHED AND (s.version <> t.version OR s.status <> t.status) THEN UPDATE SET
+        WHEN MATCHED AND (s.version <> t.version OR s.status <> t.status OR NOT (s.retracted_ts <=> t.retracted_ts))
+          THEN UPDATE SET
           version = s.version, status = s.status, trigger = s.trigger, as_of = s.as_of, created_ts = s.created_ts,
-          model = s.model, severity = s.severity, score = s.score, blocking = s.blocking, draft = s.draft
+          model = s.model, severity = s.severity, score = s.score, blocking = s.blocking, draft = s.draft,
+          retracted_ts = s.retracted_ts
         WHEN NOT MATCHED THEN INSERT (csn, template, version, status, trigger, as_of, created_ts, model, severity, score,
-          blocking, draft) VALUES (s.csn, s.template, s.version, s.status, s.trigger, s.as_of, s.created_ts, s.model,
-          s.severity, s.score, s.blocking, s.draft)""")
-    refresh_synced(cat, a.sync_tables)
+          blocking, draft, retracted_ts) VALUES (s.csn, s.template, s.version, s.status, s.trigger, s.as_of, s.created_ts,
+          s.model, s.severity, s.score, s.blocking, s.draft, s.retracted_ts)""")
+    # The sync copies changes only; a new column needs a full refresh to reach Lakebase.
+    refresh_synced(cat, a.sync_tables, full=added)
     tok = [(r.get("prompt_tokens") or 0, r.get("completion_tokens") or 0) for r in out[:: max(1, len(templates.templates()))]]
     print(f"generated {len(out)} drafts ({len(tok)} model calls, {failures} failed) in {time.time() - t1:.0f}s; "
           f"tokens in {sum(t[0] for t in tok)}, out {sum(t[1] for t in tok)}; retracted {len(retracted)} encounters")
@@ -184,6 +189,34 @@ def main():
     # already drafted; more than 2% means something is wrong.
     if failures > max(1, 0.02 * len(todo)):
         sys.exit(1)
+
+
+def add_retracted_ts(spark, cat):
+    """Add retracted_ts to drafts tables made before it (deployments from before the column). True when it added it."""
+    added = False
+    for t in ("handoff_draft", "handoff_latest"):
+        if "retracted_ts" not in spark.table(f"{cat}.gold.{t}").columns:
+            spark.sql(f"ALTER TABLE {cat}.gold.{t} ADD COLUMNS (retracted_ts TIMESTAMP)")
+            print(f"added column retracted_ts to {cat}.gold.{t}")
+            added = True
+    return added
+
+
+def retract_sql(cat, triggers, retracted):
+    """The UPDATE that marks every version of a canceled admission retracted, with retracted_ts the time of its first
+    retract trigger (the cancel_admit event), or None when there is nothing to retract. Rows already marked with that
+    time are left alone, so a rerun changes nothing (and the sync copies nothing again)."""
+    at = {}
+    for t in triggers:
+        if t["action"] == "retract" and t["csn"] in retracted and str(t["csn"]).isalnum():
+            at.setdefault(t["csn"], t["effective_ts"])
+    if not at:
+        return None
+    stamp = "CASE csn " + " ".join(f"WHEN '{c}' THEN TIMESTAMP '{at[c].astimezone(timezone.utc):%Y-%m-%d %H:%M:%S.%f}'"
+                                   for c in sorted(at)) + " END"
+    ids = ",".join(f"'{c}'" for c in sorted(at))
+    return (f"UPDATE {cat}.gold.handoff_draft SET status = 'retracted', retracted_ts = {stamp} "
+            f"WHERE csn IN ({ids}) AND NOT (status = 'retracted' AND retracted_ts <=> {stamp})")
 
 
 def templates_sha(code_path):
@@ -236,8 +269,9 @@ def load_reference(code_path, points, todo):
     return rows
 
 
-def refresh_synced(cat, names):
-    """Start an update of each Triggered synced table's pipeline so Lakebase reflects the new gold rows."""
+def refresh_synced(cat, names, full=False):
+    """Start an update of each Triggered synced table's pipeline so Lakebase reflects the new gold rows (full: a full
+    refresh of the drafts sync, after a schema change)."""
     from databricks.sdk import WorkspaceClient
     w = WorkspaceClient()
     for name in [n.strip() for n in names.split(",") if n.strip()]:
@@ -245,8 +279,9 @@ def refresh_synced(cat, names):
             t = w.postgres.get_synced_table(name=f"synced_tables/{cat}.{name}")
             pid = getattr(t.status, "pipeline_id", None) or getattr(t, "pipeline_id", None)
             if pid:
-                w.pipelines.start_update(pid)
-                print(f"sync refresh started: {name}")
+                whole = full and name.endswith("handoff_draft_pg")
+                w.pipelines.start_update(pid, full_refresh=whole)
+                print(f"sync {'full ' if whole else ''}refresh started: {name}")
         except Exception as exc:          # a missing sync must not fail the generation run
             print(f"sync refresh skipped for {name}: {type(exc).__name__}: {str(exc)[:160]}")
 

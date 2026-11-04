@@ -18,6 +18,30 @@ export type Enc = Record<string, any> & {
 };
 export type Row = Record<string, any> & { csn: string; template: string; version: number; at: number; draft: any };
 
+/**
+ * The status each version of one encounter had before the job marked it retracted in place (written_status), as
+ * jobs/handoff_job.py assigns it from the generation points: draft before the transfer, final at the first
+ * transfer point, addendum after it.
+ */
+function writtenStatus(rows: Row[]): void {
+  if (!rows.some((r) => r.status === 'retracted')) return;
+  const moves = rows.filter((r) => r.trigger === 'transfer').map((r) => r.at);
+  const transferred = moves.length ? Math.min(...moves) : null;
+  for (const r of rows) {
+    r.written_status = transferred === null || r.at < transferred ? 'draft' : r.at === transferred ? 'final' : 'addendum';
+  }
+}
+
+/**
+ * A version's status at `at`. A canceled admission's versions are retracted from retracted_ts on (the cancel's
+ * time) and have their written status before it; without retracted_ts (written by an older handoff job) they are
+ * retracted at every time.
+ */
+export function statusAt(r: Row, at: number): string {
+  if (r.status === 'retracted' && r.retracted_ts !== null && at < r.retracted_ts) return r.written_status;
+  return r.status;
+}
+
 export interface Fixtures {
   encounters: any[];
   drafts: any[];
@@ -47,6 +71,7 @@ export class Dataset {
     for (const raw of drafts) {
       const r: any = { ...raw };
       r.at = ts(r.as_of);
+      r.retracted_ts = ts(r.retracted_ts);
       if (typeof r.draft === 'string') r.draft = JSON.parse(r.draft);
       if (typeof r.blocking === 'string') r.blocking = JSON.parse(r.blocking);
       let list = this.versions.get(r.csn);
@@ -56,6 +81,7 @@ export class Dataset {
     for (const [csn, rows] of this.versions) {
       rows.sort((a, b) => a.at - b.at || (a.template < b.template ? -1 : a.template > b.template ? 1 : 0) || a.version - b.version);
       this.keys.set(csn, rows.map((r) => r.at));
+      writtenStatus(rows);
     }
     const w = meta?.window ?? {};
     if (w.start) {

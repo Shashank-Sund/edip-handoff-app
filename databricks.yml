@@ -4,6 +4,7 @@
 #   databricks bundle deploy -t dev                 # Lakebase project, pipeline, jobs, app (no data yet)
 #   databricks bundle run edip_setup -t dev         # data: catalog, synthetic feeds, pipeline, handoffs, Lakebase
 #   databricks bundle run edip_app -t dev           # build and start the app
+#   databricks bundle run edip_lakebase_setup -t dev   # only the Lakebase step of edip_setup (for real data)
 #
 # Or run scripts/deploy.sh <target>, which does the three steps. Full guide: docs/setup.md.
 bundle:
@@ -32,6 +33,11 @@ variables:
     description: reference (setup loads the handoffs committed in ai/reference/ when they match the data, minutes) or
       model (setup asks the model to write every handoff, about 30 to 75 minutes)
     default: reference
+  role_map:
+    description: The app's EDIP_ROLE_MAP, a JSON map of signed in email to persona id, used when EDIP_DEMO_PERSONAS is
+      false. Staff emails do not belong in the repo, so set it per deploy in the untracked file
+      .databricks/bundle/<target>/variable-overrides.json or in BUNDLE_VAR_role_map (docs/setup.md, "Settings")
+    default: "{}"
 
 targets:
   dev:
@@ -68,6 +74,7 @@ resources:
           - {name: EDIP_CLOCK_MODE, value: replay}
           - {name: EDIP_DEMO_PERSONAS, value: "true"}
           - {name: EDIP_SYNTHETIC_DATA, value: "true"}   # set to false (or remove) before any real patient data
+          - {name: EDIP_ROLE_MAP, value: "${var.role_map}"}
           - {name: EDIP_PG_ENDPOINT, value: "projects/${var.lakebase_project}/branches/production/endpoints/primary"}
       resources:
         - name: lakebase
@@ -124,6 +131,27 @@ resources:
             job_parameters: {drafts: "${var.drafts}"}
         - task_key: lakebase
           depends_on: [{task_key: handoffs}]
+          environment_key: default
+          spark_python_task:
+            python_file: ./jobs/setup_lakebase.py
+            parameters: [--catalog, "${var.catalog}", --project, "${var.lakebase_project}",
+                         --app, "${resources.apps.edip_app.name}"]
+
+    # The lakebase task of edip_setup on its own (the same script and parameters; tests/test_setup_checks.py keeps
+    # them in step), for a catalog fed by real data, where edip_setup must not run: it loads the synthetic week.
+    edip_lakebase_setup:
+      name: edip-lakebase-setup-${bundle.target}
+      description: Lakebase synced tables for the app and the app's read grant, without loading any data. Run it once
+        the pipeline and the handoff job have filled silver and gold, and after an upgrade that adds a column.
+      tags: {project: edip}
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies: ["databricks-sdk>=0.159", "psycopg[binary]>=3.1"]
+      tasks:
+        - task_key: lakebase
           environment_key: default
           spark_python_task:
             python_file: ./jobs/setup_lakebase.py

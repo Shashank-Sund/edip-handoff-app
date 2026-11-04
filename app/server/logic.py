@@ -18,7 +18,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from data import Dataset, iso
+from data import Dataset, iso, status_at
 from personas import ACKS, SIGNS, sees
 
 ARRIVED_WINDOW = timedelta(hours=12)
@@ -368,7 +368,7 @@ class Views:
         if not latest:
             return None                           # the first draft is not written yet
         any_row = next(iter(latest.values()))
-        if any_row["status"] == "retracted":
+        if status_at(any_row, at) == "retracted":
             phase = "canceled"
         else:
             phase = "arrived" if dep else "boarding"
@@ -383,7 +383,7 @@ class Views:
         pat = patient_entries(acts, self.rules)
         for tid, row in latest.items():
             eff = effective(row, acts, ref, self.rules.get(tid), pat)
-            templates[tid] = {"version": row["version"], "as_of": iso(row["at"]), "status": row["status"],
+            templates[tid] = {"version": row["version"], "as_of": iso(row["at"]), "status": status_at(row, at),
                               "trigger": row["trigger"], "score": eff["completeness"]["score"],
                               "blocking": eff["completeness"]["blocking"],
                               "workflow": workflow(row, acts, rows, phase == "arrived", self.rules.get(tid), self.rules)}
@@ -471,12 +471,12 @@ class Views:
             elif len(versions) > 1:
                 base = (versions[-2]["version"], effective(versions[-2], acts, ref, rules, pat))
             templates[tid] = {
-                "draft": draft, "row": {k: row[k] for k in ("version", "status", "trigger", "model")}
-                | {"as_of": iso(row["at"])},
+                "draft": draft, "row": {k: row[k] for k in ("version", "trigger", "model")}
+                | {"status": status_at(row, at), "as_of": iso(row["at"])},
                 "workflow": wf,
                 "changes": {"since": since, "version": base[0] if base else None,
                             "elements": diff(base[1] if base else None, draft)},
-                "versions": [{"version": v["version"], "as_of": iso(v["at"]), "trigger": v["trigger"], "status": v["status"],
+                "versions": [{"version": v["version"], "as_of": iso(v["at"]), "trigger": v["trigger"], "status": status_at(v, at),
                               "severity": v["severity"], "score": v["score"]} for v in versions],
             }
         log = sorted(({"kind": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
@@ -566,7 +566,7 @@ class Views:
             "signed_before_transfer": signed_before,
             "transferred_without_sign_off": len(done) - signed_before,
             "drafts": len(drafts), "model_calls": len({(r["csn"], r["at"]) for r in drafts}),
-            "addenda": len({(r["csn"], r["at"]) for r in drafts if r["status"] == "addendum"}),
+            "addenda": len({(r["csn"], r["at"]) for r in drafts if status_at(r, at) == "addendum"}),
         }
 
     # -------------------------------------------------------------------------------------------- actions
@@ -590,7 +590,7 @@ class Views:
             # After the patient leaves the ED the handoff is final, except for an addendum, or when the ED never
             # signed it or signed an older version: then the ED can still complete and sign it.
             unsigned = arrived and (not wf.get("signed") or wf["signed"]["version"] < latest["version"])
-            if summary["phase"] != "boarding" and latest["status"] != "addendum" and not unsigned:
+            if summary["phase"] != "boarding" and status_at(latest, at) != "addendum" and not unsigned:
                 raise ActionError("The patient has left the ED; the handoff is final.")
         elif kind == "ack":
             if template not in ACKS.get(person["role"], ()):
