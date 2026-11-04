@@ -47,13 +47,15 @@ Hospital feeds (synthetic): HL7 v2, Redox FHIR (batch or Zerobus), Clarity night
   -> app: board, handoff review and sign off, read back, analytics, a guide for clinicians
 ```
 
+Every table, the Lakebase schema and ready to run queries: [docs/data-model.md](docs/data-model.md).
+
 | Folder | Read |
 | --- | --- |
 | `synthetic/` | [synthetic/README.md](synthetic/README.md): the generator, 32 logged edge cases, realism tests |
 | `pipelines/` | [pipelines/README.md](pipelines/README.md): bronze to gold, deduplication, daylight saving time |
 | `ai/` | [ai/README.md](ai/README.md): templates, prompt, validator, evaluation results, cost |
 | `app/` | [app/README.md](app/README.md): pages, rules the server enforces, local runs |
-| `docs/` | [setup.md](docs/setup.md), [zerobus.md](docs/zerobus.md) |
+| `docs/` | [setup.md](docs/setup.md) (deploy), [data-model.md](docs/data-model.md) (every table, Lakebase, where to look, with queries), [how-it-was-built.md](docs/how-it-was-built.md), [zerobus.md](docs/zerobus.md), [ingestion/](docs/ingestion/README.md) (connecting real feeds), [feature-status.md](docs/feature-status.md) |
 
 ## Tests
 
