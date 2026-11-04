@@ -22,8 +22,8 @@ await page.goto(base + '/', { waitUntil: 'networkidle' });
 const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
 const name = (await first.locator('a').first().textContent()).trim();
 await first.click();
-await page.waitForSelector('text=Sign off');
 const panel = page.locator('aside[aria-label="Sign off and context"]');
+await panel.waitFor();
 for (let i = 0; i < 10; i++) {
   const btn = panel.locator('li button[data-choice]').first();
   if (!(await btn.count())) break;
