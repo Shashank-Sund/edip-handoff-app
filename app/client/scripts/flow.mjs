@@ -60,7 +60,8 @@ if (STATIC_DEMO) {
   await page.getByRole('link', { name: 'Board' }).first().click();
   await page.waitForSelector('tbody tr');
 } else {
-  await page.goto(base + '/', { waitUntil: 'networkidle' });
+  const at = new URL(page.url()).searchParams.get('at');   // the hour the flow moved the clock to
+  await page.goto(base + '/' + (at ? `?at=${encodeURIComponent(at)}` : ''), { waitUntil: 'networkidle' });
 }
 const state = await page.locator('tbody tr', { hasText: name }).first().textContent();
 if (STATIC_DEMO) {
