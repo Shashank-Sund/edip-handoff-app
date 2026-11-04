@@ -5,7 +5,8 @@ time it applies to (the demo clock in mock mode, the current time live), and `re
 A view at time T counts only actions with at <= T.
 
 MemoryStore keeps actions in process (mock mode). The Lakebase store (lakebase.py) writes the same rows to the
-table app.handoff_action, one row per action with its kind and details.
+table app.handoff_action, one row per action with its kind and details. With the live clock, every view of an
+earlier time is logged too (log_view; app.view_log in Lakebase).
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ class MemoryStore:
 
     def __init__(self):
         self._rows: dict[str, list[dict]] = defaultdict(list)
+        self.views: list[dict] = []
         self._lock = threading.Lock()
 
     def add(self, kind: str, row: dict) -> dict:
@@ -33,6 +35,10 @@ class MemoryStore:
         with self._lock:
             self._rows[row["csn"]].append(row)
         return row
+
+    def log_view(self, row: dict) -> None:
+        with self._lock:
+            self.views.append({**row, "recorded_ts": datetime.now(timezone.utc)})
 
     def actions(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
         with self._lock:

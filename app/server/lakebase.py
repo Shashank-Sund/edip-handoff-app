@@ -5,7 +5,8 @@ is a short lived token from the Databricks SDK for the endpoint in EDIP_PG_ENDPO
 endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
-refreshed by the handoff job). Writes: app.handoff_action, created here on first start, append only.
+refreshed by the handoff job). Writes: app.handoff_action and app.view_log (with the live clock, every view of an
+earlier time), created here on first start, append only.
 """
 from __future__ import annotations
 
@@ -35,10 +36,23 @@ DDL = [
         detail        JSONB       NOT NULL DEFAULT '{}'::jsonb
     )""",
     "CREATE INDEX IF NOT EXISTS ix_action_csn ON app.handoff_action (csn, at)",
+    """CREATE TABLE IF NOT EXISTS app.view_log (
+        view_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        page          TEXT        NOT NULL CHECK (page IN ('board', 'handoff', 'analytics')),
+        csn           TEXT,
+        at            TIMESTAMPTZ NOT NULL,
+        recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        by_name       TEXT        NOT NULL,
+        role          TEXT        NOT NULL,
+        user_email    TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_view_recorded ON app.view_log (recorded_ts)",
 ]
 DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "entry", "entry_note", "remove", "callback",
           "readback", "questions")
 UNREACHABLE = "The handoff database cannot be reached right now. Wait a minute and try again."
+UNLOGGED = ("The app could not record that you are looking at an earlier time, so it cannot show it. Go back to live, "
+            "or wait a minute and try again.")
 
 
 class Pg:
@@ -72,13 +86,13 @@ def load_dataset() -> Dataset:
     from psycopg.rows import dict_row
     with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
         encounters = cur.execute("SELECT * FROM gold.encounter_state_pg").fetchall()
-        drafts = cur.execute("SELECT csn, template, version, status, trigger, as_of, model, severity, score, blocking, "
-                             "draft FROM gold.handoff_draft_pg").fetchall()
+        drafts = cur.execute("SELECT csn, template, version, status, trigger, as_of, created_ts, model, severity, score, "
+                             "blocking, draft FROM gold.handoff_draft_pg").fetchall()
     for d in drafts:
         if isinstance(d["blocking"], str):
             b = d["blocking"]
             d["blocking"] = json.loads(b) if b.startswith("[") else [x for x in b.strip("{}").split(",") if x]
-    return Dataset(encounters, drafts, meta_from(encounters, drafts), "lakebase")
+    return Dataset(encounters, drafts, meta_from(encounters, drafts), "lakebase", written=config.CLOCK_MODE == "live")
 
 
 def meta_from(encounters, drafts) -> dict:
@@ -162,6 +176,16 @@ class LakebaseStore:
         with self._lock:
             self._rows = None
         return row
+
+    def log_view(self, row: dict) -> None:
+        """A view of an earlier time (live clock): a row in app.view_log, or StoreUnavailable, which refuses the view."""
+        try:
+            self._ensure()
+            with PG.connect() as conn:
+                conn.execute("INSERT INTO app.view_log (page, csn, at, by_name, role, user_email) VALUES (%s, %s, %s, %s, %s, %s)",
+                             (row["page"], row.get("csn"), row["at"], row["by"], row["role"], row.get("user_email")))
+        except Exception as exc:
+            raise StoreUnavailable(UNLOGGED) from exc
 
     def actions(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
         return [r for r in self._all(fresh) if r["csn"] == csn and (at is None or r["at"] <= at)]

@@ -171,6 +171,7 @@ Lakebase project `edip` (bundle variable `lakebase_project`), branch `production
   - `jobs/handoff_job.py refresh_synced()` starts a refresh of both at the end of every handoff run. It does not wait.
   - A pipeline run alone does not refresh `encounter_state_pg`. In live mode, the next handoff run carries the new state to Lakebase.
 - The app reads both tables in full and reloads them at most once a minute (`app/server/lakebase.py load_dataset()`).
+- With the live clock (`EDIP_CLOCK_MODE=live`), a version in `handoff_draft_pg` shows in the app from its `created_ts` (when the handoff job wrote it) or its `as_of`, whichever is later, so a look at an earlier time shows what the app showed then. The replay clock uses `as_of` only.
 
 ### App schema `app`: `app.handoff_action`
 
@@ -192,12 +193,29 @@ The app's action log. The app creates it on first start (`DDL` in `app/server/la
 
 Index: `ix_action_csn (csn, at)`.
 
+### App schema `app`: `app.view_log`
+
+Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff or analytics at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `view_id` | bigint, identity, primary key | Order of insertion |
+| `page` | text, check | `board`, `handoff` or `analytics` |
+| `csn` | text, nullable | The patient, for `handoff` |
+| `at` | timestamptz | The earlier time viewed |
+| `recorded_ts` | timestamptz, default `now()` | When it was viewed |
+| `by_name` | text | Display name of the signed in user (or persona) |
+| `role` | text | As in `app.handoff_action`; `viewer` for read only users |
+| `user_email` | text, nullable | The signed in Databricks user, from the forwarded headers |
+
+Index: `ix_view_recorded (recorded_ts)`.
+
 ### Who can read and write what
 
-| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action` |
+| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.view_log` |
 | --- | --- | --- |
 | The identity that ran setup (a user or a service principal) | Owns the synced tables and schema `gold` | No grant from the repo |
-| The app's service principal | `USAGE` on schema `gold` and `SELECT` on all its tables, granted by `jobs/setup_lakebase.py` | Owns schema `app` and the table: it creates them on first start, through the app's `postgres` resource with `CAN_CONNECT_AND_CREATE` (`databricks.yml`) |
+| The app's service principal | `USAGE` on schema `gold` and `SELECT` on all its tables, granted by `jobs/setup_lakebase.py` | Owns schema `app` and its tables: it creates them on first start, through the app's `postgres` resource with `CAN_CONNECT_AND_CREATE` (`databricks.yml`) |
 | `databricks_superuser` (Lakebase built in role) | All privileges | All privileges |
 
 The grant covers the tables that exist when setup runs. If a synced table is recreated, run the `lakebase` task again so the app can read it.

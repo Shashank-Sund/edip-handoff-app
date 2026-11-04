@@ -8,9 +8,14 @@ interface AppState {
   config: AppConfig;
   persona: Persona;
   setPersona: (id: string) => void;
-  /** The app clock: the replay time in mock mode, the current time live. */
+  /** The app clock: the replay time in mock mode; live, the current time or the earlier time being viewed. */
   at: string;
   setAt: (iso: string) => void;
+  /** The `at` to send to the server: `at`, except live at the current time, when the server's own clock decides (''). */
+  apiAt: string;
+  /** Live clock: the earlier time being viewed (read only), or null for live. */
+  past: string | null;
+  setPast: (iso: string | null) => void;
   playing: boolean;
   setPlaying: (v: boolean) => void;
   /** Bumped after every action so views refetch. */
@@ -22,6 +27,8 @@ const Ctx = createContext<AppState | null>(null);
 const PERSONA_KEY = 'edip.persona';
 const STEP_MS = 1500; // one replay step (15 minutes of the week) every 1.5 seconds
 const STEP_MIN = 15;
+/** Live: an earlier time this close to now is now (the server says the same), as device clocks differ a little. */
+export const NOW_SLACK_MS = 2 * 60000;
 
 /** The replay time in the address (?at=), so a reload or a shared link opens at the same moment. */
 function urlAt(): string | null {
@@ -45,8 +52,16 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
     const t = Math.min(Math.max(new Date(iso).getTime(), new Date(config.window.start).getTime()), new Date(config.window.end).getTime());
     return new Date(t).toISOString();
   };
+  const live = config.clock === 'live';
+  const pastHours = live ? config.past_view_hours ?? 0 : 0;
+  // Live: an earlier time from the address (?at=) when looking back is on; a later one is now. The server refuses
+  // a time older than its limit and says so.
+  const [past, setPastState] = useState<string | null>(() => {
+    const fromUrl = pastHours > 0 ? urlAt() : null;
+    return fromUrl && new Date(fromUrl).getTime() < Date.now() - NOW_SLACK_MS ? new Date(fromUrl).toISOString() : null;
+  });
   const [at, setAtState] = useState(() => {
-    if (config.clock === 'live') return new Date().toISOString();
+    if (live) return new Date().toISOString();
     const fromUrl = urlAt();
     return fromUrl ? clampTo(fromUrl) : config.default_at;
   });
@@ -69,19 +84,27 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
     [config.window],
   );
   const setAt = useCallback((iso: string) => setAtState(clamp(iso)), [clamp]);
+  /** Live: look at an earlier time; null (or a time within the slack of now, or later) is back to live. */
+  const setPast = useCallback((iso: string | null) => {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    setPastState(t < Date.now() - NOW_SLACK_MS ? new Date(t).toISOString() : null);
+    setAtState(new Date().toISOString());
+  }, []);
 
-  // Keep ?at= in the address in step with the replay clock (and after in app navigation, which drops it).
+  // Keep ?at= in the address in step with the replay clock, or the earlier time viewed live (and after in app
+  // navigation, which drops it).
+  const inUrl = live ? past : at;
   useEffect(() => {
-    if (config.clock === 'live') return;
-    writeUrlAt(at);
-    const on = () => writeUrlAt(at);
+    writeUrlAt(inUrl);
+    const on = () => writeUrlAt(inUrl);
     window.addEventListener('popstate', on);
     return () => window.removeEventListener('popstate', on);
-  }, [at, config.clock]);
+  }, [inUrl]);
 
-  // Replay: advance the clock while playing; live: follow the wall clock.
+  // Replay: advance the clock while playing; live: follow the wall clock, paused while viewing an earlier time.
   useEffect(() => {
-    if (config.clock === 'live') {
+    if (live) {
+      if (past) return;
       const id = window.setInterval(() => setAtState(new Date().toISOString()), 20000);
       return () => window.clearInterval(id);
     }
@@ -94,12 +117,15 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
       });
     }, STEP_MS);
     return () => window.clearInterval(id);
-  }, [playing, config.clock, clamp]);
+  }, [playing, live, past, clamp]);
 
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const value = useMemo(
-    () => ({ config, persona, setPersona, at, setAt, playing, setPlaying, version, bump }),
-    [config, persona, setPersona, at, setAt, playing, version, bump],
+    () => ({
+      config, persona, setPersona, at: live ? past ?? at : at, setAt, apiAt: live ? past ?? '' : at, past: live ? past : null,
+      setPast, playing, setPlaying, version, bump,
+    }),
+    [config, persona, setPersona, live, past, at, setAt, setPast, playing, version, bump],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

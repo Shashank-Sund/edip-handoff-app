@@ -34,8 +34,8 @@ function Panel({ title, description, children, className, help }: { title: strin
 }
 
 export default function Analytics() {
-  const { at, version } = useApp();
-  const { data, error, retry } = useLoad(() => api.analytics(at), [at, version]);
+  const { at, apiAt, version } = useApp();
+  const { data, error, retry } = useLoad(() => api.analytics(apiAt), [at, version]);
   const title = 'Analytics';
   if (error && !data) return <Layout title={title}><ErrorState message={error} onRetry={retry} /></Layout>;
   if (!data) return <Layout title={title}><PageSkeleton /></Layout>;
