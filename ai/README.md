@@ -22,7 +22,7 @@ Turns the silver tables into draft handoffs for three templates: nurse SBAR, phy
    - every finalize (transfer to the unit);
    - regenerate triggers, debounced (5 minutes live; at most hourly when backfilling a past week).
 
-   A retract (canceled registration) marks the drafts retracted. It writes every version to `gold.handoff_draft` and the newest per encounter and template to `gold.handoff_latest` (change data feed on, synced to Lakebase for the app).
+   A retract (canceled registration) marks the drafts retracted. It writes every version to `gold.handoff_draft` (change data feed on, synced to Lakebase as `gold.handoff_draft_pg` for the app) and the newest per encounter and template to `gold.handoff_latest` (a convenience table for SQL; the app does not read it).
 
 ## Templates
 
@@ -43,7 +43,7 @@ You can also pass the model for one run: `databricks bundle run handoff_generato
 
 ## Rate limits and throughput
 
-Pay-per-token model endpoints are rate limited per workspace. On the trial workspace used to build this app, `databricks-gpt-oss-120b` completed about 6 handoff calls a minute and answered extra concurrent requests with HTTP 429. The job therefore defaults to 2 concurrent calls, writes results every 20 generation points, and skips points already stored, so a rerun resumes. A production deployment that needs more throughput should use provisioned throughput for the model, or a hosted endpoint with higher limits.
+Pay-per-token model endpoints are rate limited per workspace. On the trial workspace used to build this app, `databricks-gpt-oss-120b` completed about 6 handoff calls a minute and answered extra concurrent requests with HTTP 429. The job therefore runs 4 concurrent calls by default (the `workers` job parameter; lower it if the log shows HTTP 429; the Databricks SDK retries rate limited requests with backoff), writes results every 20 generation points, and skips points already stored, so a rerun resumes. Setup normally skips the model entirely and loads the drafts shipped in `ai/reference/`. A production deployment that needs more throughput should use provisioned throughput for the model, or a hosted endpoint with higher limits.
 
 ## Verified on the reference week
 
@@ -70,7 +70,7 @@ Measured from `system.billing.usage` and `system.serving.endpoint_usage` on the 
 
 - model tokens: about 0.15 USD per million input and 0.60 USD per million output tokens for `databricks-gpt-oss-120b`; one generation point (all three templates) uses about 2,650 input and 1,550 output tokens, about 0.0013 USD;
 - job compute (serverless): about 0.35 USD per hour while the job runs;
-- the full reference week backfill: about 0.57 USD of tokens plus 0.43 USD of compute, 73 minutes at 2 concurrent calls (estimated from the per call figures above).
+- the full reference week backfill: about 0.57 USD of tokens plus 0.43 USD of compute, 73 minutes at 2 concurrent calls (measured before the default became 4; estimated from the per call figures above).
 
 Live, at about 80 generation points a day for this volume, the model costs about 0.10 USD a day. A hosted model costs more per token; scale the token counts above by its price.
 

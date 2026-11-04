@@ -63,4 +63,4 @@ A minimal design, all inside the existing bundle:
 - Epic FHIR API specifications: https://fhir.epic.com/Specifications
 - Redox FHIR DocumentReference read: https://docs.redoxengine.com/api-reference/fhir-api-reference/fhir-resources/DocumentReference/read/
 - HL7 v2 event types, including MDM T02: https://www.hl7.eu/HL7v2x/v231/hl7v231tab0003.htm
-- Repo: `app/README.md` (sign off, read back and `app.handoff_action`), `PLAN.md` (writeback out of scope for version 1)
+- Repo: `app/README.md` (sign off, read back and `app.handoff_action`), `docs/how-it-was-built.md` (writeback out of scope for version 1)

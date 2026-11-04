@@ -3,7 +3,7 @@ the open model default to any hosted endpoint, for example databricks-claude-son
 
   MockLLM     deterministic narrative from the packet; CI and the app's mock mode
   ServingLLM  one request per handoff through the Databricks SDK (chat endpoint), returns token usage
-  ai_query    batch path used by the job (see jobs/handoff_job.py), same prompt
+  (the job, jobs/handoff_job.py, calls the endpoint through ServingLLM from a thread pool; it does not use ai_query)
 """
 import json
 from pathlib import Path

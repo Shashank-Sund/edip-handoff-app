@@ -42,4 +42,6 @@ Without a terminal (workspace UI): open the repo as a Git folder, open `databric
 | `synthetic/` | Generator, renderers, committed Synthea population, Zerobus replayer |
 | `setup/load_bronze.py` | Bronze loader (used by the setup job, or locally with a warehouse) |
 | `scripts/` | `deploy.sh` (with `--check`), `remove.sh`, `demo_ctl.py` (status, up, down), `setup_zerobus.py` |
-| `docs/` | `setup.md`, `zerobus.md` |
+| `docs/` | `setup.md`, `zerobus.md`, `ingestion/` (real feeds), `feature-status.md` |
+| `docs/data-model.md` | Every table (bronze, silver, gold, synthetic truth, Lakebase), the draft JSON, source ids, ready to run queries |
+| `docs/how-it-was-built.md` | Build history, key decisions, what changed from the first plan, known limits |
