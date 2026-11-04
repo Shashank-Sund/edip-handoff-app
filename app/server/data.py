@@ -34,7 +34,10 @@ def iso(t: datetime | None) -> str | None:
 
 
 class Dataset:
-    def __init__(self, encounters: list[dict], drafts: list[dict], meta: dict, source: str):
+    def __init__(self, encounters: list[dict], drafts: list[dict], meta: dict, source: str, written: bool = False):
+        """written (the live clock): a draft version shows from when the handoff job wrote it (created_ts), or its
+        as_of if later, so a view of an earlier time looks as the app showed it then. The replay clock uses as_of:
+        the reference drafts are all written at setup, long after the week they replay."""
         self.meta, self.source = meta, source
         self.error: str | None = None          # set when the data could not be loaded (live mode before setup)
         self.enc: dict[str, dict] = {}
@@ -49,14 +52,16 @@ class Dataset:
         for r in drafts:
             r = dict(r)
             r["at"] = ts(r["as_of"])
+            created = ts(r.get("created_ts")) if written else None
+            r["shown"] = max(r["at"], created) if created else r["at"]      # the time the version shows from
             if isinstance(r.get("draft"), str):
                 r["draft"] = json.loads(r["draft"])
             if isinstance(r.get("blocking"), str):
                 r["blocking"] = json.loads(r["blocking"])
             self.versions[r["csn"]].append(r)
         for rows in self.versions.values():
-            rows.sort(key=lambda r: (r["at"], r["template"], r["version"]))
-        self._keys = {c: [r["at"] for r in rows] for c, rows in self.versions.items()}
+            rows.sort(key=lambda r: (r["shown"], r["template"], r["version"]))
+        self._keys = {c: [r["shown"] for r in rows] for c, rows in self.versions.items()}
         w = meta.get("window") or {}
         if w.get("start"):
             self.start = ts(w["start"])
@@ -71,9 +76,12 @@ class Dataset:
         return rows[: bisect_right(self._keys.get(csn, []), at)]
 
     def latest_at(self, csn: str, at: datetime) -> dict[str, dict]:
+        """The newest version of each template shown at `at` (the highest number, also if an older one was written
+        late)."""
         out = {}
         for r in self.rows_at(csn, at):
-            out[r["template"]] = r
+            if r["template"] not in out or r["version"] > out[r["template"]]["version"]:
+                out[r["template"]] = r
         return out
 
     def busiest(self) -> datetime:

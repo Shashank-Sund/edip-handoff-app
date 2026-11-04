@@ -3,7 +3,8 @@
     cd app/server && uvicorn main:app --port 8000          (mock mode by default; see config.py)
 
 Every read takes `at` (ISO time; default the replay clock) and the caller's persona: the X-Demo-Persona header in
-mock mode, the signed in user in live mode.
+mock mode, the signed in user in live mode. With the live clock a read is at the current time, or at an earlier time
+within EDIP_PAST_VIEW_HOURS (read only, and logged in the view log), and every action is at the current time.
 """
 from __future__ import annotations
 
@@ -101,17 +102,62 @@ def _person(request: Request) -> dict:
     return {**p, "user_email": email}
 
 
+# The live clock: a read may look back this far (none when 0); an `at` this close to now is now, as the clocks of
+# devices differ by a little. Actions are always at the server's current time.
+PAST_VIEW = timedelta(hours=config.PAST_VIEW_HOURS)
+NOW_SLACK = timedelta(minutes=2)
+READ_ONLY = "You are looking at an earlier time, which is read only. Press Back to live, then try again."
+
+
+def _parse(at: str) -> datetime:
+    try:
+        return ts(at)
+    except (ValueError, OverflowError):          # not ISO, or out of range in UTC (year 1 at +14:00)
+        raise HTTPException(400, "at must be an ISO time")
+
+
 def _at(at: Optional[str]) -> datetime:
-    if config.CLOCK_MODE == "live":
-        return datetime.now(timezone.utc)
+    """The replay clock: `at` within the data's week, by default its busiest hour."""
     ds = VIEWS.ds
     if not at:
         return _current()[1]
-    try:
-        t = ts(at)
-    except ValueError:
-        raise HTTPException(400, "at must be an ISO time")
-    return min(max(t, ds.start), ds.end)
+    return min(max(_parse(at), ds.start), ds.end)
+
+
+def _hours(td: timedelta) -> str:
+    h = td.total_seconds() / 3600
+    return f"{h:g} hour{'' if h == 1 else 's'}"
+
+
+def _read_at(at: Optional[str], request: Request, page: str, csn: Optional[str] = None) -> datetime:
+    """The time a read shows. Replay: the replay clock. Live: now, or an earlier time within EDIP_PAST_VIEW_HOURS,
+    which is written to the view log first; when the log cannot be written the view is refused (StoreUnavailable)."""
+    if config.CLOCK_MODE != "live":
+        return _at(at)
+    now = datetime.now(timezone.utc)
+    if not at:
+        return now
+    t = _parse(at)
+    if t >= now - NOW_SLACK:
+        return now                            # now, or a later time: there is nothing later than now
+    if not PAST_VIEW:
+        raise HTTPException(400, "Looking at an earlier time is turned off in this app.")
+    if t < now - PAST_VIEW:
+        raise HTTPException(400, f"You can look back up to {_hours(PAST_VIEW)}. Pick a later time, or go back to live.")
+    p = _person(request)
+    STORE.log_view({"page": page, "csn": csn, "at": t, "by": p["name"], "role": p["role"], "user_email": p.get("user_email")})
+    return t
+
+
+def _act_at(at: Optional[str]) -> datetime:
+    """The time an action applies to. Replay: the replay clock. Live: the server's current time, never an earlier
+    one; an action sent while the client looks at an earlier time is refused."""
+    if config.CLOCK_MODE != "live":
+        return _at(at)
+    now = datetime.now(timezone.utc)
+    if at and _parse(at) < now - NOW_SLACK:
+        raise HTTPException(409, READ_ONLY)
+    return now
 
 
 class Item(BaseModel):
@@ -180,6 +226,7 @@ def get_config() -> dict[str, Any]:
             "models": ds.meta.get("models", []), "window": {"start": iso(ds.start), "end": iso(ds.end)},
             "default_at": iso(default_at), "facilities": ds.meta.get("facilities", []), "units": ds.meta.get("units", []),
             "personas": personas if config.DEMO_PERSONAS else [], "store": STORE.kind, "timezone": config.TIMEZONE,
+            **({"past_view_hours": config.PAST_VIEW_HOURS} if config.CLOCK_MODE == "live" else {}),
             "templates": [{"id": "sbar_nurse", "name": "SBAR", "audience": "Nurse"},
                           {"id": "ipass_physician", "name": "I-PASS", "audience": "Physician"},
                           {"id": "custom_sea58", "name": "Joint Commission minimum", "audience": "Any"}]}
@@ -192,25 +239,25 @@ def get_templates() -> list[dict[str, Any]]:
 
 @api.get("/board")
 def get_board(request: Request, at: Optional[str] = None) -> dict[str, Any]:
-    return VIEWS.board(_at(at), _person(request))
+    return VIEWS.board(_read_at(at, request, "board"), _person(request))
 
 
 @api.get("/handoffs/{csn}")
 def get_case(csn: str, request: Request, at: Optional[str] = None) -> dict[str, Any]:
-    c = VIEWS.case(csn, _at(at), _person(request))
+    c = VIEWS.case(csn, _read_at(at, request, "handoff", csn), _person(request))
     if c is None:
         raise HTTPException(404, "This patient is not on your board at this time.")
     return c
 
 
 @api.get("/analytics")
-def get_analytics(at: Optional[str] = None) -> dict[str, Any]:
-    return VIEWS.analytics(_at(at))
+def get_analytics(request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    return VIEWS.analytics(_read_at(at, request, "analytics"))
 
 
 def _act(kind: str, csn: str, template: str, request: Request, at: Optional[str], body: dict) -> dict[str, Any]:
     try:
-        return VIEWS.act(kind, csn, template, _at(at), _person(request), body)
+        return VIEWS.act(kind, csn, template, _act_at(at), _person(request), body)
     except ActionError as exc:
         raise HTTPException(409, str(exc))
 

@@ -136,8 +136,8 @@ function Safety({ row }: { row: CaseSummary }) {
 }
 
 export default function Board() {
-  const { at, persona, version, config } = useApp();
-  const { data, error, retry } = useLoad(() => api.board(at), [at, persona.id, version]);
+  const { at, apiAt, persona, version, config } = useApp();
+  const { data, error, retry } = useLoad(() => api.board(apiAt), [at, persona.id, version]);
   const [view, setView] = useState<View>('all');
   const [unsigned, setUnsigned] = useState(false);
   const [facility, setFacility] = useState<string>('all');

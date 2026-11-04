@@ -10,7 +10,7 @@ import { HelpButton } from '@/components/guide/HelpButton';
 import { Explain, QuietExplain } from '@/components/guide/Explain';
 import { ChoiceGroup, type AttestFn } from './AttestChoices';
 import { enteredText } from '@/lib/entered';
-import { callbackOk, canChange, readbackProblem } from '@/lib/checks';
+import { READ_ONLY, callbackOk, canChange, readbackProblem } from '@/lib/checks';
 import { clinicalReason, clock, dateTime, pct, triggerLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { CaseDetail, CaseTemplate, Draft, Persona, Rule } from '@/lib/types';
@@ -59,7 +59,7 @@ function enteredOf(draft: Draft, element: string) {
  * with several choices, so a value can be changed or another allergy added. After a choice, focus goes to the next
  * open item, or to the line that shows the choice.
  */
-function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: AttestFn; busy?: boolean; canEdit: boolean }) {
+function Blockers({ draft, onAttest, busy, canEdit, locked }: { draft: Draft; onAttest: AttestFn; busy?: boolean; canEdit: boolean; locked?: boolean }) {
   const blocking = draft.rules.filter((r) => draft.completeness.blocking.includes(r.rule));
   const changeable = canEdit ? draft.rules.filter((r) => r.resolution?.kind === 'attested' && (r.attest_options?.length ?? 0) > 1) : [];
   const resolved = draft.rules.filter((r) => r.resolution && !changeable.includes(r));
@@ -105,7 +105,7 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">{r.message}</p>
             {r.attest_expired && <ExpiredRecheck r={r} />}
-            {canEdit && <ChoiceGroup r={r} entered={enteredOf(draft, r.element)} onAttest={attest} busy={busy} />}
+            {canEdit && <ChoiceGroup r={r} entered={enteredOf(draft, r.element)} onAttest={attest} busy={busy || locked} />}
             {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the item to write it.</p>}
           </li>
         ))}
@@ -126,7 +126,9 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
                 </span>
                 <button
                   type="button"
-                  className="shrink-0 rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60"
+                  className="shrink-0 rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50"
+                  disabled={locked}
+                  aria-describedby={locked ? 'sign-locked' : undefined}
                   aria-expanded={open === r.rule}
                   onClick={() => setOpen(open === r.rule ? null : r.rule)}
                 >
@@ -134,7 +136,7 @@ function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: 
                   <span className="sr-only"> {r.label}</span>
                 </button>
               </div>
-              {open === r.rule && <ChoiceGroup r={r} entered={entered} onAttest={attest} busy={busy} />}
+              {open === r.rule && !locked && <ChoiceGroup r={r} entered={entered} onAttest={attest} busy={busy} />}
             </li>
           );
         })}
@@ -154,12 +156,14 @@ export function ExpiredRecheck({ r }: { r: Rule }) {
   );
 }
 
-export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSign }: {
+export function SignPanel({ tpl, persona, template, phase, busy, locked, onAttest, onSign }: {
   tpl: CaseTemplate;
   persona: Persona;
   template: string;
   phase: string;
   busy?: boolean;
+  /** Read only (live, at an earlier time): the choices and the sign form are turned off, with the reason. */
+  locked?: boolean;
   onAttest: AttestFn;
   onSign: (callback: string) => void;
 }) {
@@ -225,7 +229,13 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
             </span>
           </p>
         )}
-        <Blockers draft={draft} onAttest={onAttest} busy={busy} canEdit={canSign && !final} />
+        {locked && canSign && !final && (
+          <p id="sign-locked" className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            {READ_ONLY}
+          </p>
+        )}
+        <Blockers draft={draft} onAttest={onAttest} busy={busy} locked={locked} canEdit={canSign && !final} />
         {canSign && !final && (unsigned || needsResign) && (
           <form
             className="space-y-2 border-t pt-4"
@@ -238,8 +248,8 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
               Your callback number
             </label>
             <div className="flex gap-2">
-              <Input id="callback" value={callback} onChange={(e) => setCallback(e.target.value)} placeholder="x4471" inputMode="tel" className="flex-1" aria-describedby={cbBad ? 'callback-help' : undefined} aria-invalid={cbBad || undefined} />
-              <Button type="submit" disabled={busy || blocking > 0 || !callback.trim() || cbBad}>
+              <Input id="callback" value={callback} onChange={(e) => setCallback(e.target.value)} placeholder="x4471" inputMode="tel" className="flex-1" disabled={locked} aria-describedby={locked ? 'sign-locked' : cbBad ? 'callback-help' : undefined} aria-invalid={cbBad || undefined} />
+              <Button type="submit" disabled={busy || locked || blocking > 0 || !callback.trim() || cbBad} aria-describedby={locked ? 'sign-locked' : undefined}>
                 <PenLine />
                 {needsResign ? 'Sign again' : 'Sign'}
               </Button>
@@ -260,7 +270,7 @@ export function SignPanel({ tpl, persona, template, phase, busy, onAttest, onSig
   );
 }
 
-export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boolean; onAck: (readback: string, questions: string) => void }) {
+export function AckPanel({ tpl, busy, locked, onAck }: { tpl: CaseTemplate; busy?: boolean; locked?: boolean; onAck: (readback: string, questions: string) => void }) {
   const [readback, setReadback] = useState('');
   const [questions, setQuestions] = useState('');
   const wf = tpl.workflow;
@@ -300,16 +310,24 @@ export function AckPanel({ tpl, busy, onAck }: { tpl: CaseTemplate; busy?: boole
           onAck(readback, questions);
         }}
       >
+        {locked && (
+          <p id="accept-locked" className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            {READ_ONLY}
+          </p>
+        )}
         <textarea
           value={readback}
           onChange={(e) => setReadback(e.target.value)}
+          disabled={locked}
+          aria-describedby={locked ? 'accept-locked' : undefined}
           rows={4}
           placeholder="Example: 72 F with sepsis from a urinary source, watcher; lactate trending down. I will repeat vitals on arrival and follow the pending blood cultures."
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm leading-relaxed shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 dark:bg-input/20"
+          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm leading-relaxed shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/20"
           aria-label="Read back"
         />
-        <Input value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Questions for the sender (optional)" aria-label="Questions for the sender" />
-        <Button type="submit" className="w-full" disabled={busy || problem !== null} aria-describedby={problem ? 'accept-why' : undefined}>
+        <Input value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Questions for the sender (optional)" aria-label="Questions for the sender" disabled={locked} aria-describedby={locked ? 'accept-locked' : undefined} />
+        <Button type="submit" className="w-full" disabled={busy || locked || problem !== null} aria-describedby={locked ? 'accept-locked' : problem ? 'accept-why' : undefined}>
           <CheckCheck />
           Accept handoff
         </Button>

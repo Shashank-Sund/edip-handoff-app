@@ -6,7 +6,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/hooks/useApp';
 import { readString, writeString } from '@/lib/storage';
 import { cn } from '@/lib/utils';
-import { ClockControl } from './ClockControl';
+import { ClockControl, PastBanner } from './ClockControl';
 import { SidebarBody } from './Sidebar';
 import { HelpButton } from '@/components/guide/HelpButton';
 import { DemoBanner } from '@/demo/Banner';
@@ -78,6 +78,7 @@ export function Layout({ title, crumbs, actions, help, children }: { title: Reac
           <ClockControl />
         </header>
         {config.clock === 'replay' && <ReplayNote />}
+        {config.clock === 'live' && <PastBanner />}
         <main id="main" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           {children}
         </main>

@@ -455,6 +455,7 @@ class Views:
         templates = {}
         pat = patient_entries(acts, self.rules)
         for tid, versions in by_t.items():
+            versions.sort(key=lambda v: v["version"])     # an older version the job wrote late (live clock) goes first
             row, rules = versions[-1], self.rules.get(tid)
             wf = workflow(row, acts, versions, summary["phase"] == "arrived", rules, self.rules)
             draft = effective(row, acts, ref, rules, pat)
@@ -536,7 +537,7 @@ class Views:
             dest = ((_elements(row["draft"]).get("E04") or {}).get("data") or {}) if row else {}
             unit = f"{e['facility']} {dest.get('pending_unit') or e['unit']}"
             by_unit[unit].append((e["ed_departure_ts"] - e["admit_decision_ts"]).total_seconds() / 60)
-            timing.append(len({r["at"] for r in ds.versions[e["csn"]] if r["at"] <= at}))
+            timing.append(len({r["at"] for r in ds.versions[e["csn"]] if r["shown"] <= at}))
             if row:
                 completeness.append(row["draft"]["completeness"]["score"])
                 sev_mix[row["severity"] or "unknown"] += 1
@@ -553,7 +554,7 @@ class Views:
         for e in done:
             if any(a["kind"] == "sign" and a["csn"] == e["csn"] and a["at"] <= e["ed_departure_ts"] for a in acts):
                 signed_before += 1
-        drafts = [r for rows in ds.versions.values() for r in rows if r["at"] <= at]
+        drafts = [r for rows in ds.versions.values() for r in rows if r["shown"] <= at]
         return {
             "at": iso(at), "series": series, "units": units,
             "admitted": len(done),
