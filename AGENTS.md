@@ -19,7 +19,7 @@ Without a terminal (workspace UI): open the repo as a Git folder, open `databric
 ## Rules
 
 - Never put secrets, tokens, hosts or workspace ids in the repo or the bundle. The Zerobus path keeps its secret in `~/.config/edip/zerobus.env` (see `docs/zerobus.md`); it is optional.
-- All data is synthetic. Do not connect real patient data without the user's explicit request and their organization's approval; if they do, set `EDIP_SYNTHETIC_DATA=false` and review `docs/feature-status.md` with them first.
+- All data is synthetic. Do not connect real patient data without the user's explicit request and their organization's approval; if they do, go through the "Moving to real data" checklist in `docs/setup.md` with them (it starts with `EDIP_SYNTHETIC_DATA=false` and links `docs/feature-status.md`). Never run `edip_setup` against a catalog that holds real data: it replaces the bronze tables.
 - Do not run `scripts/remove.sh`, `databricks bundle destroy` or drop catalogs unless the user asks.
 - Writing style for docs and UI text: plain words, no em or en dashes.
 
