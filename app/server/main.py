@@ -112,7 +112,7 @@ READ_ONLY = "You are looking at an earlier time, which is read only. Press Back 
 def _parse(at: str) -> datetime:
     try:
         return ts(at)
-    except ValueError:
+    except (ValueError, OverflowError):          # not ISO, or out of range in UTC (year 1 at +14:00)
         raise HTTPException(400, "at must be an ISO time")
 
 

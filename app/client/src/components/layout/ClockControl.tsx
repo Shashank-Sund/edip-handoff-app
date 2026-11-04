@@ -5,10 +5,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { WithTooltip } from '@/components/ui/tooltip';
 import { NOW_SLACK_MS, useApp } from '@/hooks/useApp';
 import { api } from '@/lib/api';
-import { clock, dateTime, day, facilityDays, onDay, span, timeZoneName, type FacilityDay } from '@/lib/format';
+import { clock, dateTime, day, facilityDays, onDay, timeZoneName, type FacilityDay } from '@/lib/format';
 import { HelpButton } from '@/components/guide/HelpButton';
 
 const HOUR = 3600000;
+const EDGE_MS = 10 * 60000;
 
 /** The facility hours a clinician can look back to: on the hour, from the limit up to now (less the slack). */
 function hoursOf(d: FacilityDay, min: number, max: number): { t: number; label: string }[] {
@@ -28,7 +29,11 @@ function hoursOf(d: FacilityDay, min: number, max: number): { t: number; label: 
  */
 function LiveClock() {
   const { config, at, past, setPast } = useApp();
+  // The refresh pauses at an earlier time: opening the panel works the hours out again from the current time.
+  const [, tick] = useState(0);
   const limit = (config.past_view_hours ?? 0) * HOUR;
+  const hoursBack = limit / HOUR;
+  const limitText = hoursBack >= 48 && hoursBack % 24 === 0 ? `${hoursBack / 24} days` : `${hoursBack} hour${hoursBack === 1 ? '' : 's'}`;
   const label = (
     <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
       <span className="size-2 rounded-full bg-sev-stable motion-safe:animate-pulse" aria-hidden />
@@ -37,7 +42,7 @@ function LiveClock() {
   );
   if (!limit) return label;
   const now = Date.now();
-  const min = now - limit;
+  const min = now - limit + EDGE_MS; // a margin, so a time picked at the edge is still allowed when it is sent
   const max = now - NOW_SLACK_MS;
   const shown = past ? new Date(past).getTime() : now;
   const days = facilityDays(new Date(min).toISOString(), new Date(now).toISOString());
@@ -63,7 +68,7 @@ function LiveClock() {
       ) : (
         label
       )}
-      <Popover>
+      <Popover onOpenChange={() => tick((n) => n + 1)}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className={past ? 'min-w-0 gap-2 px-2.5 tabular-nums sm:min-w-44' : 'gap-2 px-2.5'}>
             <History className="text-muted-foreground" aria-hidden />
@@ -84,7 +89,7 @@ function LiveClock() {
           <div>
             <p className="text-sm font-medium">View an earlier time</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              See the board and handoffs as they were, up to {span(limit / HOUR)} back. It is read only, and the app records that you looked. Facility time ({timeZoneName()}).
+              See the board and handoffs as they were, up to {limitText} back. It is read only, and the app records that you looked. Facility time ({timeZoneName()}).
             </p>
           </div>
           <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Day">

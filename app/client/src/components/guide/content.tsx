@@ -749,7 +749,7 @@ export const GUIDE: GuideSection[] = [
             </p>
             <p>The app records that you looked at an earlier time: who, which page or patient, and which time.</p>
             <Note>
-              A draft shows from the moment the app received it, as you saw it then. Arrival, admit decision and departure times show when they happened: if a message from the hospital systems came in late, an earlier time can already show it, although the app did not have it yet at that moment.
+              Each draft shows from when it was written, so you see the drafts as they were then. Everything else is as the chart says now. Arrival, admit decision and departure times show when they happened: if a message from the hospital systems came in late, an earlier time can already show it, although the app did not have it yet at that moment. A canceled admission shows as canceled at every earlier time too.
             </Note>
             {__STATIC_DEMO__ && <p className="text-muted-foreground">This demo uses the replay clock instead.</p>}
           </>

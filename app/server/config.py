@@ -19,14 +19,15 @@ only reads them to record who acted or looked, and to map the user to a role (ED
   EDIP_STALE_BOARDING_HOURS  with EDIP_CLOCK_MODE=live: a patient with an admit decision and no ED departure for
                    longer than this (default 24) is left off the board and the boarding counts, as a feed that
                    missed the departure would otherwise keep them boarding forever
-  EDIP_PAST_VIEW_HOURS  with EDIP_CLOCK_MODE=live: how far back (default 72 hours; 0 turns it off) a clinician
+  EDIP_PAST_VIEW_HOURS  with EDIP_CLOCK_MODE=live: how far back (default 72 hours, at most 8760; 0 turns it off) a clinician
                    can look at the board and handoffs as they were at an earlier time. Read only: edits, attestations,
                    sign offs and read backs always carry the server's current time, and are refused while the client
                    looks at an earlier time. A time older than the limit is refused (400); a later one than now is
                    now, and one within 2 minutes of now counts as now (clocks of devices differ). Every view of an
                    earlier time is a row in app.view_log (who, what, the time viewed, when); if that row cannot be
                    written, the view is refused. A draft version shows from when the handoff job wrote it
-                   (created_ts) or its as_of, whichever is later, so an earlier time looks as the app showed it then
+                   (created_ts) or its as_of, whichever is later, so an earlier time shows the drafts as they were
+                   then; encounter details and a canceled admission are as the data is now (app/README.md)
   EDIP_ACTIONS_TTL live mode: seconds the app reuses the clinician actions it read from Lakebase before reading them
                    again (default 2), so every app process sees the actions the others saved
   EDIP_PG_ENDPOINT live mode: projects/<p>/branches/<b>/endpoints/<e> (PGHOST and the rest come from the app's
@@ -63,4 +64,8 @@ def _timezone(name: str) -> str:
 TIMEZONE = _timezone(os.getenv("EDIP_TIMEZONE") or "America/New_York")
 STALE_BOARDING_HOURS = float(os.getenv("EDIP_STALE_BOARDING_HOURS", "24"))
 ACTIONS_TTL = float(os.getenv("EDIP_ACTIONS_TTL", "2"))
-PAST_VIEW_HOURS = max(0.0, float(os.getenv("EDIP_PAST_VIEW_HOURS", "72")))
+PAST_VIEW_HOURS = float(os.getenv("EDIP_PAST_VIEW_HOURS", "72"))
+if not 0 <= PAST_VIEW_HOURS <= 24 * 365:             # also nan; inf would not fit a timedelta
+    logging.getLogger("edip").warning("EDIP_PAST_VIEW_HOURS %r is not 0 to 8760; using %s", PAST_VIEW_HOURS,
+                                      "8760" if PAST_VIEW_HOURS > 0 else "0")
+    PAST_VIEW_HOURS = 24.0 * 365 if PAST_VIEW_HOURS > 0 else 0.0

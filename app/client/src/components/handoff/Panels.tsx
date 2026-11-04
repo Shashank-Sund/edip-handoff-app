@@ -128,6 +128,7 @@ function Blockers({ draft, onAttest, busy, canEdit, locked }: { draft: Draft; on
                   type="button"
                   className="shrink-0 rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50"
                   disabled={locked}
+                  aria-describedby={locked ? 'sign-locked' : undefined}
                   aria-expanded={open === r.rule}
                   onClick={() => setOpen(open === r.rule ? null : r.rule)}
                 >
@@ -325,7 +326,7 @@ export function AckPanel({ tpl, busy, locked, onAck }: { tpl: CaseTemplate; busy
           className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm leading-relaxed shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/20"
           aria-label="Read back"
         />
-        <Input value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Questions for the sender (optional)" aria-label="Questions for the sender" disabled={locked} />
+        <Input value={questions} onChange={(e) => setQuestions(e.target.value)} placeholder="Questions for the sender (optional)" aria-label="Questions for the sender" disabled={locked} aria-describedby={locked ? 'accept-locked' : undefined} />
         <Button type="submit" className="w-full" disabled={busy || locked || problem !== null} aria-describedby={locked ? 'accept-locked' : problem ? 'accept-why' : undefined}>
           <CheckCheck />
           Accept handoff

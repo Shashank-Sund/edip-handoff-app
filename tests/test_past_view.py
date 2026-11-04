@@ -163,8 +163,17 @@ def test_reads_look_back_within_the_limit_and_each_view_is_logged(live):
     old = c.get("/api/board", params={"at": ago(hours=72, minutes=5)}, headers=who(RN))
     assert old.status_code == 400 and old.json()["detail"] == "You can look back up to 72 hours. Pick a later time, or go back to live."
     assert c.get(f"/api/handoffs/{r['csn']}", params={"at": ago(hours=80)}, headers=who(RN)).status_code == 400
-    assert c.get("/api/board", params={"at": "yesterday"}, headers=who(RN)).status_code == 400
+    for odd in ("yesterday", "0001-01-01T00:00:00+05:00", "9999-12-31T23:59:59-05:00", "NaN"):
+        assert c.get("/api/board", params={"at": odd}, headers=who(RN)).status_code == 400, odd
+        assert c.post(f"/api/handoffs/{r['csn']}/sbar_nurse/sign", params={"at": odd}, json={"callback": "x4471"},
+                      headers=who(RN)).status_code == 400, odd
     assert len(db.views) == n
+
+
+@pytest.mark.parametrize("value,hours", [("inf", 8760), ("1e9", 8760), ("nan", 0), ("-5", 0), ("36", 36)])
+def test_past_view_hours_out_of_range(live, value, hours):
+    c, main, db = live(hours=value)
+    assert c.get("/api/config").json()["past_view_hours"] == hours
 
 
 def test_a_past_view_is_refused_when_the_log_cannot_be_written(live):

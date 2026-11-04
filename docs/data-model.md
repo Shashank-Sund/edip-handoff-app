@@ -171,7 +171,7 @@ Lakebase project `edip` (bundle variable `lakebase_project`), branch `production
   - `jobs/handoff_job.py refresh_synced()` starts a refresh of both at the end of every handoff run. It does not wait.
   - A pipeline run alone does not refresh `encounter_state_pg`. In live mode, the next handoff run carries the new state to Lakebase.
 - The app reads both tables in full and reloads them at most once a minute (`app/server/lakebase.py load_dataset()`).
-- With the live clock (`EDIP_CLOCK_MODE=live`), a version in `handoff_draft_pg` shows in the app from its `created_ts` (when the handoff job wrote it) or its `as_of`, whichever is later, so a look at an earlier time shows what the app showed then. The replay clock uses `as_of` only.
+- With the live clock (`EDIP_CLOCK_MODE=live`), a version in `handoff_draft_pg` shows in the app from its `created_ts` (when the handoff job wrote it) or its `as_of`, whichever is later, so a look at an earlier time shows the drafts as they were then (a few minutes early: the sync and the app's reload come after `created_ts`). Encounter details and the `retracted` status, which the handoff job sets on every version in place, are as they are now. The replay clock uses `as_of` only.
 
 ### App schema `app`: `app.handoff_action`
 
