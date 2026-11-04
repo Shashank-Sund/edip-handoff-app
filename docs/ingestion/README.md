@@ -39,7 +39,7 @@ Writing signed handoffs back into the EHR is not part of version 1. [epic-writeb
 
 - **Use a non production workspace and a separate catalog.** Pass `--var catalog=<name>` so real data never shares a catalog with the synthetic truth. Do not run `setup/load_bronze.py` against a catalog that holds real data: it replaces the bronze tables.
 - **Treat every bronze table as PHI.** Grant access through Unity Catalog groups, keep the landing volume private, and decide retention before the first message lands.
-- **Turn off the synthetic clock.** Set `EDIP_CLOCK_MODE=live` in `databricks.yml` so the app follows the current time.
+- **Turn off the demo features.** Set `EDIP_SYNTHETIC_DATA=false` in `databricks.yml`: the app then follows the current time and takes each user's role from `EDIP_ROLE_MAP`. Setting only `EDIP_CLOCK_MODE=live` leaves the demo personas on, so anyone could act as any clinician. The full checklist: [Moving to real data](../setup.md#moving-to-real-data).
 - **Run the parser tests on your own samples first.** `parse_hl7.py` and `parse_fhir.py` are plain Python with no Spark dependency, so an analyst can feed them de-identified sample messages on a laptop and check the records before anything is deployed.
 - **Watch `silver.quarantine`.** Every message the parsers cannot apply goes there with a reason. On a new feed, the quarantine reasons are the fastest way to find a mapping gap.
 
