@@ -27,8 +27,8 @@ only reads them to record who acted or looked, and to map the user to a role (ED
                    earlier time is a row in app.view_log (who, what, the time viewed, when); if that row cannot be
                    written, the view is refused. A draft version shows from when the handoff job wrote it
                    (created_ts) or its as_of, whichever is later, so an earlier time shows the drafts as they were
-                   then; a canceled admission shows canceled from the cancel's time (retracted_ts), and encounter
-                   details are as the data is now (app/README.md)
+                   then; a canceled admission shows canceled from the cancel's time (retracted_ts, with prior_status
+                   before it), and encounter details are as the data is now (app/README.md)
   EDIP_ACTIONS_TTL live mode: seconds the app reuses the clinician actions it read from Lakebase before reading them
                    again (default 2), so every app process sees the actions the others saved
   EDIP_PG_ENDPOINT live mode: projects/<p>/branches/<b>/endpoints/<e> (PGHOST and the rest come from the app's

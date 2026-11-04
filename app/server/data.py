@@ -55,6 +55,7 @@ class Dataset:
             created = ts(r.get("created_ts")) if written else None
             r["shown"] = max(r["at"], created) if created else r["at"]      # the time the version shows from
             r["retracted_ts"] = ts(r.get("retracted_ts"))
+            r["prior_status"] = r.get("prior_status") or None
             if isinstance(r.get("draft"), str):
                 r["draft"] = json.loads(r["draft"])
             if isinstance(r.get("blocking"), str):
@@ -62,12 +63,12 @@ class Dataset:
             self.versions[r["csn"]].append(r)
         for rows in self.versions.values():
             rows.sort(key=lambda r: (r["shown"], r["template"], r["version"]))
-            _written_status(rows)
         self._keys = {c: [r["shown"] for r in rows] for c, rows in self.versions.items()}
-        # When each canceled admission was canceled: None when a version has no retracted_ts (an older handoff job).
+        # When each canceled admission was canceled: None when a version lacks retracted_ts or prior_status (an older
+        # handoff job): canceled at every time.
         self.canceled: dict[str, datetime | None] = {}
         for c, rows in self.versions.items():
-            out = [r["retracted_ts"] for r in rows if r["status"] == "retracted"]
+            out = [r["retracted_ts"] if r["prior_status"] else None for r in rows if r["status"] == "retracted"]
             if out:
                 self.canceled[c] = None if None in out else min(out)
         w = meta.get("window") or {}
@@ -113,24 +114,12 @@ class Dataset:
         return best
 
 
-def _written_status(rows: list[dict]) -> None:
-    """The status each version of one encounter had before the job marked it retracted in place (written_status),
-    as jobs/handoff_job.py assigns it from the generation points (ai/edip_ai/points.py): draft before the transfer,
-    final at the first transfer point, addendum after it."""
-    if not any(r["status"] == "retracted" for r in rows):
-        return
-    transferred = min((r["at"] for r in rows if r.get("trigger") == "transfer"), default=None)
-    for r in rows:
-        r["written_status"] = ("draft" if transferred is None or r["at"] < transferred
-                               else "final" if r["at"] == transferred else "addendum")
-
-
 def status_at(r: dict, at: datetime) -> str:
     """A version's status at `at`. A canceled admission's versions are retracted from retracted_ts on (the
-    cancel's time) and have their written status before it; without retracted_ts (written by an older handoff
-    job) they are retracted at every time."""
-    if r["status"] == "retracted" and r["retracted_ts"] is not None and at < r["retracted_ts"]:
-        return r["written_status"]
+    cancel's time) and have their prior_status before it, both set by the handoff job when it retracts; without
+    either (retracted by an older handoff job, or a sync from before the columns) they are retracted at every time."""
+    if r["status"] == "retracted" and r["prior_status"] and r["retracted_ts"] is not None and at < r["retracted_ts"]:
+        return r["prior_status"]
     return r["status"]
 
 

@@ -39,9 +39,10 @@ def build_fixtures(out: Path) -> None:
 
 
 def cancel_admissions(out: Path) -> list[str]:
-    """Mark two admissions canceled as the handoff job does (every version retracted, retracted_ts the cancel's time,
-    the encounter's status canceled): one while boarding, one after its transfer and any addenda. The synthetic
-    week's own canceled registrations never had a handoff, so without this no scenario shows a canceled case. Unlike the
+    """Mark three admissions canceled as the handoff job does (every version retracted, retracted_ts the cancel's
+    time, prior_status the status it had; the encounter's status canceled): one while boarding, one after its transfer
+    and an addendum, and one whose versions an older job had retracted (no prior_status: canceled at every time). The
+    synthetic week's own canceled registrations never had a handoff, so without this no scenario shows a canceled case. Unlike the
     real job (no points after a retract), versions after the cancel stay; both sides read the same fixtures."""
     t = lambda v: datetime.fromisoformat(v.replace("Z", "+00:00"))  # noqa: E731
     encounters = json.loads((out / "encounters.json").read_text())
@@ -59,14 +60,17 @@ def cancel_admissions(out: Path) -> list[str]:
             picks["boarding"] = (e, pts[1] + timedelta(minutes=30))
         elif "arrived" not in picks and pts[-1] > dep and pts[-1] + timedelta(minutes=30) < dep + timedelta(hours=11):
             picks["arrived"] = (e, pts[-1] + timedelta(minutes=30))
-    if len(picks) < 2:
-        raise SystemExit(f"cancel_admissions found only {sorted(picks)}: it needs an admission to cancel while boarding "
-                         "and one after an addendum")
-    for e, at in picks.values():
+        elif "older job" not in picks and dep - pts[1] > timedelta(hours=1):
+            picks["older job"] = (e, pts[1] + timedelta(minutes=30))
+    if len(picks) < 3:
+        raise SystemExit(f"cancel_admissions found only {sorted(picks)}: it needs two admissions to cancel while "
+                         "boarding and one after an addendum")
+    for kind, (e, at) in picks.items():
         e["status"] = "canceled"
         for d in drafts:
             if d["csn"] == e["csn"]:
-                d["status"], d["retracted_ts"] = "retracted", at.isoformat().replace("+00:00", "Z")
+                d["prior_status"], d["status"] = None if kind == "older job" else d["status"], "retracted"
+                d["retracted_ts"] = at.isoformat().replace("+00:00", "Z")
     (out / "encounters.json").write_text(json.dumps(encounters))
     with gzip.open(out / "drafts.jsonl.gz", "wt", encoding="utf-8") as f:
         for d in drafts:
@@ -574,7 +578,7 @@ def patient_scenarios(rec, boarding, units):
 
 def canceled_scenarios(rec, ds):
     """The admissions cancel_admissions() canceled: as they were just before the cancel, at it and after it, and an
-    edit before (allowed while boarding) and after (refused)."""
+    edit before (allowed while boarding) and after (refused). The one an older job retracted is canceled throughout."""
     iso = lambda t: t.isoformat()  # noqa: E731
     rec("canceled reset", "POST", "/api/demo/reset")
     for csn in sorted(c for c, rows in ds.versions.items() if any(r["retracted_ts"] for r in rows)):

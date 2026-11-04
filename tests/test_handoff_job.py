@@ -1,8 +1,8 @@
 """The handoff job's retraction and its upgrade of older tables, without Spark or Databricks.
 
-A canceled admission marks every version retracted with the cancel's time (retracted_ts), so the app can show the
-case as it was before the cancel; tables made before the column get it added (edip_lakebase_setup then brings it to
-Lakebase with a full refresh).
+A canceled admission marks every version retracted with the cancel's time (retracted_ts) and the status it had
+(prior_status), so the app can show the case as it was before the cancel; tables made before the columns get them
+added (edip_lakebase_setup then brings them to Lakebase with a full refresh).
 """
 import sys
 import types
@@ -28,6 +28,9 @@ def test_retraction_carries_the_time_of_the_cancel():
     _, retracted = select_points(triggers, 60)
     sql = H.retract_sql("edip", triggers, retracted)
     assert sql.startswith("UPDATE edip.gold.handoff_draft SET status = 'retracted', retracted_ts = CASE csn ")
+    # The status before, kept once: from a row not yet retracted, never over a stored one (Delta evaluates SET from
+    # the row as it was, so status here is the old status).
+    assert ", prior_status = coalesce(prior_status, CASE WHEN status <> 'retracted' THEN status END) WHERE " in sql
     # The first retract of each encounter, in UTC with its fraction of a second; 402 was not canceled.
     assert "WHEN '401' THEN TIMESTAMP '2026-10-28 16:05:09.250000'" in sql
     assert "WHEN '403' THEN TIMESTAMP '2026-10-28 14:35:09.250000'" in sql
@@ -59,21 +62,25 @@ class FakeSpark:
 def test_older_tables_get_the_column_once():
     old = ["csn", "template", "version", "status", "draft"]
     spark = FakeSpark({"handoff_draft": list(old), "handoff_latest": list(old)})
-    assert H.add_retracted_ts(spark, "edip") is True
-    assert spark.ran == ["ALTER TABLE edip.gold.handoff_draft ADD COLUMNS (retracted_ts TIMESTAMP)",
-                         "ALTER TABLE edip.gold.handoff_latest ADD COLUMNS (retracted_ts TIMESTAMP)"]
-    new = FakeSpark({"handoff_draft": old + ["retracted_ts"], "handoff_latest": old + ["retracted_ts"]})
-    assert H.add_retracted_ts(new, "edip") is False and new.ran == []
-    # Only the synced table counts: handoff_latest is not in Lakebase.
-    latest = FakeSpark({"handoff_draft": old + ["retracted_ts"], "handoff_latest": list(old)})
-    assert H.add_retracted_ts(latest, "edip") is False and len(latest.ran) == 1
+    both = ["retracted_ts", "prior_status"]
+    assert H.add_retraction_columns(spark, "edip") is True
+    assert spark.ran == ["ALTER TABLE edip.gold.handoff_draft ADD COLUMNS (retracted_ts TIMESTAMP, prior_status STRING)",
+                         "ALTER TABLE edip.gold.handoff_latest ADD COLUMNS (retracted_ts TIMESTAMP, prior_status STRING)"]
+    new = FakeSpark({"handoff_draft": old + both, "handoff_latest": old + both})
+    assert H.add_retraction_columns(new, "edip") is False and new.ran == []
+    # Only what is missing; only the synced table counts (handoff_latest is not in Lakebase).
+    half = FakeSpark({"handoff_draft": old + ["retracted_ts"], "handoff_latest": old + both})
+    assert H.add_retraction_columns(half, "edip") is True
+    assert half.ran == ["ALTER TABLE edip.gold.handoff_draft ADD COLUMNS (prior_status STRING)"]
+    latest = FakeSpark({"handoff_draft": old + both, "handoff_latest": list(old)})
+    assert H.add_retraction_columns(latest, "edip") is False and len(latest.ran) == 1
 
 
 def test_reference_rows_need_no_retraction_time():
-    """The reference drafts load through flush(), which writes retracted_ts as NULL: canceled admissions have no
+    """The reference drafts load through flush(), which writes retracted_ts and prior_status as NULL: canceled admissions have no
     generation points, so no reference row is ever retracted, and ai/reference/ needs no refresh."""
     import gzip
     import json
     rows = [json.loads(line) for line in gzip.open(ROOT / "ai" / "reference" / "drafts.jsonl.gz", "rt")]
     assert {r["status"] for r in rows} <= {"draft", "final", "addendum"}
-    assert not any("retracted_ts" in r for r in rows)
+    assert not any("retracted_ts" in r or "prior_status" in r for r in rows)

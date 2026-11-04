@@ -76,12 +76,12 @@ ENC_DDL = """CREATE TABLE gold.encounter_state_pg (
 DRAFT_DDL = """CREATE TABLE gold.handoff_draft_pg (
     csn TEXT, template TEXT, version INTEGER, status TEXT, trigger TEXT, as_of TIMESTAMPTZ, created_ts TIMESTAMPTZ,
     model TEXT, severity TEXT, score DOUBLE PRECISION, blocking JSONB, draft TEXT, retracted_ts TIMESTAMPTZ,
-    PRIMARY KEY (csn, template, version))"""
+    prior_status TEXT, PRIMARY KEY (csn, template, version))"""
 ENC_COLS = ("csn", "facility", "mrn", "patient_name", "birth_date", "sex", "status", "patient_class", "unit", "room", "bed",
             "pending_unit", "pending_room", "pending_bed", "service", "level_of_care", "esi", "chief_complaint", "isolation",
             "code_status", "arrival_ts", "admit_decision_ts", "ed_departure_ts", "last_event_kind", "last_event_ts")
 DRAFT_COLS = ("csn", "template", "version", "status", "trigger", "as_of", "created_ts", "model", "severity", "score",
-              "blocking", "draft", "retracted_ts")
+              "blocking", "draft", "retracted_ts", "prior_status")
 
 
 def load(dsn: str, encounters: list[dict], drafts: list[dict], reset: bool = False) -> None:

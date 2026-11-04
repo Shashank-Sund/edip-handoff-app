@@ -5,7 +5,7 @@ is a short lived token from the Databricks SDK for the endpoint in EDIP_PG_ENDPO
 endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
-refreshed by the handoff job; retracted_ts once the sync has it). Writes: app.handoff_action and app.view_log (with
+refreshed by the handoff job; retracted_ts and prior_status once the sync has them). Writes: app.handoff_action and app.view_log (with
 the live clock, every view of an earlier time), created here on first start, append only.
 """
 from __future__ import annotations
@@ -92,10 +92,11 @@ def load_dataset() -> Dataset:
     with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
         encounters = cur.execute("SELECT * FROM gold.encounter_state_pg").fetchall()
         try:
-            drafts = cur.execute(DRAFT_SQL.format(", retracted_ts")).fetchall()
+            drafts = cur.execute(DRAFT_SQL.format(", retracted_ts, prior_status")).fetchall()
         except UndefinedColumn:
-            # Synced before the handoff job added retracted_ts (a deployment from before it): a retracted version is
-            # then retracted at every time, as before. edip_lakebase_setup (a full refresh) brings the column.
+            # Synced before the handoff job added retracted_ts and prior_status (a deployment from before them): a
+            # retracted version is then retracted at every time, as before. edip_lakebase_setup (a full refresh)
+            # brings the columns.
             drafts = cur.execute(DRAFT_SQL.format("")).fetchall()
     for d in drafts:
         if isinstance(d["blocking"], str):

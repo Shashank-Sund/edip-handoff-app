@@ -45,7 +45,7 @@ class FakeDB:
     def __init__(self, encounters, drafts):
         self.encounters, self.drafts = encounters, drafts
         self.actions, self.views, self.fail_views = [], [], False
-        self.old_sync = False             # a synced table from before retracted_ts
+        self.old_sync = False             # a synced table from before retracted_ts and prior_status
 
     def connect(self):
         return FakeConn(self)
@@ -69,10 +69,11 @@ class FakeConn:
         if sql.startswith("SELECT * FROM gold.encounter_state_pg"):
             return Result(db.encounters)
         if sql.startswith("SELECT csn, template"):
-            if db.old_sync and "retracted_ts" in sql:
+            if db.old_sync and ("retracted_ts" in sql or "prior_status" in sql):
                 from psycopg.errors import UndefinedColumn
                 raise UndefinedColumn('column "retracted_ts" does not exist')
-            return Result([{k: v for k, v in d.items() if k != "retracted_ts" or not db.old_sync} for d in db.drafts])
+            new = ("retracted_ts", "prior_status") if db.old_sync else ()
+            return Result([{k: v for k, v in d.items() if k not in new} for d in db.drafts])
         if sql.startswith("SELECT * FROM app.handoff_action"):
             return Result(sorted(db.actions, key=lambda r: (r["at"], r["action_id"])))
         if sql.startswith("INSERT INTO app.handoff_action"):
@@ -284,39 +285,48 @@ def test_dataset_uses_created_ts_only_with_the_live_clock(monkeypatch):
     _clean()
 
 
-def test_a_retracted_version_has_its_written_status_until_the_cancel(monkeypatch):
+def test_a_retracted_version_has_its_prior_status_until_the_cancel(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "app/server"))
     _clean()
     from data import Dataset, status_at
     t = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
     meta = {"window": {"start": "2026-10-26T12:00:00Z", "days": 7}}
 
-    def row(version, minutes, trigger):
+    def row(version, minutes, prior):
         return {"csn": "1", "template": "sbar_nurse", "version": version, "as_of": t + timedelta(minutes=minutes),
-                "trigger": trigger, "draft": {}, "status": "retracted", "retracted_ts": "2026-10-27T17:00:00Z"}
-    rows = [row(1, 0, "pending_admit"), row(2, 60, "bed_assigned"), row(3, 120, "transfer"), row(4, 180, "note_signed")]
+                "trigger": "x", "draft": {}, "status": "retracted", "retracted_ts": "2026-10-27T17:00:00Z",
+                "prior_status": prior}
+    # The stored status, not one inferred from the trigger (every trigger here is "x").
+    rows = [row(1, 0, "draft"), row(2, 60, "draft"), row(3, 120, "final"), row(4, 180, "addendum")]
     for written in (False, True):
         ds = Dataset([], rows, meta, "x", written=written)
         assert [status_at(r, t + timedelta(hours=4)) for r in ds.rows_at("1", t + timedelta(hours=4))] == [
             "draft", "draft", "final", "addendum"]
         assert [status_at(r, t + timedelta(hours=5)) for r in ds.rows_at("1", t + timedelta(hours=5))] == ["retracted"] * 4
-    # Retracted by an older handoff job (no time): retracted at every time, as before. Not retracted: as written.
-    legacy = Dataset([], [{**r, "retracted_ts": None} for r in rows], meta, "x")
-    assert [status_at(r, t) for r in legacy.rows_at("1", t)] == ["retracted"]
-    plain = Dataset([], [{**rows[0], "status": "draft", "retracted_ts": None}], meta, "x")
-    assert status_at(plain.rows_at("1", t)[0], t) == "draft"
+        assert ds.canceled == {"1": t + timedelta(hours=5)}
+    # Retracted by an older handoff job (no prior_status, with or without a time), or a sync from before the
+    # columns: retracted at every time, as before. Not retracted: as written.
+    for old in ({"prior_status": None}, {"prior_status": None, "retracted_ts": None}, {"retracted_ts": None}):
+        legacy = Dataset([], [{**r, **old} for r in rows], meta, "x")
+        assert [status_at(r, t) for r in legacy.rows_at("1", t)] == ["retracted"] and legacy.canceled == {"1": None}
+    sync = Dataset([], [{k: v for k, v in r.items() if k not in ("retracted_ts", "prior_status")} for r in rows], meta, "x")
+    assert [status_at(r, t) for r in sync.rows_at("1", t)] == ["retracted"]
+    plain = Dataset([], [{**rows[0], "status": "draft", "retracted_ts": None, "prior_status": None}], meta, "x")
+    assert status_at(plain.rows_at("1", t)[0], t) == "draft" and plain.canceled == {}
     _clean()
 
 
 def cancel(drafts, picked):
-    """Mark admissions canceled as the handoff job does: every version retracted, retracted_ts 20 minutes after the
-    second SBAR version's as_of (the job wrote that version 3 minutes after it), for those 8 to 40 hours ago."""
+    """Mark admissions canceled as the handoff job does: every version retracted, prior_status the status it had,
+    retracted_ts 20 minutes after the second SBAR version's as_of (the job wrote that version 3 minutes after it), for
+    those 8 to 40 hours ago."""
     now = datetime.now(timezone.utc)
     second = {d["csn"]: d["as_of"] for d in drafts if d["template"] == "sbar_nurse" and d["version"] == 2
               and now - timedelta(hours=40) < d["as_of"] < now - timedelta(hours=8)}
     for d in drafts:
         if d["csn"] in second:
-            d["status"], d["retracted_ts"] = "retracted", second[d["csn"]] + timedelta(minutes=20)
+            d["prior_status"], d["status"] = d["status"], "retracted"
+            d["retracted_ts"] = second[d["csn"]] + timedelta(minutes=20)
     picked.update(second)
 
 
@@ -346,7 +356,7 @@ def test_a_canceled_admission_shows_canceled_from_the_cancel_on(live):
 
 
 def test_a_sync_from_before_retracted_ts_still_loads(live):
-    """Lakebase synced before the handoff job added the column: the app loads, and a retracted version is retracted
+    """Lakebase synced before the handoff job added the columns: the app loads, and a retracted version is retracted
     at every time, as before."""
     picked = {}
     c, main, db = live(edit=lambda d: cancel(d, picked), old_sync=True)
