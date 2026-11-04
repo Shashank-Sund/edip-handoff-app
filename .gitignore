@@ -25,3 +25,6 @@ dist/
 /app/fixtures/data/
 /app/server/static/
 /app/fixtures/parity/
+
+# Claude Code local files (agent worktrees); never deploy them
+.claude/
