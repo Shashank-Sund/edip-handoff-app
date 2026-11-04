@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { CircleHelp } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { GuideSheet } from './HelpButton';
 
@@ -130,7 +130,95 @@ export function Explain({ text, topic, children, icon, label, className, side = 
           )}
         </PopoverContent>
       </Popover>
-      <span id={id} className="sr-only">
+      {/* Hidden, read only as the description: not read a second time as page text. */}
+      <span id={id} hidden>
+        {text}
+      </span>
+      {topic && <GuideSheet topic={topic} open={guide} onOpenChange={setGuide} />}
+    </>
+  );
+}
+
+/**
+ * The same explanation for a tag that repeats down the page (Changed, Drafted by the model, Required): not a tab
+ * stop, so the keyboard is not slowed by one stop per item. It opens on hover and on a tap, and screen readers get
+ * the text as its description; each section keeps one focusable ? for the keyboard.
+ */
+export function QuietExplain({ text, topic, children, label, className, side = 'top' }: {
+  text: ReactNode;
+  topic?: string;
+  children: ReactNode;
+  label: string;
+  className?: string;
+  side?: 'top' | 'bottom' | 'left' | 'right';
+}) {
+  const [open, setOpen] = useState(false);
+  const [guide, setGuide] = useState(false);
+  const pinned = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const id = useId();
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const show = () => {
+    window.clearTimeout(timer.current);
+    setOpen(true);
+  };
+  const hide = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => !pinned.current && setOpen(false), 150);
+  };
+  return (
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) pinned.current = false;
+          setOpen(o);
+        }}
+      >
+        <PopoverAnchor asChild>
+          <span
+            aria-describedby={id}
+            data-explain=""
+            onPointerEnter={(e) => e.pointerType === 'mouse' && show()}
+            onPointerLeave={(e) => e.pointerType === 'mouse' && hide()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              pinned.current = !(open && pinned.current);
+              setOpen(pinned.current);
+            }}
+            className={cn('cursor-help rounded-sm underline decoration-muted-foreground/60 decoration-dotted underline-offset-[3px]', className)}
+          >
+            {children}
+          </span>
+        </PopoverAnchor>
+        <PopoverContent
+          side={side}
+          aria-label={label}
+          className="w-72 max-w-[calc(100vw-2rem)] p-3 text-xs font-normal normal-case leading-snug tracking-normal text-popover-foreground"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onPointerEnter={show}
+          onPointerLeave={(e) => e.pointerType === 'mouse' && hide()}
+        >
+          <div className="text-pretty">{text}</div>
+          {topic && (
+            <button
+              type="button"
+              className="mt-2 rounded-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60"
+              onClick={() => {
+                pinned.current = false;
+                setOpen(false);
+                setGuide(true);
+              }}
+            >
+              More in the guide
+            </button>
+          )}
+        </PopoverContent>
+      </Popover>
+      {/* Hidden, read only as the description: not read a second time as page text. */}
+      <span id={id} hidden>
         {text}
       </span>
       {topic && <GuideSheet topic={topic} open={guide} onOpenChange={setGuide} />}

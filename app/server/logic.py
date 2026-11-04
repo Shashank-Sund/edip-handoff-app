@@ -42,6 +42,13 @@ TYPED = {
     ("E10", "Other"): {"label": "Type of isolation", "note": None, "required": "Write the type of isolation."},
     ("E09", "Add an allergy"): {"label": "Allergen", "note": "Reaction (optional)", "required": "Write the allergen."},
 }
+# Code status, allergies and isolation belong to the patient, not to one template: a value entered on any template
+# shows on every template, and a template cannot confirm "none" while another holds an entered value (or the
+# reverse). Allergies are a list; the others hold one value, the latest entered.
+PATIENT = ("E08", "E09", "E10")
+ALLERGY = "Add an allergy"
+PATIENT_LABEL = {"E08": "Code status", "E09": "An allergy", "E10": "Isolation"}
+TEMPLATE_NAME = {"sbar_nurse": "SBAR", "ipass_physician": "I-PASS", "custom_sea58": "Joint Commission minimum"}
 
 
 class ActionError(ValueError):
@@ -76,6 +83,8 @@ def _content(e: dict):
         if isinstance(n.get("items"), list):
             return [{k: i.get(k) for k in ("text", "owner", "due")} for i in n["items"]]
         return {"value": n.get("value"), "text": n.get("text")} if e["id"] == "E07" else n.get("text")
+    if e.get("entered"):                            # a value the clinician entered is content like any other
+        return {"chart": _strip(e.get("data")), "entered": [{"value": x["value"], "note": x["note"]} for x in e["entered"]]}
     return _strip(e.get("data"))
 
 
@@ -139,6 +148,42 @@ def _entered(a: dict, options: list | None) -> bool:
     return bool(options) and a["option"] != options[0] or bool(a.get("entry"))
 
 
+def _options(index: dict, template: str, rule: str) -> list:
+    return ((index.get(template) or {}).get(rule) or {}).get("attest") or []
+
+
+def _entry_of(a: dict) -> dict:
+    return {"rule": a["rule"], "option": a["option"], "value": a.get("entry") or a["option"], "note": a.get("entry_note"),
+            "by": a["by"], "at": iso(a["at"]), "version": a["version"], "template": a["template"]}
+
+
+def patient_entries(acts: list[dict], index: dict) -> dict:
+    """The patient level values entered on any template (index: the rules of every template, rule_index()):
+    {"E08": entry or None, "E10": entry or None, "E09": [entries], "none": {(template, element): action}}, where
+    "none" holds each template's current "nothing to add" choice (No known allergies confirmed and the like)."""
+    current, allergies = {}, {}
+    for a in _ordered([a for a in acts if a["kind"] == "attest"]):
+        el = ((index.get(a["template"]) or {}).get(a["rule"]) or {}).get("element")
+        if el not in PATIENT:
+            continue
+        current[(a["template"], el)] = a
+        if el == "E09" and a["option"] == ALLERGY:
+            key = (a.get("entry") or "").strip().lower()
+            if a.get("remove"):
+                allergies.pop(key, None)
+            elif key:
+                allergies[key] = _entry_of(a)
+    out = {"E09": list(allergies.values()), "none": {}}
+    for el in ("E08", "E10"):
+        entered = [a for (t, e), a in current.items() if e == el and not a.get("remove")
+                   and _entered(a, _options(index, t, a["rule"]))]
+        out[el] = _entry_of(max(entered, key=lambda a: (a["at"], a["recorded_ts"]))) if entered else None
+    for (t, el), a in current.items():
+        if not a.get("remove") and not _entered(a, _options(index, t, a["rule"])):
+            out["none"][(t, el)] = a
+    return out
+
+
 def _callback_ok(cb: str) -> bool:
     return len(re.findall(r"[0-9]", cb)) >= 3 or re.fullmatch(r"(?i)(x|ext\.?) ?[0-9]{2,}", cb) is not None
 
@@ -151,13 +196,17 @@ def _readback_ok(text: str) -> bool:
 
 
 # ----------------------------------------------------------------------------------------- effective draft
-def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: dict | None = None) -> dict:
+def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: dict | None = None,
+              patient: dict | None = None) -> dict:
     """The draft as the clinician sees it at time `at`: edits applied over model text, rules resolved by attestations
     and edits. Edits and attestations carry forward to newer versions of the same template, flagged when the model's
     text changed underneath an edit; a Restore brings back the model's text. A stale vitals attestation counts only
-    within the rule's age limit for the patient's severity (rules: the template's rule definitions)."""
+    within the rule's age limit for the patient's severity (rules: the template's rule definitions). patient: the
+    patient level entries (patient_entries()); without it, those of this template's actions."""
     t = row["template"]
     rules = rules or {}
+    if patient is None:
+        patient = patient_entries(acts, {t: rules})
     mine = [a for a in acts if a["template"] == t]
     edits = _latest_by(mine, "edit", lambda a: a["element"])
     attests = _latest_by(mine, "attest", lambda a: a["rule"])
@@ -191,7 +240,19 @@ def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: di
                  for o in r.get("attest_options") or [] if (r["element"], o) in TYPED}
         if typed:
             r["attest_typed"] = typed
-        if r["status"] in ("attest", "missing", "stale"):
+        if r["status"] == "attest" and r["element"] in PATIENT:
+            # Patient level: an entered value from any template resolves it; otherwise this template's "none".
+            a = attests.get(r["rule"])
+            found = patient["E09"] if r["element"] == "E09" else [x for x in (patient[r["element"]],) if x]
+            if found and e:
+                last = found[-1]
+                r["resolution"] = {"kind": "attested", "option": last["option"], "by": last["by"], "at": last["at"],
+                                   "version": last["version"], "entered": True}
+                e["entered"] = found
+            elif a and not a.get("remove") and not _entered(a, r.get("attest_options")):
+                r["resolution"] = {"kind": "attested", "option": a["option"], "by": a["by"], "at": iso(a["at"]),
+                                   "version": a["version"]}
+        elif r["status"] in ("attest", "missing", "stale"):
             a = attests.get(r["rule"])
             if a and r["status"] != "missing" and r["level"] == "stale" and a["option"] == STALE_OPTION and at is not None:
                 limit = ((rules.get(r["rule"]) or {}).get("max_age_min") or {}).get(sev, 60)
@@ -203,11 +264,6 @@ def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: di
             if a and r["status"] != "missing":
                 r["resolution"] = {"kind": "attested", "option": a["option"], "by": a["by"], "at": iso(a["at"]),
                                    "version": a["version"]}
-                if e and _entered(a, r.get("attest_options")):
-                    # A value the clinician entered (Droplet, DNR, an allergy): shown until the chart has one.
-                    r["resolution"]["entered"] = True
-                    e["entered"] = {"rule": r["rule"], "option": a["option"], "value": a.get("entry") or a["option"],
-                                    "note": a.get("entry_note"), "by": a["by"], "at": iso(a["at"]), "version": a["version"]}
             elif e and e["kind"] == "narrative" and (e.get("narrative") or {}).get("edited") and \
                     ((e["narrative"].get("text") or "").strip() or e["narrative"].get("items")):
                 r["resolution"] = {"kind": "edited", "by": e["narrative"]["edited"]["by"]}
@@ -225,10 +281,16 @@ def effective(row: dict, acts: list[dict], at: datetime | None = None, rules: di
     return d
 
 
+def _until(acts: list[dict], s: dict) -> list[dict]:
+    """Every action, of any template, saved up to and including the sign off s."""
+    return [a for a in acts if (a["at"], a["recorded_ts"]) <= (s["at"], s["recorded_ts"])]
+
+
 def workflow(row: dict | None, acts: list[dict], versions: list[dict], departed: bool = False,
-             rules: dict | None = None) -> dict:
+             rules: dict | None = None, index: dict | None = None) -> dict:
     """draft, signed, changed (after signing: sign again), acknowledged, or transferred_unsigned (the patient left
-    the ED with no sign off); with who and when. versions: the rows to find the signed version in."""
+    the ED with no sign off); with who and when. versions: the rows to find the signed version in. index: the rules
+    of every template, for the patient level values entered on another template."""
     if row is None:
         return {"state": "drafting"}
     t = row["template"]
@@ -240,12 +302,17 @@ def workflow(row: dict | None, acts: list[dict], versions: list[dict], departed:
         return out
     out.update(state="signed", signed={"by": s["by"], "role": s["role"], "callback": s.get("callback"),
                                        "at": iso(s["at"]), "version": s["version"]})
+    index = index or {t: rules or {}}
+    signed_pat, now_pat = patient_entries(_until(acts, s), index), patient_entries(acts, index)
     changed = False
     if row["version"] != s["version"]:
         base = next((v for v in versions if v["template"] == t and v["version"] == s["version"]), None)
-        changed = base is None or _clinical(effective(base, before, None, rules)) != _clinical(effective(row, before, None, rules))
+        changed = base is None or (_clinical(effective(base, before, None, rules, signed_pat))
+                                   != _clinical(effective(row, before, None, rules, signed_pat)))
     out["changed_since_signed"] = changed
-    out["edited_since_signed"] = any(a["kind"] in ("edit", "attest") for a in after)
+    # An edit or attestation after signing, here or (for code status, allergies, isolation) on another template.
+    out["edited_since_signed"] = any(a["kind"] in ("edit", "attest") for a in after) or (
+        _clinical(effective(row, before, None, rules, signed_pat)) != _clinical(effective(row, before, None, rules, now_pat)))
     if changed or out["edited_since_signed"]:
         out["state"] = "changed"
         return out
@@ -313,14 +380,21 @@ class Views:
         rows = self.ds.rows_at(csn, at)
         ref = min(at, dep) if dep else at
         templates = {}
+        pat = patient_entries(acts, self.rules)
         for tid, row in latest.items():
-            eff = effective(row, acts, ref, self.rules.get(tid))
+            eff = effective(row, acts, ref, self.rules.get(tid), pat)
             templates[tid] = {"version": row["version"], "as_of": iso(row["at"]), "status": row["status"],
                               "trigger": row["trigger"], "score": eff["completeness"]["score"],
                               "blocking": eff["completeness"]["blocking"],
-                              "workflow": workflow(row, acts, rows, phase == "arrived", self.rules.get(tid))}
+                              "workflow": workflow(row, acts, rows, phase == "arrived", self.rules.get(tid), self.rules)}
         sev = (els.get("E07") or {}).get("narrative") or {}
         flags = {k: (els.get(k) or {}).get("data") for k in ("E08", "E09", "E10")}
+        code = (flags["E08"] or {}).get("value") if isinstance(flags["E08"], dict) else None
+        isolation = (flags["E10"] or {}).get("value") if isinstance(flags["E10"], dict) else None
+        allergies = [a.get("allergen") for a in (flags["E09"] or [])] if isinstance(flags["E09"], list) else []
+
+        def shown(x):                             # an entered value, for the patient box and the board flags
+            return {k: x[k] for k in ("value", "note", "by", "template")}
         return {
             "csn": csn, "facility": e["facility"], "phase": phase,
             "patient": {"name": e["patient_name"], "mrn": e["mrn"], "sex": e["sex"], "age": _age(e["birth_date"], at)},
@@ -333,9 +407,11 @@ class Views:
             if not dep else {"pending_unit": dest.get("unit") or dest.get("pending_unit"), "pending_room": dest.get("room"),
                              "pending_bed": dest.get("bed"), "level_of_care": dest.get("level_of_care")},
             "severity": sev.get("value"), "severity_floor": (sev.get("floor") or {}).get("value"),
-            "code_status": (flags["E08"] or {}).get("value") if isinstance(flags["E08"], dict) else None,
-            "isolation": (flags["E10"] or {}).get("value") if isinstance(flags["E10"], dict) else None,
-            "allergies": [a.get("allergen") for a in (flags["E09"] or [])] if isinstance(flags["E09"], list) else [],
+            "code_status": code, "isolation": isolation, "allergies": allergies,
+            # Entered in the sign off while the chart has none; the chart value replaces them when it arrives.
+            "entered": {"code_status": shown(pat["E08"]) if pat["E08"] and not code else None,
+                        "isolation": shown(pat["E10"]) if pat["E10"] and not isolation else None,
+                        "allergies": [shown(x) for x in pat["E09"]] if not allergies else []},
             "last_update": {"as_of": iso(any_row["at"]), "trigger": any_row["trigger"]},
             "templates": templates,
         }
@@ -377,10 +453,11 @@ class Views:
         for r in rows:
             by_t[r["template"]].append(r)
         templates = {}
+        pat = patient_entries(acts, self.rules)
         for tid, versions in by_t.items():
             row, rules = versions[-1], self.rules.get(tid)
-            wf = workflow(row, acts, versions, summary["phase"] == "arrived", rules)
-            draft = effective(row, acts, ref, rules)
+            wf = workflow(row, acts, versions, summary["phase"] == "arrived", rules, self.rules)
+            draft = effective(row, acts, ref, rules, pat)
             # What changed: since the signature when the template changed after signing (the text the ED signed,
             # clinician edits included), else since the previous version; both as the clinician sees them.
             base, since = None, "previous"
@@ -388,9 +465,10 @@ class Views:
                 s, before, _ = _last_sign(acts, tid)
                 signed = next((v for v in versions if v["version"] == s["version"]), None)
                 if signed:
-                    base, since = (s["version"], effective(signed, before, s["at"], rules)), "signed"
+                    then = patient_entries(_until(acts, s), self.rules)
+                    base, since = (s["version"], effective(signed, before, s["at"], rules, then)), "signed"
             elif len(versions) > 1:
-                base = (versions[-2]["version"], effective(versions[-2], acts, ref, rules))
+                base = (versions[-2]["version"], effective(versions[-2], acts, ref, rules, pat))
             templates[tid] = {
                 "draft": draft, "row": {k: row[k] for k in ("version", "status", "trigger", "model")}
                 | {"as_of": iso(row["at"])},
@@ -410,9 +488,30 @@ class Views:
     def _entry(self, a: dict) -> dict:
         """History keeps a value the clinician entered, also once the chart has one and the item shows the chart."""
         options = ((self.rules.get(a["template"]) or {}).get(a["rule"]) or {}).get("attest")
+        if a.get("remove"):
+            return {"removed": a.get("entry")}
         if not _entered(a, options):
             return {}
         return {"entered": a.get("entry") or a["option"]} | ({"note": a["entry_note"]} if a.get("entry_note") else {})
+
+    @staticmethod
+    def _patient_check(r: dict, body: dict, template: str, pat: dict) -> None:
+        """Code status, allergies and isolation are one value for the patient: a template cannot confirm "none"
+        while a value is entered, or enter one while another template confirmed "none"."""
+        el, options = r["element"], r.get("attest_options") or []
+        if body.get("remove") and el == "E09" and body["option"] == ALLERGY:
+            return
+        if options and body["option"] == options[0]:
+            found = pat["E09"][-1] if el == "E09" and pat["E09"] else pat.get(el) if el != "E09" else None
+            if found and (el == "E09" or found["template"] != template):
+                where = TEMPLATE_NAME.get(found["template"], found["template"])
+                change = "Remove it there first." if el == "E09" else "Change it there first."
+                raise ActionError(f"{PATIENT_LABEL[el]} was entered as {found['value']} by {found['by']} on the {where}. {change}")
+            return
+        other = next((a for (t, e), a in pat["none"].items() if e == el and t != template), None)
+        if other:
+            where = TEMPLATE_NAME.get(other["template"], other["template"])
+            raise ActionError(f"{other['by']} confirmed \"{other['option']}\" on the {where}. Change it there first.")
 
     # ------------------------------------------------------------------------------------------ analytics
     def analytics(self, at: datetime) -> dict:
@@ -480,7 +579,8 @@ class Views:
         acts = self.store.actions(csn, at, fresh=True)    # live mode: what other app processes saved, too
         rules = self.rules.get(template)
         arrived = summary["phase"] == "arrived"
-        wf = workflow(latest, acts, [r for r in self.ds.rows_at(csn, at) if r["template"] == template], arrived, rules)
+        wf = workflow(latest, acts, [r for r in self.ds.rows_at(csn, at) if r["template"] == template], arrived, rules,
+                      self.rules)
         row = {"csn": csn, "template": template, "version": latest["version"], "at": at, "by": person["name"],
                "role": person["role"], "user_email": person.get("user_email")}
         if kind in ("edit", "attest", "sign"):
@@ -500,7 +600,8 @@ class Views:
         if any(a["template"] == template and a["at"] > at for a in self.store.actions(csn)):
             raise ActionError(EARLIER)
         dep = self._departure(csn, at)
-        eff = effective(latest, acts, min(at, dep) if dep else at, rules)
+        pat = patient_entries(acts, self.rules)
+        eff = effective(latest, acts, min(at, dep) if dep else at, rules, pat)
         if kind == "edit":
             el = _elements(eff).get(body.get("element"))
             if not el or el["kind"] != "narrative":
@@ -534,7 +635,16 @@ class Views:
                 raise ActionError("Choose one of the listed attestations for this rule.")
             row |= {"rule": r["rule"], "option": body["option"], "entry": None, "entry_note": None}
             typed = TYPED.get((r["element"], body["option"]))
-            if typed:
+            if r["element"] in PATIENT:
+                self._patient_check(r, body, template, pat)
+            if typed and body.get("remove"):
+                wanted = (body.get("entry") or "").strip().lower()
+                listed = pat["E09"] if r["element"] == "E09" else []
+                gone = next((x for x in listed if x["value"].strip().lower() == wanted), None)
+                if not gone:
+                    raise ActionError("That allergy is not on the list.")
+                row |= {"entry": gone["value"], "remove": True}
+            elif typed:
                 entry = (body.get("entry") or "").strip()
                 note = (body.get("entry_note") or "").strip() if typed["note"] else ""
                 if not entry:

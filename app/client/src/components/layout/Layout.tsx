@@ -19,8 +19,8 @@ export function ReplayNote() {
   const [open, setOpen] = useState(() => readString(NOTE) !== 'closed');
   if (!open) return null;
   return (
-    <aside aria-label="About the replay clock" className="flex items-center justify-end gap-2 border-b bg-primary/5 py-1.5 pl-4 pr-2 text-xs text-foreground sm:pl-6 sm:pr-4">
-      <p className="min-w-0 text-right">This demo replays one recorded week. Use the clock at the top right to move through it.</p>
+    <aside aria-label="About the replay clock" className="flex items-center justify-between gap-2 sm:justify-end border-b bg-primary/5 py-1.5 pl-4 pr-2 text-xs text-foreground sm:pl-6 sm:pr-4">
+      <p className="min-w-0 text-left sm:text-right">This demo replays one recorded week. Use the clock at the top right to move through it.</p>
       <button
         type="button"
         onClick={() => {

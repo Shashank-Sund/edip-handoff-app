@@ -21,15 +21,11 @@ import { LEVEL_LABEL, bed, dateTime, duration, triggerLabel } from '@/lib/format
 import { linkProps } from '@/lib/router';
 import { canChange, signOffStatus } from '@/lib/checks';
 import { cn } from '@/lib/utils';
-import type { CaseDetail, CaseSummary, CaseTemplate, NarrativeItem, Persona } from '@/lib/types';
+import type { CaseDetail, CaseSummary, CaseTemplate, EnteredFlag, NarrativeItem, Persona } from '@/lib/types';
+import { TAB_HELP, TEMPLATE_NAME, TEMPLATE_SHORT } from '@/lib/labels';
+import { useMediaQuery } from '@/hooks/useMedia';
 
 const ORDER = ['sbar_nurse', 'ipass_physician', 'custom_sea58'];
-/** What each tab is and who signs and accepts it, on hover and focus of the tab. */
-const TAB_HELP: Record<string, string> = {
-  sbar_nurse: 'Nurse handoff. The ED nurse signs it; the receiving nurse accepts it.',
-  ipass_physician: 'Physician handoff. The ED physician signs it; the admitting physician accepts it.',
-  custom_sea58: 'The short format with what every handoff needs. Either ED clinician signs it; either receiver accepts it.',
-};
 
 /** Below the wide layout the Sign off panel comes after the handoff: this bar says where it stands and goes there. */
 function SignOffBar({ tpl, persona, template, phase }: { tpl: CaseTemplate; persona: Persona; template: string; phase: string }) {
@@ -67,8 +63,33 @@ function SignOffBar({ tpl, persona, template, phase }: { tpl: CaseTemplate; pers
   );
 }
 
-function Banner({ s }: { s: CaseSummary }) {
+/** A value entered in the sign off, in the patient box: the value, marked as not in the chart yet. */
+function EnteredPill({ x, tone, side, icon }: { x: EnteredFlag; tone: 'danger' | 'warn'; side: 'top' | 'bottom'; icon?: React.ReactNode }) {
+  return (
+    <Explain
+      topic="handoff.entered"
+      side={side}
+      label={`${x.value}, entered`}
+      text={`Entered by ${x.by} on the ${TEMPLATE_NAME[x.template] ?? x.template} during sign off${x.note ? ` (${x.note})` : ''}. It is not in the chart yet.`}
+    >
+      <Pill tone={tone} className="underline decoration-dotted underline-offset-[3px]">
+        {icon}
+        {x.value} · entered, not in chart
+      </Pill>
+    </Explain>
+  );
+}
+
+function Banner({ s, sender }: { s: CaseSummary; sender: boolean }) {
   const d = s.destination;
+  const phone = useMediaQuery('(max-width: 639px)');
+  const side = phone ? 'bottom' : 'top';
+  const e = s.entered;
+  // The sender records it in the sign off; the receiver asks the ED or checks the chart.
+  const codeHelp = sender ? 'The chart has no code status. Confirm it with the patient or family and record it in the sign off.' : 'The chart has no code status. Ask the ED, or check the chart.';
+  const allergyHelp = sender
+    ? 'The chart lists no allergies. That is not the same as no known allergies: ask, then confirm it or add the allergy in the sign off.'
+    : 'The chart lists no allergies. That is not the same as no known allergies. Ask the ED, or check the chart.';
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -83,23 +104,29 @@ function Banner({ s }: { s: CaseSummary }) {
           <div className="flex flex-wrap gap-1.5 pt-1.5">
             {s.code_status ? (
               <Pill tone={s.code_status !== 'Full Code' ? 'danger' : 'neutral'}>{s.code_status}</Pill>
+            ) : e?.code_status ? (
+              <EnteredPill x={e.code_status} tone="danger" side={side} />
             ) : (
-              <Explain topic="handoff.resolve" label="Code status not documented" text="The chart has no code status. Confirm it with the patient or family and record it in the sign off.">
+              <Explain topic="handoff.resolve" side={side} label="Code status not documented" text={codeHelp}>
                 <Pill className="underline decoration-dotted underline-offset-[3px]">Code status not documented</Pill>
               </Explain>
             )}
             {s.allergies.length ? (
               s.allergies.map((a) => <Pill key={a} tone="danger">{a}</Pill>)
+            ) : e?.allergies.length ? (
+              e.allergies.map((a) => <EnteredPill key={a.value} x={a} tone="danger" side={side} />)
             ) : (
-              <Explain topic="handoff.resolve" label="No allergies documented" text="The chart lists no allergies. That is not the same as no known allergies: ask, then confirm it or add the allergy in the sign off.">
+              <Explain topic="handoff.resolve" side={side} label="No allergies documented" text={allergyHelp}>
                 <Pill className="underline decoration-dotted underline-offset-[3px]">No allergies documented</Pill>
               </Explain>
             )}
-            {s.isolation && (
+            {s.isolation ? (
               <Pill tone="warn">
                 <ShieldAlert />
                 {s.isolation}
               </Pill>
+            ) : (
+              e?.isolation && <EnteredPill x={e.isolation} tone="warn" side={side} icon={<ShieldAlert />} />
             )}
           </div>
         </div>
@@ -191,7 +218,7 @@ export default function Handoff({ csn }: { csn: string }) {
   const canEdit = persona.can_sign.includes(current) && canChange(tpl, s.phase);
   const canAck = persona.can_ack.includes(current);
   const onAttest: AttestFn = (r, option, entry) =>
-    run('attest', { rule: r.rule, option, ...entry }, option === r.attest_options?.[0] ? `${r.label}: attested` : `${r.label}: ${entry?.entry.trim() || option} entered`);
+    run('attest', { rule: r.rule, option, ...entry }, entry?.remove ? `${r.label}: ${entry.entry} removed` : option === r.attest_options?.[0] ? `${r.label}: attested` : `${r.label}: ${entry?.entry.trim() || option} entered`);
   const onEdit = (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) =>
     run('edit', { element, ...body }, body.restore ? 'Model text restored' : 'Saved');
 
@@ -199,7 +226,7 @@ export default function Handoff({ csn }: { csn: string }) {
     <Layout title={s.patient.name} crumbs={back} help="handoff">
       <EvidenceProvider evidence={tpl.draft.evidence ?? {}}>
         <div className="space-y-5">
-          <Banner s={s} />
+          <Banner s={s} sender={persona.can_sign.length > 0} />
           {notice && (
             <div role={notice.tone === 'error' ? 'alert' : 'status'} className={notice.tone === 'error' ? 'rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive' : 'rounded-lg border border-sev-stable/30 bg-sev-stable/10 px-4 py-2.5 text-sm text-sev-stable'}>
               {notice.text}
@@ -213,8 +240,8 @@ export default function Handoff({ csn }: { csn: string }) {
                   const w = data.templates[t].workflow;
                   const trigger = (
                     <TabsTrigger key={t} value={t} className="relative flex-1 gap-2 px-2 sm:flex-none sm:px-3">
-                      <span className="sm:hidden">{t === 'custom_sea58' ? 'Minimum' : info?.name}</span>
-                      <span className="hidden sm:inline">{info?.name ?? t}</span>
+                      <span className="xl:hidden">{TEMPLATE_SHORT[t] ?? info?.name}</span>
+                      <span className="hidden xl:inline">{info?.name ?? t}</span>
                       <span className="hidden text-xs font-normal text-muted-foreground xl:inline">{info?.audience}</span>
                       <StateBadge state={w.state} compact />
                     </TabsTrigger>

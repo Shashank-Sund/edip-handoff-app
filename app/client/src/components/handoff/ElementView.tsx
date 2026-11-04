@@ -5,8 +5,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Pill, SeverityBadge } from '@/components/common/badges';
 import { SourceChip, SourceList } from './Evidence';
 import { HelpButton } from '@/components/guide/HelpButton';
-import { Explain } from '@/components/guide/Explain';
-import { AttestChoices, EnteredTag, enteredText, type AttestFn } from './AttestChoices';
+import { QuietExplain } from '@/components/guide/Explain';
+import { EnteredTag, type AttestFn } from './AttestChoices';
+import { codeTone, enteredText, goToRule } from '@/lib/entered';
 import { LEVEL_LABEL, bed, clinicalReason, clock, dateTime } from '@/lib/format';
 import { ExpiredRecheck } from './Panels';
 import { cn } from '@/lib/utils';
@@ -53,9 +54,9 @@ function ModelMark({ n }: { n: Narrative }) {
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
       <Sparkles className="size-3" aria-hidden />
-      <Explain topic="handoff.items" label="Drafted by the model" text="Written by the model from the chart. Read it, check the numbered sources, and press Edit if it is wrong.">
+      <QuietExplain topic="handoff.items" label="Drafted by the model" text="Written by the model from the chart. Read it, check the numbered sources, and press Edit if it is wrong.">
         Drafted by the model
-      </Explain>
+      </QuietExplain>
     </span>
   );
 }
@@ -75,9 +76,9 @@ function Severity({ n }: { n: Narrative }) {
       {n.floor && n.floor.reasons.length > 0 && (
         <div className="rounded-lg border border-dashed px-3 py-2 text-sm">
           <span className="font-medium">
-            <Explain topic="handoff.severity" label="Rule floor" text="The lowest severity the chart allows, set by fixed rules. The model can make the patient sicker than the floor, never less sick.">
+            <QuietExplain topic="handoff.severity" label="Rule floor" text="The lowest severity the chart allows, set by fixed rules. The model can make the patient sicker than the floor, never less sick.">
               {raised ? 'Raised by rule' : 'Rule floor'}
-            </Explain>
+            </QuietExplain>
             :{' '}
           </span>
           {n.floor.reasons.map(clinicalReason).join('; ')}
@@ -156,18 +157,26 @@ const VITALS: [string, string, string][] = [
 
 /** A value the ED clinician entered for an item the chart does not have yet, with its amber tag. */
 function Entered({ e }: { e: Element }) {
-  const x = e.entered!;
+  const list = e.entered!;
+  // The same colors as the patient box: red for allergies and any code status but full code, amber for isolation.
+  const tone = (v: string) => (e.id === 'E09' ? 'danger' : e.id === 'E10' ? 'warn' : codeTone(v));
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {e.id === 'E09' ? <Pill tone="danger">{enteredText(x)}</Pill> : <span className="text-sm font-medium">{enteredText(x)}</span>}
-      <EnteredTag entered={x} />
+      <ul className="contents">
+        {list.map((x) => (
+          <li key={x.value} className="inline-flex">
+            <Pill tone={tone(x.value)} className="text-sm">{enteredText(x)}</Pill>
+          </li>
+        ))}
+      </ul>
+      <EnteredTag entered={list} />
     </div>
   );
 }
 
 function Deterministic({ e, wf }: { e: Element; wf: CaseTemplate['workflow'] }) {
   const d = e.data as Data | Data[] | null | undefined;
-  if (e.entered && (e.id === 'E08' || e.id === 'E09' || e.id === 'E10') && !(Array.isArray(d) ? d.length : d)) return <Entered e={e} />;
+  if (e.entered?.length && (e.id === 'E08' || e.id === 'E09' || e.id === 'E10') && !(Array.isArray(d) ? d.length : d)) return <Entered e={e} />;
   const one = (d ?? {}) as Data;
   const list = (Array.isArray(d) ? d : []) as Data[];
   const src = (x: Data) => (typeof x.src === 'string' ? <SourceChip src={x.src} /> : null);
@@ -371,34 +380,23 @@ function Collapsible({ items, empty }: { items: string[]; empty: string }) {
   );
 }
 
-export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?: AttestFn; busy?: boolean }) {
-  const [changing, setChanging] = useState<string | null>(null);
+/**
+ * What an item still needs, or how it was resolved. The choices themselves are in the Sign off panel only: the
+ * sender gets a link there.
+ */
+export function RuleBadges({ rules, canResolve }: { rules: Rule[]; canResolve?: boolean }) {
   const open = rules.filter((r) => r.status !== 'pass' && r.status !== 'deferred');
   if (!open.length) return null;
   return (
     <div className="mt-3 space-y-2">
       {open.map((r) => {
         if (r.resolution) {
-          // A rule with several choices can be changed: a mistaken DNR, or an allergy found after "none".
-          const canChange = onAttest && r.resolution.kind === 'attested' && (r.attest_options?.length ?? 0) > 1;
+          if (r.resolution.entered) return null; // the item shows the value and its tag
           return (
-            <div key={r.rule} className="text-xs">
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                {!r.resolution.entered && (
-                  <span className="inline-flex items-center gap-1.5 text-sev-stable">
-                    <Check className="size-3.5" aria-hidden />
-                    {r.resolution.kind === 'attested' ? `Attested: ${r.resolution.option}` : 'Resolved by edit'} ({r.resolution.by})
-                  </span>
-                )}
-                {canChange && (
-                  <button type="button" className="rounded-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60" aria-expanded={changing === r.rule} onClick={() => setChanging(changing === r.rule ? null : r.rule)}>
-                    {changing === r.rule ? 'Keep it' : 'Change'}
-                    <span className="sr-only"> {r.label}</span>
-                  </button>
-                )}
-              </p>
-              {canChange && changing === r.rule && <AttestChoices r={r} onAttest={onAttest} busy={busy} onDone={() => setChanging(null)} />}
-            </div>
+            <p key={r.rule} className="flex items-center gap-1.5 text-xs text-sev-stable">
+              <Check className="size-3.5" aria-hidden />
+              {r.resolution.kind === 'attested' ? `Attested: ${r.resolution.option}` : 'Resolved by edit'} ({r.resolution.by})
+            </p>
           );
         }
         const blocking = r.level !== 'soft';
@@ -410,12 +408,13 @@ export function RuleBadges({ rules, onAttest, busy }: { rules: Rule[]; onAttest?
               {!blocking && ' (does not block)'}
             </span>
             {r.status === 'missing' && blocking && <span className="text-muted-foreground">Write it with Edit to resolve.</span>}
-            {r.attest_expired && <ExpiredRecheck r={r} />}
-            {onAttest && (r.attest_options?.length ?? 0) > 0 && (
-              <div className="w-full">
-                <AttestChoices r={r} onAttest={onAttest} busy={busy} />
-              </div>
+            {canResolve && (r.attest_options?.length ?? 0) > 0 && (
+              <button type="button" onClick={() => goToRule(r.rule)} className="rounded-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60">
+                Resolve in Sign off
+                <span className="sr-only">: {r.label}</span>
+              </button>
             )}
+            {r.attest_expired && <ExpiredRecheck r={r} />}
           </div>
         );
       })}
@@ -460,13 +459,14 @@ function Editor({ e, onSave, onCancel, busy }: { e: Element; onSave: (body: { te
   );
 }
 
-export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
+export function ElementView({ e, tpl, canEdit, busy, onEdit }: {
   e: Element;
   tpl: CaseTemplate;
   canEdit: boolean;
   busy?: boolean;
   onEdit: (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) => Promise<boolean>;
-  onAttest: AttestFn;
+  /** Unused here: the choices are in the Sign off panel. Kept so callers can pass one handler for both. */
+  onAttest?: AttestFn;
 }) {
   const [editing, setEditing] = useState(false);
   const changed = tpl.changes.elements.some((c) => c.id === e.id);
@@ -486,9 +486,9 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
           <h4 className="text-sm font-semibold">{e.label}</h4>
           {e.id === 'E07' && <HelpButton topic="handoff.severity" label="About severity" className="size-6" />}
           {changed && (
-            <Explain topic="questions.changes" label="Changed" text={tpl.changes.since === 'signed' ? 'Different from the version that was signed.' : 'Different from the previous version.'}>
+            <QuietExplain topic="questions.changes" label="Changed" text={tpl.changes.since === 'signed' ? 'Different from the version that was signed.' : 'Different from the previous version.'} className="no-underline">
               <Pill tone="warn" className="underline decoration-dotted underline-offset-[3px]">Changed</Pill>
-            </Explain>
+            </QuietExplain>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -515,7 +515,7 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit, onAttest }: {
       ) : (
         <Deterministic e={e} wf={tpl.workflow} />
       )}
-      <RuleBadges rules={e.rules} onAttest={canEdit ? onAttest : undefined} busy={busy} />
+      <RuleBadges rules={e.rules} canResolve={canEdit} />
     </div>
   );
 }

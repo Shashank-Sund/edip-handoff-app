@@ -4,7 +4,7 @@ import { SectionBadge } from '@/components/common/SectionBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Layout } from '@/components/layout/Layout';
 import { Pill } from '@/components/common/badges';
-import { Explain } from '@/components/guide/Explain';
+import { QuietExplain } from '@/components/guide/Explain';
 import { ErrorState, PageSkeleton } from '@/components/common/states';
 import { useLoad } from '@/hooks/useLoad';
 import { api } from '@/lib/api';
@@ -54,12 +54,12 @@ function TemplateView({ t }: { t: Def }) {
                         {k.label}
                       </span>
                       {r && (
-                        <Explain topic="templates.read" label={r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level} text={r.at ? AT_HELP : LEVEL[r.level]?.help ?? r.level} className="no-underline">
+                        <QuietExplain topic="templates.read" label={r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level} text={r.at ? AT_HELP : LEVEL[r.level]?.help ?? r.level} className="no-underline">
                           <Pill tone={r.at ? 'info' : LEVEL[r.level]?.tone ?? 'neutral'} className="underline decoration-dotted underline-offset-[3px]">
                             {r.at ? `Checked at ${r.at}` : LEVEL[r.level]?.label ?? r.level}
                             {r.max_age_min ? ` (${Object.entries(r.max_age_min).map(([s2, m]) => `${s2} ${m} min`).join(', ')})` : ''}
                           </Pill>
-                        </Explain>
+                        </QuietExplain>
                       )}
                     </div>
                   </li>

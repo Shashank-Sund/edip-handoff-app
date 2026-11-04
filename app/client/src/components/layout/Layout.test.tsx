@@ -35,6 +35,13 @@ describe('First open note', () => {
     expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
   });
 
+  it('reads left aligned on a phone and right aligned from sm', () => {
+    page();
+    const note = screen.getByRole('complementary', { name: 'About the replay clock' });
+    expect(note).toHaveClass('justify-between', 'sm:justify-end');
+    expect(note.querySelector('p')).toHaveClass('text-left', 'sm:text-right');
+  });
+
   it('is not shown with the live clock', () => {
     page({ ...config, clock: 'live' });
     expect(screen.queryByText(NOTE)).not.toBeInTheDocument();

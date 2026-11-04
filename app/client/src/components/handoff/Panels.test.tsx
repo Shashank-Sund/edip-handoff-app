@@ -22,7 +22,7 @@ describe('SignPanel', () => {
     expect(screen.getByText('1 item to resolve before signing')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Your callback number'), 'x4471');
     expect(screen.getByRole('button', { name: 'Sign' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'None' }));
+    await user.click(screen.getByRole('radio', { name: 'None' }));
     expect(onAttest).toHaveBeenCalledWith(r, 'None');
   });
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BedDouble, ClipboardCheck, Clock3, Search, ShieldAlert, Users, X } from 'lucide-react';
+import { BedDouble, ChevronRight, ClipboardCheck, Clock3, Search, ShieldAlert, Users, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Layout } from '@/components/layout/Layout';
@@ -120,11 +120,17 @@ function Patient({ row }: { row: CaseSummary }) {
 }
 
 function Safety({ row }: { row: CaseSummary }) {
+  // Values entered in the sign off show with a marker until the chart has them.
+  const e = row.entered;
+  const code = row.code_status ?? (e?.code_status ? `${e.code_status.value} · entered` : null);
+  const isolation = row.isolation ?? (e?.isolation ? `${e.isolation.value} · entered` : null);
+  const allergies = row.allergies.length ? row.allergies : (e?.allergies ?? []).map((a) => a.value);
+  const mark = !row.allergies.length && allergies.length ? ' · entered' : '';
   return (
     <div className="flex flex-wrap gap-1">
-      {row.code_status && row.code_status !== 'Full Code' && <Pill tone="danger">{row.code_status}</Pill>}
-      {row.isolation && <Pill tone="warn">{row.isolation}</Pill>}
-      {row.allergies.length > 0 && <Pill>{row.allergies.length === 1 ? row.allergies[0] : `${row.allergies.length} allergies`}</Pill>}
+      {code && code !== 'Full Code' && <Pill tone="danger">{code}</Pill>}
+      {isolation && <Pill tone="warn">{isolation}</Pill>}
+      {allergies.length > 0 && <Pill>{(allergies.length === 1 ? allergies[0] : `${allergies.length} allergies`) + mark}</Pill>}
     </div>
   );
 }
@@ -171,9 +177,10 @@ export default function Board() {
                     setView('arrived');
                     setUnsigned(true);
                   }}
-                  className="mt-1 w-fit rounded-sm text-left text-xs font-medium text-sev-unstable underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60"
+                  className="mt-1 w-fit rounded-sm text-left text-xs font-medium text-sev-unstable underline decoration-sev-unstable/40 underline-offset-4 outline-none hover:decoration-sev-unstable focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   {k.left_unsigned} left without sign off
+                  <ChevronRight className="ml-0.5 inline size-3.5 align-[-3px]" aria-hidden />
                 </button>
               )}
             </Stat>
@@ -302,6 +309,17 @@ export default function Board() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              {/* The phone shows cards, which have no column titles: one ? explains what a card shows. */}
+              <div className="flex items-center gap-1 border-b px-4 py-2 text-xs font-medium text-muted-foreground md:hidden">
+                {rows.length} patient{rows.length === 1 ? '' : 's'}
+                <Explain
+                  icon
+                  label="What a card shows"
+                  topic="board.columns"
+                  side="bottom"
+                  text={`Each card: name and reason for visit, severity, destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, and where the nurse and physician handoffs stand.`}
+                />
               </div>
               <ul className="divide-y md:hidden">
                 {rows.map((r) => (

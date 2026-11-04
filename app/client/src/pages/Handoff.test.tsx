@@ -2,8 +2,9 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AppProvider } from '@/hooks/useApp';
-import { caseSummary, caseTemplate, config, draft, element, rule } from '@/test/fixtures';
+import { caseSummary, caseTemplate, config, draft, edNurse, element, rule } from '@/test/fixtures';
 import type { CaseDetail } from '@/lib/types';
+import { TAB_HELP } from '@/lib/labels';
 import Handoff from './Handoff';
 
 vi.mock('@/lib/api', () => ({
@@ -31,11 +32,11 @@ const detail: CaseDetail = {
   activity: [],
 };
 
-async function open() {
-  vi.mocked(api.case).mockResolvedValue(detail);
-  vi.mocked(api.act).mockResolvedValue(detail);
+async function open(d: CaseDetail = detail, cfg = config) {
+  vi.mocked(api.case).mockResolvedValue(d);
+  vi.mocked(api.act).mockResolvedValue(d);
   render(
-    <AppProvider config={config}>
+    <AppProvider config={cfg}>
       <TooltipProvider>
         <Handoff csn="1001" />
       </TooltipProvider>
@@ -73,7 +74,7 @@ describe('Handoff page', () => {
   it('sends the typed words with a typed choice', async () => {
     const user = userEvent.setup();
     const aside = await open();
-    await user.click(within(aside).getByRole('button', { name: 'Other' }));
+    await user.click(within(aside).getByRole('radio', { name: 'Other' }));
     await user.type(within(aside).getByLabelText('Type of isolation'), 'Contact and droplet');
     await user.click(within(aside).getByRole('button', { name: 'Save' }));
     expect(api.act).toHaveBeenCalledWith('1001', 'sbar_nurse', 'attest', { rule: 'N07', option: 'Other', entry: 'Contact and droplet' }, config.default_at);
@@ -84,5 +85,48 @@ describe('Handoff page', () => {
     await open();
     const flag = screen.getByRole('button', { name: 'Code status not documented' });
     expect(flag).toHaveAccessibleDescription(/The chart has no code status/);
+  });
+
+  it('shows entered values in the patient box, marked as not in the chart', async () => {
+    const flag = { by: 'Jordan Reyes, RN', template: 'sbar_nurse', note: null };
+    await open({
+      ...detail,
+      summary: caseSummary({
+        code_status: null,
+        allergies: [],
+        isolation: null,
+        entered: { code_status: { ...flag, value: 'DNR' }, isolation: { ...flag, value: 'Droplet' }, allergies: [{ ...flag, value: 'Penicillin', note: 'Hives' }, { ...flag, value: 'Latex' }] },
+      }),
+    });
+    const dnr = screen.getByText('DNR · entered, not in chart');
+    expect(dnr.closest('span')).toHaveClass('text-sev-unstable');
+    expect(screen.getByRole('button', { name: 'DNR · entered, not in chart' })).toHaveAccessibleDescription(/Entered by Jordan Reyes, RN on the SBAR during sign off/);
+    expect(screen.getByText('Droplet · entered, not in chart').closest('span')).toHaveClass('text-sev-watcher');
+    expect(screen.getByText('Penicillin · entered, not in chart')).toBeInTheDocument();
+    expect(screen.getByText('Latex · entered, not in chart')).toBeInTheDocument();
+    expect(screen.queryByText('Code status not documented')).not.toBeInTheDocument();
+    expect(screen.queryByText('No allergies documented')).not.toBeInTheDocument();
+  });
+
+  it('tells the receiver to ask the ED about a missing code status', async () => {
+    const unit = { ...edNurse, id: 'unit-sgh-micu', role: 'unit_nurse' as const, can_sign: [], can_ack: ['sbar_nurse'] };
+    await open(detail, { ...config, personas: [unit] });
+    expect(screen.getByRole('button', { name: 'Code status not documented' })).toHaveAccessibleDescription('The chart has no code status. Ask the ED, or check the chart.');
+  });
+
+  it('uses the short tab names below xl, so nothing is cut at 1024', async () => {
+    await open({ ...detail, templates: { ...detail.templates, custom_sea58: detail.templates.sbar_nurse } }, { ...config, templates: [...config.templates, { id: 'custom_sea58', name: 'Joint Commission minimum', audience: 'Any' }] });
+    const tab = screen.getByRole('tab', { name: /Minimum/ });
+    expect(within(tab).getByText('Minimum')).toHaveClass('xl:hidden');
+    expect(within(tab).getByText('Joint Commission minimum')).toHaveClass('hidden', 'xl:inline');
+  });
+
+  it('has the tabs help on a phone too, and the guide says what each tab is', async () => {
+    const user = userEvent.setup();
+    await open();
+    const phone = screen.getAllByRole('button', { name: /About the tabs/ }).find((b) => b.classList.contains('sm:hidden'))!;
+    await user.click(phone);
+    const sheet = await screen.findByRole('dialog', { name: /The three tabs/ });
+    for (const text of Object.values(TAB_HELP)) expect(sheet).toHaveTextContent(text);
   });
 });

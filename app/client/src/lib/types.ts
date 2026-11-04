@@ -93,6 +93,8 @@ export interface CaseSummary {
   code_status: string | null;
   isolation: string | null;
   allergies: string[];
+  /** Entered in the sign off while the chart has none. */
+  entered?: { code_status: EnteredFlag | null; isolation: EnteredFlag | null; allergies: EnteredFlag[] };
   last_update: { as_of: string; trigger: string };
   templates: Record<string, TemplateSummary>;
 }
@@ -161,8 +163,29 @@ export interface Element {
   data?: unknown;
   narrative?: Narrative;
   rules: Rule[];
-  /** A value the ED clinician entered for a chart item the chart does not have yet. */
-  entered?: { rule: string; option: string; value: string; note: string | null; by: string; at: string; version: number };
+  /** Values the ED clinician entered for a chart item the chart does not have yet (code status, allergies,
+   *  isolation): patient level, the same on every template. Allergies can hold several. */
+  entered?: EnteredValue[];
+}
+
+export interface EnteredValue {
+  rule: string;
+  option: string;
+  value: string;
+  note: string | null;
+  by: string;
+  at: string;
+  version: number;
+  /** The template it was entered on. */
+  template: string;
+}
+
+/** An entered value as the patient box and the board show it. */
+export interface EnteredFlag {
+  value: string;
+  note: string | null;
+  by: string;
+  template: string;
 }
 
 export interface Section {
@@ -224,7 +247,7 @@ export interface CaseTemplate {
 export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
-  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string }[];
+  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string; removed?: string }[];
 }
 
 export interface Analytics {

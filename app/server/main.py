@@ -132,6 +132,7 @@ class AttestBody(BaseModel):
     option: StrictStr
     entry: Optional[StrictStr] = None           # the words for a typed choice: the isolation type, the allergen
     entry_note: Optional[StrictStr] = None      # its note, such as the reaction to the allergen
+    remove: Optional[StrictBool] = None         # take an entered allergy (entry) off the list
 
 
 class SignBody(BaseModel):
@@ -144,7 +145,7 @@ class AckBody(BaseModel):
 
 
 FIELD = {"element": "item", "text": "text", "items": "action items", "restore": "restore choice", "rule": "rule",
-         "option": "attestation", "entry": "entered value", "entry_note": "note", "callback": "callback number", "readback": "read back", "questions": "questions"}
+         "option": "attestation", "entry": "entered value", "entry_note": "note", "remove": "remove choice", "callback": "callback number", "readback": "read back", "questions": "questions"}
 
 
 def plain_validation(errors: list[dict]) -> str:

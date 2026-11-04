@@ -36,7 +36,7 @@ DDL = [
     )""",
     "CREATE INDEX IF NOT EXISTS ix_action_csn ON app.handoff_action (csn, at)",
 ]
-DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "entry", "entry_note", "callback",
+DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "entry", "entry_note", "remove", "callback",
           "readback", "questions")
 UNREACHABLE = "The handoff database cannot be reached right now. Wait a minute and try again."
 

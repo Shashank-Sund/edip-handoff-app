@@ -489,7 +489,49 @@ def entered_scenarios(rec, ds, default, boarding, units):
         rec("chart replaces: case before", "GET", u, at=t0, persona="ed-rn")
         rec("chart replaces: case after", "GET", u, at=iso(b["at"]), persona="ed-rn")
         rec("chart replaces: board after", "GET", "/api/board", at=iso(b["at"]), persona="ed-rn")
+    patient_scenarios(rec, boarding, units)
     rec("entered reset end", "POST", "/api/demo/reset")
+
+
+def patient_scenarios(rec, boarding, units):
+    """Code status, allergies and isolation belong to the patient: an entry shows on every template, conflicts are
+    refused, allergies are a list with removals, and a change on another template after signing is a change."""
+    rec("patient reset", "POST", "/api/demo/reset")
+    pick = None
+    for r in boarding:
+        _, c = rec(f"patient case {r['csn']}", "GET", f"/api/handoffs/{r['csn']}", persona="ed-rn")
+        st = {x["rule"]: x["status"] for t in c["templates"].values() for x in t["draft"]["rules"]}
+        if all(st.get(x) == "attest" for x in ("N05", "N06", "P04", "P05")):
+            pick = r
+            break
+    if not pick:
+        return
+    u = f"/api/handoffs/{pick['csn']}"
+    recv = next((x for x in units if x["unit"] == pick["destination"]["pending_unit"] and x["facility"] == pick["facility"]), None)
+    A = lambda name, t, persona, body: rec(f"patient {name}", "POST", f"{u}/{t}/attest", persona=persona, body=body)  # noqa: E731
+    A("SBAR enters DNR", "sbar_nurse", "ed-rn", {"rule": "N05", "option": "DNR"})
+    A("I-PASS full code refused (409)", "ipass_physician", "ed-md", {"rule": "P04", "option": "Full code confirmed with patient or family"})
+    A("I-PASS comfort care", "ipass_physician", "ed-md", {"rule": "P04", "option": "Comfort care"})
+    rec("patient case after two entries", "GET", u, persona="ed-rn")
+    A("I-PASS NKA", "ipass_physician", "ed-md", {"rule": "P05", "option": "No known allergies confirmed"})
+    A("SBAR allergy refused (409)", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": "Latex"})
+    A("I-PASS allergy replaces its NKA", "ipass_physician", "ed-md", {"rule": "P05", "option": "Add an allergy", "entry": "Latex"})
+    A("SBAR second allergy", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": " Penicillin ", "entry_note": "Hives"})
+    A("SBAR same allergy again", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": "LATEX", "entry_note": "Rash"})
+    A("SBAR NKA refused (409)", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "No known allergies confirmed"})
+    A("remove unknown (409)", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": "Aspirin", "remove": True})
+    A("remove not a boolean (422)", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": "Latex", "remove": "yes"})
+    A("remove on a plain choice is no bypass (409)", "sbar_nurse", "ed-rn",
+      {"rule": "N06", "option": "No known allergies confirmed", "remove": True})
+    resolve(rec, u, "sbar_nurse", "ed-rn", None, "patient sign")
+    rec("patient sign", "POST", f"{u}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    A("remove penicillin after signing", "sbar_nurse", "ed-rn", {"rule": "N06", "option": "Add an allergy", "entry": "penicillin", "remove": True})
+    A("I-PASS DNR/DNI after the SBAR was signed", "ipass_physician", "ed-md", {"rule": "P04", "option": "DNR/DNI"})
+    for p in ("ed-rn", "ed-md", "hosp-md") + ((recv["id"],) if recv else ()):
+        rec(f"patient case as {p}", "GET", u, persona=p)
+        rec(f"patient board as {p}", "GET", "/api/board", persona=p)
+    A("remove the last", "ipass_physician", "ed-md", {"rule": "P05", "option": "Add an allergy", "entry": "Latex", "remove": True})
+    rec("patient case after removing all", "GET", u, persona="ed-rn")
 
 
 def main():

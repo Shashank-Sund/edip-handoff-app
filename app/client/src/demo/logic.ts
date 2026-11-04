@@ -42,6 +42,13 @@ const TYPED: Record<string, { label: string; note: string | null; required: stri
   'E10|Other': { label: 'Type of isolation', note: null, required: 'Write the type of isolation.' },
   'E09|Add an allergy': { label: 'Allergen', note: 'Reaction (optional)', required: 'Write the allergen.' },
 };
+// Code status, allergies and isolation belong to the patient, not to one template: a value entered on any template
+// shows on every template, and a template cannot confirm "none" while another holds an entered value (or the
+// reverse). Allergies are a list; the others hold one value, the latest entered.
+const PATIENT = new Set(['E08', 'E09', 'E10']);
+const ALLERGY = 'Add an allergy';
+const PATIENT_LABEL: Record<string, string> = { E08: 'Code status', E09: 'An allergy', E10: 'Isolation' };
+const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physician: 'I-PASS', custom_sea58: 'Joint Commission minimum' };
 
 type Rules = Record<string, any>;
 
@@ -81,6 +88,9 @@ function content(e: any): any {
     const n = or(get(e, 'narrative'), {}) as any;
     if (Array.isArray(get(n, 'items'))) return n.items.map((i: any) => ({ text: get(i, 'text'), owner: get(i, 'owner'), due: get(i, 'due') }));
     return e.id === 'E07' ? { value: get(n, 'value'), text: get(n, 'text') } : get(n, 'text');
+  }
+  if (truthy(get(e, 'entered'))) { // a value the clinician entered is content like any other
+    return { chart: stripMeta(get(e, 'data')), entered: e.entered.map((x: any) => ({ value: x.value, note: x.note })) };
   }
   return stripMeta(get(e, 'data'));
 }
@@ -161,6 +171,55 @@ function entered(a: Action, options: any): boolean {
   return (truthy(options) && !pyEq(a.option, options[0])) || truthy(get(a, 'entry'));
 }
 
+function optionsOf(index: Record<string, Rules>, template: string, rule: string): any[] {
+  return or(get(or(get(or(index[template] ?? null, {}), rule), {}), 'attest'), []) as any[];
+}
+
+function entryOf(a: Action): any {
+  return {
+    rule: a.rule, option: a.option, value: or(get(a, 'entry'), a.option), note: get(a, 'entry_note'), by: a.by, at: iso(a.at),
+    version: a.version, template: a.template,
+  };
+}
+
+/** a after b in the order actions apply: the time they apply to, then the order they were saved. */
+function later(a: Action, b: Action): boolean {
+  return a.at > b.at || (a.at === b.at && (a.recorded_ts > b.recorded_ts || (a.recorded_ts === b.recorded_ts && a.seq > b.seq)));
+}
+
+/**
+ * The patient level values entered on any template (index: the rules of every template): E08 and E10 an entry or
+ * null, E09 a list, and `none` each template's current "nothing to add" choice, keyed "template|element".
+ */
+export function patientEntries(acts: Action[], index: Record<string, Rules>): any {
+  const current = new Map<string, Action>();
+  const allergies = new Map<string, any>();
+  for (const a of ordered(acts.filter((x) => x.kind === 'attest'))) {
+    const el = get(or(get(or(index[a.template] ?? null, {}), a.rule), {}), 'element');
+    if (!PATIENT.has(el)) continue;
+    current.set(`${a.template}|${el}`, a);
+    if (el === 'E09' && a.option === ALLERGY) {
+      const key = strip(or(get(a, 'entry'), '') as string).toLowerCase();
+      if (truthy(get(a, 'remove'))) allergies.delete(key);
+      else if (key) allergies.set(key, entryOf(a));
+    }
+  }
+  const out: any = { E09: [...allergies.values()], none: new Map<string, Action>() };
+  for (const el of ['E08', 'E10']) {
+    let best: Action | null = null;
+    for (const [k, a] of current) {
+      const t = k.slice(0, k.lastIndexOf('|'));
+      if (k.endsWith(`|${el}`) && !truthy(get(a, 'remove')) && entered(a, optionsOf(index, t, a.rule)) && (best === null || later(a, best))) best = a;
+    }
+    out[el] = best ? entryOf(best) : null;
+  }
+  for (const [k, a] of current) {
+    const t = k.slice(0, k.lastIndexOf('|'));
+    if (!truthy(get(a, 'remove')) && !entered(a, optionsOf(index, t, a.rule))) out.none.set(k, a);
+  }
+  return out;
+}
+
 function callbackOk(cb: string): boolean {
   return (cb.match(/[0-9]/g) ?? []).length >= 3 || /^(x|ext\.?) ?[0-9]{2,}$/i.test(cb);
 }
@@ -182,9 +241,10 @@ function clone<T>(v: T): T {
  * Edits and attestations carry forward to newer versions of the same template, flagged when the model's text
  * changed underneath an edit.
  */
-export function effective(row: Row, acts: Action[], at: number | null = null, rules: Rules | null = null): any {
+export function effective(row: Row, acts: Action[], at: number | null = null, rules: Rules | null = null, patient: any = null): any {
   const t = row.template;
   const rs: Rules = rules ?? {};
+  const pat = patient ?? patientEntries(acts, { [t]: rs });
   const mine = acts.filter((a) => a.template === t);
   const edits = latestBy(mine, 'edit', (a) => a.element);
   const attests = latestBy(mine, 'attest', (a) => a.rule);
@@ -223,7 +283,18 @@ export function effective(row: Row, acts: Action[], at: number | null = null, ru
       if (x) typed[o] = { label: x.label, note: x.note };
     }
     if (truthy(typed)) r.attest_typed = typed;
-    if (r.status === 'attest' || r.status === 'missing' || r.status === 'stale') {
+    if (r.status === 'attest' && PATIENT.has(r.element)) {
+      // Patient level: an entered value from any template resolves it; otherwise this template's "none".
+      const a = attests.get(r.rule);
+      const found: any[] = r.element === 'E09' ? pat.E09 : [pat[r.element]].filter(Boolean);
+      if (found.length && truthy(e)) {
+        const last = found[found.length - 1];
+        r.resolution = { kind: 'attested', option: last.option, by: last.by, at: last.at, version: last.version, entered: true };
+        e.entered = found;
+      } else if (a && !truthy(get(a, 'remove')) && !entered(a, get(r, 'attest_options'))) {
+        r.resolution = { kind: 'attested', option: a.option, by: a.by, at: iso(a.at), version: a.version };
+      }
+    } else if (r.status === 'attest' || r.status === 'missing' || r.status === 'stale') {
       let a = attests.get(r.rule);
       if (a && r.status !== 'missing' && r.level === 'stale' && a.option === STALE_OPTION && at !== null) {
         const mm = or(get(or(rs[r.rule] ?? null, {}), 'max_age_min'), {}) as any;
@@ -237,14 +308,6 @@ export function effective(row: Row, acts: Action[], at: number | null = null, ru
       const n = e ? (or(get(e, 'narrative'), {}) as any) : null;
       if (a && r.status !== 'missing') {
         r.resolution = { kind: 'attested', option: a.option, by: a.by, at: iso(a.at), version: a.version };
-        if (e && entered(a, get(r, 'attest_options'))) {
-          // A value the clinician entered (Droplet, DNR, an allergy): shown until the chart has one.
-          r.resolution.entered = true;
-          e.entered = {
-            rule: r.rule, option: a.option, value: or(get(a, 'entry'), a.option), note: get(a, 'entry_note'), by: a.by, at: iso(a.at),
-            version: a.version,
-          };
-        }
       } else if (truthy(e) && e.kind === 'narrative' && truthy(get(n, 'edited')) &&
         (truthy(strip(or(get(e.narrative, 'text'), '') as string)) || truthy(get(e.narrative, 'items')))) {
         r.resolution = { kind: 'edited', by: e.narrative.edited.by };
@@ -270,7 +333,13 @@ export function effective(row: Row, acts: Action[], at: number | null = null, ru
  * draft, signed, changed (after signing: sign again), acknowledged, or transferred_unsigned (the patient left the ED
  * with no sign off); with who and when. versions: the rows to find the signed version in.
  */
-export function workflow(row: Row | null, acts: Action[], versions: Row[], departed = false, rules: Rules | null = null): any {
+/** Every action, of any template, saved up to and including the sign off s. */
+function until(acts: Action[], s: Action): Action[] {
+  return acts.filter((a) => !later(a, s));
+}
+
+export function workflow(row: Row | null, acts: Action[], versions: Row[], departed = false, rules: Rules | null = null,
+  index: Record<string, Rules> | null = null): any {
   if (row === null) return { state: 'drafting' };
   const t = row.template;
   const [s, before, after] = lastSign(acts, t);
@@ -280,13 +349,17 @@ export function workflow(row: Row | null, acts: Action[], versions: Row[], depar
     return out;
   }
   Object.assign(out, { state: 'signed', signed: { by: s.by, role: s.role, callback: get(s, 'callback'), at: iso(s.at), version: s.version } });
+  const idx = index ?? { [t]: rules ?? {} };
+  const signedPat = patientEntries(until(acts, s), idx), nowPat = patientEntries(acts, idx);
   let changed = false;
   if (row.version !== s.version) {
     const base = versions.find((v) => v.template === t && v.version === s.version) ?? null;
-    changed = base === null || !pyEq(clinical(effective(base, before, null, rules)), clinical(effective(row, before, null, rules)));
+    changed = base === null || !pyEq(clinical(effective(base, before, null, rules, signedPat)), clinical(effective(row, before, null, rules, signedPat)));
   }
   out.changed_since_signed = changed;
-  out.edited_since_signed = after.some((a) => a.kind === 'edit' || a.kind === 'attest');
+  // An edit or attestation after signing, here or (for code status, allergies, isolation) on another template.
+  out.edited_since_signed = after.some((a) => a.kind === 'edit' || a.kind === 'attest')
+    || !pyEq(clinical(effective(row, before, null, rules, signedPat)), clinical(effective(row, before, null, rules, nowPat)));
   if (changed || out.edited_since_signed) {
     out.state = 'changed';
     return out;
@@ -351,16 +424,21 @@ export class Views {
     const rows = this.ds.rowsAt(csn, at);
     const ref = dep !== null ? Math.min(at, dep) : at;
     const templates: any = {};
+    const pat = patientEntries(acts, this.rules);
     for (const [tid, row] of latest) {
-      const eff = effective(row, acts, ref, this.rules[tid] ?? null);
+      const eff = effective(row, acts, ref, this.rules[tid] ?? null, pat);
       templates[tid] = {
         version: row.version, as_of: iso(row.at), status: row.status, trigger: row.trigger, score: eff.completeness.score,
-        blocking: eff.completeness.blocking, workflow: workflow(row, acts, rows, phase === 'arrived', this.rules[tid] ?? null),
+        blocking: eff.completeness.blocking, workflow: workflow(row, acts, rows, phase === 'arrived', this.rules[tid] ?? null, this.rules),
       };
     }
     const sev = or(get(or(els.get('E07') ?? null, {}), 'narrative'), {}) as any;
     const flags: any = {};
     for (const k of ['E08', 'E09', 'E10']) flags[k] = get(or(els.get(k) ?? null, {}), 'data');
+    const code = isDict(flags.E08) ? get(or(flags.E08, {}), 'value') : null;
+    const isolation = isDict(flags.E10) ? get(or(flags.E10, {}), 'value') : null;
+    const allergies = Array.isArray(flags.E09) ? flags.E09.map((a: any) => get(a, 'allergen')) : [];
+    const shown = (x: any) => ({ value: x.value, note: x.note, by: x.by, template: x.template });
     const sinceDecision = (dep ?? at) - (e.admit_decision_ts as number);
     return {
       csn, facility: e.facility, phase,
@@ -374,9 +452,13 @@ export class Views {
         : { pending_unit: or(get(dest, 'unit'), get(dest, 'pending_unit')), pending_room: get(dest, 'room'), pending_bed: get(dest, 'bed'),
           level_of_care: get(dest, 'level_of_care') },
       severity: get(sev, 'value'), severity_floor: get(or(get(sev, 'floor'), {}), 'value'),
-      code_status: isDict(flags.E08) ? get(or(flags.E08, {}), 'value') : null,
-      isolation: isDict(flags.E10) ? get(or(flags.E10, {}), 'value') : null,
-      allergies: Array.isArray(flags.E09) ? flags.E09.map((a: any) => get(a, 'allergen')) : [],
+      code_status: code, isolation, allergies,
+      // Entered in the sign off while the chart has none; the chart value replaces them when it arrives.
+      entered: {
+        code_status: pat.E08 && !truthy(code) ? shown(pat.E08) : null,
+        isolation: pat.E10 && !truthy(isolation) ? shown(pat.E10) : null,
+        allergies: !truthy(allergies) ? pat.E09.map(shown) : [],
+      },
       last_update: { as_of: iso(anyRow.at), trigger: anyRow.trigger },
       templates,
     };
@@ -423,11 +505,12 @@ export class Views {
       list.push(r);
     }
     const templates: any = {};
+    const pat = patientEntries(acts, this.rules);
     for (const [tid, versions] of byT) {
       const row = versions[versions.length - 1];
       const rules = this.rules[tid] ?? null;
-      const wf = workflow(row, acts, versions, summary.phase === 'arrived', rules);
-      const draft = effective(row, acts, ref, rules);
+      const wf = workflow(row, acts, versions, summary.phase === 'arrived', rules, this.rules);
+      const draft = effective(row, acts, ref, rules, pat);
       // What changed: since the signature when the template changed after signing (the text the ED signed,
       // clinician edits included), else since the previous version; both as the clinician sees them.
       let base: [number, any] | null = null;
@@ -436,12 +519,12 @@ export class Views {
         const [s, before] = lastSign(acts, tid) as [Action, Action[], Action[]];
         const signed = versions.find((v) => v.version === s.version) ?? null;
         if (signed) {
-          base = [s.version, effective(signed, before, s.at, rules)];
+          base = [s.version, effective(signed, before, s.at, rules, patientEntries(until(acts, s), this.rules))];
           since = 'signed';
         }
       } else if (versions.length > 1) {
         const prev = versions[versions.length - 2];
-        base = [prev.version, effective(prev, acts, ref, rules)];
+        base = [prev.version, effective(prev, acts, ref, rules, pat)];
       }
       templates[tid] = {
         draft,
@@ -465,6 +548,7 @@ export class Views {
   /** History keeps a value the clinician entered, also once the chart has one and the item shows the chart. */
   private entry(a: Action): any {
     const options = get(or(get(or(this.rules[a.template] ?? null, {}), a.rule), {}), 'attest');
+    if (truthy(get(a, 'remove'))) return { removed: get(a, 'entry') };
     if (!entered(a, options)) return {};
     return { entered: or(get(a, 'entry'), a.option), ...(truthy(get(a, 'entry_note')) ? { note: a.entry_note } : {}) };
   }
@@ -545,7 +629,7 @@ export class Views {
     const acts = this.store.actions(csn, at);
     const rules = this.rules[template] ?? null;
     const arrived = summary.phase === 'arrived';
-    const wf = workflow(latest, acts, this.ds.rowsAt(csn, at).filter((r) => r.template === template), arrived, rules);
+    const wf = workflow(latest, acts, this.ds.rowsAt(csn, at).filter((r) => r.template === template), arrived, rules, this.rules);
     const row: any = {
       csn, template, version: latest.version, at, by: person.name, role: person.role, user_email: get(person, 'user_email'),
     };
@@ -563,7 +647,8 @@ export class Views {
     // The replay clock: an action cannot go before one already recorded for this handoff.
     if (this.store.actions(csn).some((a) => a.template === template && a.at > at)) throw new ActionError(EARLIER);
     const dep = this.departure(csn, at);
-    const eff = effective(latest, acts, dep !== null ? Math.min(at, dep) : at, rules);
+    const pat = patientEntries(acts, this.rules);
+    const eff = effective(latest, acts, dep !== null ? Math.min(at, dep) : at, rules, pat);
     if (kind === 'edit') {
       const el = elements(eff).get(get(body, 'element'));
       if (!truthy(el) || el.kind !== 'narrative') throw new ActionError('Only narrative items can be edited; structured data comes from the chart.');
@@ -595,7 +680,14 @@ export class Views {
       }
       Object.assign(row, { rule: r.rule, option: body.option, entry: null, entry_note: null });
       const typed = TYPED[`${r.element}|${body.option}`];
-      if (typed) {
+      if (PATIENT.has(r.element)) patientCheck(r, body, template, pat);
+      if (typed && truthy(get(body, 'remove'))) {
+        const wanted = strip(or(get(body, 'entry'), '') as string).toLowerCase();
+        const listed: any[] = r.element === 'E09' ? pat.E09 : [];
+        const gone = listed.find((x) => strip(x.value).toLowerCase() === wanted);
+        if (!gone) throw new ActionError('That allergy is not on the list.');
+        Object.assign(row, { entry: gone.value, remove: true });
+      } else if (typed) {
         const entry = strip(or(get(body, 'entry'), '') as string);
         const note = typed.note ? strip(or(get(body, 'entry_note'), '') as string) : '';
         if (!truthy(entry)) throw new ActionError(typed.required);
@@ -622,6 +714,31 @@ export class Views {
     }
     this.store.add(kind, row);
     return this.case(csn, at, person);
+  }
+}
+
+/**
+ * Code status, allergies and isolation are one value for the patient: a template cannot confirm "none" while a
+ * value is entered, or enter one while another template confirmed "none".
+ */
+function patientCheck(r: any, body: any, template: string, pat: any): void {
+  const el = r.element;
+  const options = or(get(r, 'attest_options'), []) as any[];
+  if (truthy(get(body, 'remove')) && el === 'E09' && body.option === ALLERGY) return;
+  if (options.length && pyEq(body.option, options[0])) {
+    const found = el === 'E09' ? (pat.E09.length ? pat.E09[pat.E09.length - 1] : null) : pat[el];
+    if (found && (el === 'E09' || found.template !== template)) {
+      const where = TEMPLATE_NAME[found.template] ?? found.template;
+      const change = el === 'E09' ? 'Remove it there first.' : 'Change it there first.';
+      throw new ActionError(`${PATIENT_LABEL[el]} was entered as ${found.value} by ${found.by} on the ${where}. ${change}`);
+    }
+    return;
+  }
+  for (const [k, a] of pat.none as Map<string, Action>) {
+    const t = k.slice(0, k.lastIndexOf('|'));
+    if (k.endsWith(`|${el}`) && t !== template) {
+      throw new ActionError(`${a.by} confirmed "${a.option}" on the ${TEMPLATE_NAME[a.template] ?? a.template}. Change it there first.`);
+    }
   }
 }
 

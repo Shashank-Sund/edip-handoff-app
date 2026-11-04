@@ -212,4 +212,29 @@ describe('Board', () => {
     await user.click(await screen.findByRole('button', { name: 'More in the guide' }));
     expect(await screen.findByRole('dialog', { name: 'How to read each column' })).toBeInTheDocument();
   });
+
+  it('marks values entered in the sign off on the board flags', async () => {
+    const flag = { by: 'Jordan Reyes, RN', template: 'sbar_nurse', note: null };
+    const r = caseSummary({ code_status: null, entered: { code_status: { ...flag, value: 'DNR' }, isolation: { ...flag, value: 'Droplet' }, allergies: [{ ...flag, value: 'Latex' }] } });
+    const table = await renderBoard(board([r]));
+    expect(within(table).getByText('DNR · entered')).toHaveClass('text-sev-unstable');
+    expect(within(table).getByText('Droplet · entered')).toBeInTheDocument();
+    expect(within(table).getByText('Latex · entered')).toBeInTheDocument();
+  });
+
+  it('explains a patient card on the phone layout, which has no column titles', async () => {
+    await renderBoard();
+    const help = screen.getByRole('button', { name: 'About What a card shows' });
+    expect(help.parentElement).toHaveClass('md:hidden');
+    expect(help).toHaveAccessibleDescription(/Each card: name and reason for visit, severity/);
+  });
+
+  it('makes the left without sign off line look like a link', async () => {
+    const data = board(rows);
+    data.kpis.left_unsigned = 2;
+    await renderBoard(data);
+    const line = screen.getByRole('button', { name: '2 left without sign off' });
+    expect(line).toHaveClass('underline');
+    expect(line.querySelector('svg')).not.toBeNull();
+  });
 });

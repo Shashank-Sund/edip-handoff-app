@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AlertTriangle, ArrowRight, Check, CheckCheck, GitCompareArrows, History, Lock, PenLine } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, ArrowRight, Check, CheckCheck, CircleCheck, GitCompareArrows, History, Lock, PenLine } from 'lucide-react';
 import { LineChart, Line as RLine, ResponsiveContainer, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { ProgressRing, StateBadge } from '@/components/common/badges';
 import { TimeChart } from '@/components/charts/TimeChart';
 import { HelpButton } from '@/components/guide/HelpButton';
-import { Explain } from '@/components/guide/Explain';
-import { AttestChoices, type AttestFn } from './AttestChoices';
+import { Explain, QuietExplain } from '@/components/guide/Explain';
+import { ChoiceGroup, type AttestFn } from './AttestChoices';
+import { enteredText } from '@/lib/entered';
 import { callbackOk, canChange, readbackProblem } from '@/lib/checks';
 import { clinicalReason, clock, dateTime, pct, triggerLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -32,50 +33,114 @@ function Section({ title, description, icon, children, className, action, id }: 
   );
 }
 
-/** The REQUIRED and STALE labels of the Sign off list, each with what it means. */
+/** The REQUIRED and STALE labels of the Sign off list, each with what it means (not a tab stop: it repeats). */
 export function LevelTag({ level }: { level: Rule['level'] }) {
   const stale = level === 'stale';
   return (
-    <Explain
+    <QuietExplain
       topic="handoff.resolve"
       label={stale ? 'Stale' : 'Required'}
       text={stale ? 'The vital signs are older than the limit for this severity. Recheck the patient, or chart new vital signs.' : 'Must be documented or confirmed before you can sign.'}
       className={cn('shrink-0 text-[11px] font-medium uppercase tracking-wide', stale ? 'text-sev-watcher' : 'text-sev-unstable')}
     >
       {stale ? 'Stale' : 'Required'}
-    </Explain>
+    </QuietExplain>
   );
 }
 
+/** The elements of a draft by id, for the values entered on code status, allergies and isolation. */
+function enteredOf(draft: Draft, element: string) {
+  for (const sec of draft.sections) for (const e of sec.elements) if (e.id === element) return e.entered ?? [];
+  return [];
+}
+
+/**
+ * The Sign off list: every item that blocks signing, with its choices, and (for the sender) every resolved item
+ * with several choices, so a value can be changed or another allergy added. After a choice, focus goes to the next
+ * open item, or to the line that shows the choice.
+ */
 function Blockers({ draft, onAttest, busy, canEdit }: { draft: Draft; onAttest: AttestFn; busy?: boolean; canEdit: boolean }) {
   const blocking = draft.rules.filter((r) => draft.completeness.blocking.includes(r.rule));
-  const resolved = draft.rules.filter((r) => r.resolution);
-  if (!blocking.length) {
-    return (
-      <p className="flex items-center gap-2 rounded-lg bg-sev-stable/10 px-3 py-2 text-sm text-sev-stable">
-        <Check className="size-4" aria-hidden />
-        Every required item is documented or attested.
-      </p>
-    );
-  }
+  const changeable = canEdit ? draft.rules.filter((r) => r.resolution?.kind === 'attested' && (r.attest_options?.length ?? 0) > 1) : [];
+  const resolved = draft.rules.filter((r) => r.resolution && !changeable.includes(r));
+  const [open, setOpen] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    const id = pending.current;
+    if (!id) return;
+    pending.current = null;
+    const order = draft.rules.map((r) => r.rule);
+    const next = blocking.find((r) => order.indexOf(r.rule) > order.indexOf(id)) ?? blocking.find((r) => r.rule !== id);
+    const li = next && document.getElementById(`rule-${next.rule}`);
+    const target =
+      li?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]') ||
+      li ||
+      document.getElementById(`rule-${id}`) ||
+      document.getElementById('signoff-ready');
+    target?.focus();
+  }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  const attest: AttestFn = async (r, option, entry) => {
+    pending.current = r.rule; // set first: the new draft may render before this call returns
+    const ok = await (entry ? onAttest(r, option, entry) : onAttest(r, option));
+    if (ok === false) pending.current = null;
+    else setOpen(null);
+    return ok;
+  };
   return (
-    <ul className="space-y-2">
-      {blocking.map((r) => (
-        <li key={r.rule} className="rounded-lg border px-3 py-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <a href={`#el-${r.element}`} className="text-sm font-medium hover:underline">
-              {r.label}
-            </a>
-            <LevelTag level={r.level} />
-          </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">{r.message}</p>
-          {r.attest_expired && <ExpiredRecheck r={r} />}
-          {canEdit && <AttestChoices r={r} onAttest={onAttest} busy={busy} />}
-          {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the item to write it.</p>}
-        </li>
-      ))}
-      {resolved.length > 0 && <li className="px-1 text-xs text-muted-foreground">{resolved.length} resolved by attestation or edit.</li>}
-    </ul>
+    <div className="space-y-2">
+      {!blocking.length && (
+        <p id="signoff-ready" tabIndex={-1} className="flex items-center gap-2 rounded-lg bg-sev-stable/10 px-3 py-2 text-sm text-sev-stable outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <Check className="size-4" aria-hidden />
+          Every required item is documented or attested.
+        </p>
+      )}
+      <ul className="space-y-2">
+        {blocking.map((r) => (
+          <li key={r.rule} id={`rule-${r.rule}`} tabIndex={-1} className="scroll-mt-24 rounded-lg border px-3 py-2.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <div className="flex items-start justify-between gap-2">
+              <a href={`#el-${r.element}`} className="text-sm font-medium hover:underline">
+                {r.label}
+              </a>
+              <LevelTag level={r.level} />
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{r.message}</p>
+            {r.attest_expired && <ExpiredRecheck r={r} />}
+            {canEdit && <ChoiceGroup r={r} entered={enteredOf(draft, r.element)} onAttest={attest} busy={busy} />}
+            {canEdit && r.status === 'missing' && <p className="mt-1.5 text-xs text-muted-foreground">Use Edit on the item to write it.</p>}
+          </li>
+        ))}
+        {changeable.map((r) => {
+          const entered = enteredOf(draft, r.element);
+          const shown = entered.length ? entered.map(enteredText).join(', ') : r.resolution?.option;
+          return (
+            <li key={r.rule} id={`rule-${r.rule}`} tabIndex={-1} className="scroll-mt-24 rounded-lg border border-dashed px-3 py-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+              <div className="flex items-start justify-between gap-2 text-sm">
+                <span className="min-w-0">
+                  <a href={`#el-${r.element}`} className="font-medium hover:underline">
+                    {r.label}
+                  </a>
+                  <span className="ml-1.5 inline-flex items-center gap-1 text-xs text-sev-stable">
+                    <CircleCheck className="size-3.5" aria-hidden />
+                    {shown}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/60"
+                  aria-expanded={open === r.rule}
+                  onClick={() => setOpen(open === r.rule ? null : r.rule)}
+                >
+                  {open === r.rule ? 'Keep it' : r.element === 'E09' && entered.length ? 'Change or add' : 'Change'}
+                  <span className="sr-only"> {r.label}</span>
+                </button>
+              </div>
+              {open === r.rule && <ChoiceGroup r={r} entered={entered} onAttest={attest} busy={busy} />}
+            </li>
+          );
+        })}
+        {resolved.length > 0 && <li className="px-1 text-xs text-muted-foreground">{resolved.length} resolved by attestation or edit.</li>}
+      </ul>
+    </div>
   );
 }
 
@@ -272,10 +337,18 @@ function show(v: unknown): string {
   return String(v);
 }
 
+/** "Penicillin: Hives, Latex" from the entered part of an item's content, or "" when nothing was entered. */
+function enteredList(v: unknown): string {
+  const list = typeof v === 'object' && v !== null && 'entered' in v ? (v as { entered: { value: string; note: string | null }[] }).entered : [];
+  return list.map(enteredText).join(', ');
+}
+
 export function ChangesCard({ tpl }: { tpl: CaseTemplate }) {
   const c = tpl.changes;
   if (!c.version) return null;
-  const chart = c.elements.filter((e) => e.kind !== 'narrative');
+  const isEntered = (v: unknown) => typeof v === 'object' && v !== null && 'entered' in v;
+  const entered = c.elements.filter((e) => e.kind !== 'narrative' && (isEntered(e.after) || isEntered(e.before)));
+  const chart = c.elements.filter((e) => e.kind !== 'narrative' && !entered.includes(e));
   const text = c.elements.filter((e) => e.kind === 'narrative');
   return (
     <Section title="What changed" icon={<GitCompareArrows />} action={<HelpButton topic="handoff.context" />} description={`Since ${c.since === 'signed' ? 'the signed' : 'the previous'} version ${c.version}`}>
@@ -293,6 +366,21 @@ export function ChangesCard({ tpl }: { tpl: CaseTemplate }) {
                   </a>
                 ))}
               </div>
+            </div>
+          )}
+          {entered.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Entered in the sign off</p>
+              <ul className="space-y-1.5">
+                {entered.map((e) => (
+                  <li key={e.id} className="text-xs">
+                    <a href={`#el-${e.id}`} className="font-medium hover:underline">
+                      {e.label}
+                    </a>
+                    : {enteredList(e.before) && <span className="text-muted-foreground line-through decoration-muted-foreground/40">{enteredList(e.before)}</span>} {enteredList(e.after) || 'removed'}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {text.length > 0 && (
@@ -403,7 +491,7 @@ export function HistoryCard({ tpl, activity, template }: { tpl: CaseTemplate; ac
     ...acts.map((a) => ({
       at: a.at,
       title: `${a.restore ? 'Model text restored' : ACTION[a.kind] ?? a.kind} by ${a.by}`,
-      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : `${itemName(tpl.draft, a.detail) ?? `version ${a.version}`}${a.entered ? `: ${a.entered}${a.note ? `, ${a.note}` : ''}` : ''}`,
+      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : `${itemName(tpl.draft, a.detail) ?? `version ${a.version}`}${a.removed ? `: removed ${a.removed}` : a.entered ? `: ${a.entered}${a.note ? `, ${a.note}` : ''}` : ''}`,
       kind: a.kind,
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));

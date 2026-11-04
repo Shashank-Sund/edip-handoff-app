@@ -566,11 +566,11 @@ def test_an_entered_value_shows_on_the_item_resolves_the_rule_and_needs_signing_
     d = out["templates"]["sbar_nurse"]["draft"]
     rule = next(x for x in d["rules"] if x["rule"] == "N07")
     assert rule["resolution"]["entered"] and "N07" not in d["completeness"]["blocking"]
-    e10 = _els(d)["E10"]["entered"]
+    e10 = _els(d)["E10"]["entered"][0]
     assert e10["value"] == "Contact and droplet" and e10["option"] == "Other" and e10["by"] == "Jordan Reyes, RN"
     # A plain choice is entered as itself; the first choice confirms nothing to add and enters nothing.
     out = c.post(f"{url}/attest", json={"rule": "N07", "option": "Droplet", "entry": "ignored"}).json()
-    assert _els(out["templates"]["sbar_nurse"]["draft"])["E10"]["entered"]["value"] == "Droplet"
+    assert _els(out["templates"]["sbar_nurse"]["draft"])["E10"]["entered"][0]["value"] == "Droplet"
     out = c.post(f"{url}/attest", json={"rule": "N07", "option": "No isolation needed"}).json()
     d = out["templates"]["sbar_nurse"]["draft"]
     assert "entered" not in _els(d)["E10"] and not next(x for x in d["rules"] if x["rule"] == "N07")["resolution"].get("entered")
@@ -583,7 +583,7 @@ def test_an_entered_value_shows_on_the_item_resolves_the_rule_and_needs_signing_
     assert r.status_code == 409 and r.json()["detail"] == "Write the allergen."
     out = c.post(f"{url2}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Penicillin", "entry_note": " Hives "}).json()
     e09 = _els(out["templates"]["sbar_nurse"]["draft"])["E09"]["entered"]
-    assert (e09["value"], e09["note"]) == ("Penicillin", "Hives")
+    assert [(x["value"], x["note"]) for x in e09] == [("Penicillin", "Hives")]
     assert [(x.get("entered"), x.get("note")) for x in out["activity"] if x["kind"] == "attest"] == [("Penicillin", "Hives")]
     # The receiver sees the entered value too; after signing, entering one is a change like any attestation.
     _resolve(c, csn2)
@@ -591,7 +591,7 @@ def test_an_entered_value_shows_on_the_item_resolves_the_rule_and_needs_signing_
     case = c.get(f"/api/handoffs/{csn2}").json()
     unit = _receiver(main, case["summary"])
     seen = c.get(f"/api/handoffs/{csn2}", headers=h(unit)).json()["templates"]["sbar_nurse"]["draft"]
-    assert _els(seen)["E09"]["entered"]["value"] == "Penicillin"
+    assert [x["value"] for x in _els(seen)["E09"]["entered"]] == ["Penicillin"]
     out = c.post(f"{url2}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex"}).json()
     assert out["templates"]["sbar_nurse"]["workflow"]["state"] == "changed"
 
@@ -616,7 +616,7 @@ def test_a_chart_value_replaces_an_entered_one_which_stays_in_history(client):
     csn, a, b = found
     t0 = (a["at"] + timedelta(minutes=1)).isoformat()
     out = c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", params={"at": t0}, json={"rule": "N05", "option": "DNR"}).json()
-    assert _els(out["templates"]["sbar_nurse"]["draft"])["E08"]["entered"]["value"] == "DNR"
+    assert _els(out["templates"]["sbar_nurse"]["draft"])["E08"]["entered"][0]["value"] == "DNR"
     later = c.get(f"/api/handoffs/{csn}", params={"at": b["at"].isoformat()}).json()
     d = later["templates"]["sbar_nurse"]["draft"]
     assert "entered" not in _els(d)["E08"] and _els(d)["E08"]["data"]
@@ -630,3 +630,107 @@ def test_attestation_entries_are_kept_in_the_live_store():
     import lakebase
 
     assert {"entry", "entry_note"} <= set(lakebase.DETAIL)
+
+
+# ------------------------------------------------------------------------------- review 2: patient level entries
+def _patient_case(c, need=("N05", "N06", "N07"), also=("P04", "P05")):
+    """A boarding patient whose chart lacks code status, allergies and isolation (the SBAR rules need attesting)."""
+    for r in c.get("/api/board").json()["rows"]:
+        if r["phase"] != "boarding":
+            continue
+        t = c.get(f"/api/handoffs/{r['csn']}").json()["templates"]
+        st = {x["rule"]: x["status"] for tp in t.values() for x in tp["draft"]["rules"]}
+        if all(st.get(x) == "attest" for x in need + also):
+            return r
+    pytest.skip("no boarding patient lacks these chart items")
+
+
+def test_an_entered_code_status_belongs_to_the_patient_on_every_template(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = _patient_case(c, ("N05",), ("P04",))
+    csn = row["csn"]
+    out = c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", json={"rule": "N05", "option": "DNR"}).json()
+    for tid, rule in (("sbar_nurse", "N05"), ("ipass_physician", "P04")):
+        d = out["templates"][tid]["draft"]
+        assert [x["value"] for x in _els(d)["E08"]["entered"]] == ["DNR"], tid
+        assert next(x for x in d["rules"] if x["rule"] == rule)["resolution"]["entered"] and rule not in d["completeness"]["blocking"]
+    assert out["summary"]["entered"]["code_status"] == {"value": "DNR", "note": None, "by": "Jordan Reyes, RN", "template": "sbar_nurse"}
+    board = c.get("/api/board").json()
+    assert next(r for r in board["rows"] if r["csn"] == csn)["entered"]["code_status"]["value"] == "DNR"
+    # A conflicting "none" on another template is refused, naming who entered what.
+    r = c.post(f"/api/handoffs/{csn}/ipass_physician/attest", json={"rule": "P04", "option": "Full code confirmed with patient or family"},
+               headers=h("ed-md"))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Code status was entered as DNR by Jordan Reyes, RN on the SBAR. Change it there first."
+    # Another value from another template: the latest entered wins everywhere.
+    out = c.post(f"/api/handoffs/{csn}/ipass_physician/attest", json={"rule": "P04", "option": "Comfort care"}, headers=h("ed-md")).json()
+    assert [x["value"] for x in _els(out["templates"]["sbar_nurse"]["draft"])["E08"]["entered"]] == ["Comfort care"]
+    # The template that holds the value can change it to "none"; then the others are free again.
+    c.post(f"/api/handoffs/{csn}/ipass_physician/attest", json={"rule": "P04", "option": "Full code confirmed with patient or family"},
+           headers=h("ed-md"))
+    out = c.get(f"/api/handoffs/{csn}").json()
+    assert [x["value"] for x in _els(out["templates"]["sbar_nurse"]["draft"])["E08"]["entered"]] == ["DNR"]
+
+
+def test_entering_a_value_while_another_template_confirmed_none_is_refused(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = _patient_case(c, ("N06",), ("P05",))
+    csn = row["csn"]
+    md = c.post(f"/api/handoffs/{csn}/ipass_physician/attest", json={"rule": "P05", "option": "No known allergies confirmed"},
+                headers=h("ed-md")).json()
+    who = next(x for x in md["activity"] if x["kind"] == "attest")["by"]
+    r = c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex"})
+    assert r.status_code == 409
+    assert r.json()["detail"] == f'{who} confirmed "No known allergies confirmed" on the I-PASS. Change it there first.'
+    # The I-PASS "none" stays per template and does not resolve the SBAR rule.
+    d = c.get(f"/api/handoffs/{csn}").json()["templates"]["sbar_nurse"]["draft"]
+    assert "N06" in d["completeness"]["blocking"]
+
+
+def test_entered_allergies_are_a_list_and_each_can_be_removed(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = _patient_case(c, ("N06",), ())
+    csn = row["csn"]
+    url = f"/api/handoffs/{csn}/sbar_nurse"
+    c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Penicillin", "entry_note": "Hives"})
+    out = c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex"}).json()
+    assert [(x["value"], x["note"]) for x in _els(out["templates"]["sbar_nurse"]["draft"])["E09"]["entered"]] == [("Penicillin", "Hives"), ("Latex", None)]
+    assert out["summary"]["entered"]["allergies"][1]["value"] == "Latex"
+    r = c.post(f"{url}/attest", json={"rule": "N06", "option": "No known allergies confirmed"})
+    assert r.status_code == 409 and r.json()["detail"].startswith("An allergy was entered as Latex by Jordan Reyes, RN on the SBAR.")
+    r = c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Aspirin", "remove": True})
+    assert r.status_code == 409 and r.json()["detail"] == "That allergy is not on the list."
+    _resolve(c, csn)
+    assert c.post(f"{url}/sign", json={"callback": "x4471"}).json()["templates"]["sbar_nurse"]["workflow"]["state"] == "signed"
+    out = c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": " penicillin ", "remove": True}).json()
+    t = out["templates"]["sbar_nurse"]
+    assert [x["value"] for x in _els(t["draft"])["E09"]["entered"]] == ["Latex"]
+    assert t["workflow"]["state"] == "changed"                       # a removal is a change after signing
+    assert any(x.get("removed") == "Penicillin" for x in out["activity"])
+    # Removing the last one leaves the rule open again.
+    out = c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex", "remove": True}).json()
+    d = out["templates"]["sbar_nurse"]["draft"]
+    assert "entered" not in _els(d)["E09"] and "N06" in d["completeness"]["blocking"]
+    r = c.post(f"{url}/attest", json={"rule": "N06", "option": "Add an allergy", "entry": "Latex", "remove": "yes"})
+    assert r.status_code == 422 and r.json()["detail"] == "The request has a value the app cannot use for the remove choice."
+
+
+def test_an_entered_value_after_signing_shows_in_what_changed_for_the_receiver(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    row = _patient_case(c, ("N05",), ("P04",))
+    csn, unit = row["csn"], _receiver(main, row)
+    c.post(f"/api/handoffs/{csn}/sbar_nurse/attest", json={"rule": "N05", "option": "DNR"})
+    _resolve(c, csn)
+    assert c.post(f"/api/handoffs/{csn}/sbar_nurse/sign", json={"callback": "x4471"}).status_code == 200
+    # Changed on the I-PASS by the physician: the nurse handoff's content changed too.
+    assert c.post(f"/api/handoffs/{csn}/ipass_physician/attest", json={"rule": "P04", "option": "DNR/DNI"},
+                  headers=h("ed-md")).status_code == 200
+    t = c.get(f"/api/handoffs/{csn}", headers=h(unit)).json()["templates"]["sbar_nurse"]
+    assert t["workflow"]["state"] == "changed" and t["workflow"]["edited_since_signed"]
+    e08 = next(x for x in t["changes"]["elements"] if x["id"] == "E08")
+    assert t["changes"]["since"] == "signed" and e08["after"]["entered"] == [{"value": "DNR/DNI", "note": None}]
+    assert e08["before"] != e08["after"]

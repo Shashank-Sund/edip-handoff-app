@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
+  Circle,
   CircleHelp,
   Lock,
   Menu,
@@ -26,6 +27,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
+import { TAB_HELP } from '@/lib/labels';
 import { Key, Primary, Tag, AmberNote, GreyNote, ModelMark, Chip, Highlight, Ring, GuideLink, PageLink, Terms, Checks, Note, SeeDo, ColorRow, WhoDoesWhat } from './cues';
 
 export interface Topic {
@@ -85,7 +87,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Help on every page',
         body: (
           <p>
-            Look for the <Key label="question mark"><CircleHelp /></Key> button next to a title or a panel. It opens a short explanation of that part of the screen without leaving the page, with a link back to this guide. A label with a <span className="underline decoration-dotted underline-offset-[3px]">dotted underline</span>, and the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to each column of the board, explain themselves when you point at them, tab to them or tap them.
+            Look for the <Key label="question mark"><CircleHelp /></Key> button next to a title or a panel. It opens a short explanation of that part of the screen without leaving the page, with a link back to this guide. A label with a <span className="underline decoration-dotted underline-offset-[3px]">dotted underline</span>, and the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to each column of the board, explain themselves when you point at them or tap them. Tags that repeat on every item, such as Changed, are not Tab stops; the ? of each panel covers them for the keyboard.
           </p>
         ),
       },
@@ -144,7 +146,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <SeeDo
             see={<>The <b>Sign off</b> panel lists what still blocks signing, each marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>. The same items show an amber message in the handoff.</>}
-            act={<>For each one, check the patient, then tap what is true, for example <Key><Check />No isolation needed</Key>, <Key><Check />Droplet</Key> or <Key><Check />Rechecked at bedside, unchanged</Key>. For an allergy the chart does not have, tap <Key><Pencil />Add an allergy</Key> and type it.</>}
+            act={<>For each one, check the patient, then choose what is true in the panel, for example <Key><Circle />No isolation needed</Key>, <Key><Circle />Droplet</Key> or <Key><Circle />Rechecked at bedside, unchanged</Key>. For an allergy the chart does not have, choose <Key><Pencil />Add an allergy</Key> and type it. On the item itself, <b>Resolve in Sign off</b> takes you to its choices.</>}
           />
         ),
       },
@@ -443,7 +445,7 @@ export const GUIDE: GuideSection[] = [
         title: 'How to read each column',
         body: (
           <>
-            <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information. Point at the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to a column title for a short reminder of what it shows.</p>
+            <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information. Point at the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to a column title for a short reminder of what it shows; on a phone, the one above the cards explains a card.</p>
             <Terms
               items={[
                 ['Patient', 'Name, age, sex and medical record number (MRN).'],
@@ -488,8 +490,9 @@ export const GUIDE: GuideSection[] = [
         body: (
           <>
             <p>
-              The same patient in three formats. <b>SBAR</b> is the nurse handoff: the ED nurse signs it, the receiving nurse accepts it. <b>I-PASS</b> is the physician handoff: the ED physician signs it, the admitting physician accepts it. The <b>Joint Commission minimum</b> is a short format with what every handoff needs: either ED clinician signs it, either receiver accepts it. Point at a tab for a reminder. Your role's tab opens first. The small icon on each tab shows its status: <StateBadge state="draft" compact /> draft, <StateBadge state="signed" compact /> signed, <StateBadge state="acknowledged" compact /> accepted.
+              The same patient in three formats. Your role's tab opens first. On a smaller screen the last tab is called Minimum. The small icon on each tab shows its status: <StateBadge state="draft" compact /> draft, <StateBadge state="signed" compact /> signed, <StateBadge state="acknowledged" compact /> accepted.
             </p>
+            <Terms items={[['SBAR', TAB_HELP.sbar_nurse], ['I-PASS', TAB_HELP.ipass_physician], ['Joint Commission minimum', TAB_HELP.custom_sea58]]} />
             <p className="text-muted-foreground">Next to the tabs: the version number, when it was drafted and why. Each handoff is split into sections (for SBAR: Identify, Situation, Background, Assessment, Recommendation, Read back).</p>
           </>
         ),
@@ -538,7 +541,7 @@ export const GUIDE: GuideSection[] = [
             <p>An amber message under an item, such as <AmberNote>Isolation: not documented</AmberNote>, means it blocks signing. There are three kinds:</p>
             <Terms
               items={[
-                ['Not documented, with choices', <>Tap what is true. The first choice confirms there is nothing to add, for example <Key><Check />No known allergies confirmed</Key>. For isolation, code status and allergies the other choices enter what you found: <Key><Check />Droplet</Key>, <Key><Check />DNR/DNI</Key>, or <Key><Pencil />Other</Key> and <Key><Pencil />Add an allergy</Key>, which ask you to type it. The choices are a fixed list for each item. A wrong choice can be fixed with <b>Change</b> under the item; after signing, that means signing again. <GuideLink to="handoff-entered">Values you enter</GuideLink> explains what the receiver sees.</>],
+                ['Not documented, with choices', <>In the Sign off panel, choose what is true. <b>None</b> confirms there is nothing to add, for example <Key><Circle />No known allergies confirmed</Key>. <b>Or enter</b> records what you found: <Key><Circle />Droplet</Key>, <Key><Circle />DNR/DNI</Key>, or <Key><Pencil />Other</Key> and <Key><Pencil />Add an allergy</Key>, which ask you to type it. The choices are a fixed list for each item; the chosen one has a check. On the item, <b>Resolve in Sign off</b> takes you there. To fix a choice, press <b>Change</b> on its line in the panel; it opens with the current value. After signing, any change means signing again. <GuideLink to="handoff-entered">Values you enter</GuideLink> explains what the receiver sees.</>],
                 [<Tag key="t" tone="warn">Stale</Tag>, <>Vital signs must be recent for the severity. The limits depend on the template: SBAR 60, 30 and 15 minutes for a stable, watcher and unstable patient; I-PASS 120, 60 and 30 minutes. The <PageLink to="/templates">Templates page</PageLink> lists them. Recheck the patient, then tap <Key><Check />Rechecked at bedside, unchanged</Key>, or chart new vital signs. A recheck counts for the same limit: after that the item is stale again and the panel says the recheck expired.</>],
                 ['Not documented, no statement', <>For a model item, press <Key><Pencil />Edit</Key> and write it. For a chart item, document it in the chart; the next draft picks it up.</>],
               ]}
@@ -555,10 +558,10 @@ export const GUIDE: GuideSection[] = [
         body: (
           <>
             <p>
-              When the chart has no isolation, code status or allergy and you enter one in the sign off, the item shows it with <Pill tone="warn">Entered by Jordan Reyes, RN, not yet in the chart</Pill>. The receiving team sees the same tag, so they know it came from you, not from the record.
+              When the chart has no isolation, code status or allergy and you enter one in the sign off, the item shows it with <Pill tone="warn">Entered by Jordan Reyes, RN, not yet in the chart</Pill>. These belong to the patient, not to one handoff: the value shows on every tab, in the patient box (for example <Pill tone="danger">DNR · entered, not in chart</Pill>) and on the board. The receiving team sees the same, so they know it came from you, not from the record.
             </p>
             <p className="text-muted-foreground">
-              Enter it in the chart as well. When a newer draft has the value from the chart, the item shows the chart value, and what you entered stays in History. Like any attestation, entering a value after you signed means you sign again.
+              You can add several allergies, each with a reaction if you know it, and remove one with its x. One handoff cannot confirm "none" while another holds an entered value: the app says who entered what and where, so you change it there first. Enter it in the chart as well. When a newer draft has the value from the chart, the item shows the chart value, and what you entered stays in History. Entering, changing or removing a value after a handoff was signed, on any tab, means signing it again; the receiver sees it under What changed.
             </p>
           </>
         ),
@@ -572,7 +575,7 @@ export const GUIDE: GuideSection[] = [
             <Terms
               items={[
                 [<Ring key="r" value={0.68} blocking={2} label="68% complete" />, 'How complete the handoff is, and how many items still block signing.'],
-                ['The list', <>Every open item, marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>, with the same choices as on the item. Click an item's name to jump to it.</>],
+                ['The list', <>Every open item, marked <Tag tone="danger">Required</Tag> or <Tag tone="warn">Stale</Tag>, with its choices. Below them, items you resolved with a choice, each with <b>Change</b>. After a choice the keyboard moves to the next open item. Click an item's name to jump to it.</>],
                 ['Your callback number', 'The number the receiving clinician can call you on.'],
                 [<Primary key="s"><PenLine />Sign</Primary>, 'Adds your name, callback and the time. The receiving unit can now accept it.'],
               ]}
@@ -810,7 +813,7 @@ export const GUIDE: GuideSection[] = [
       { id: 'changed', title: 'Changed after signing', body: 'An edit, an attestation or a newer draft with different content came after the signature. The ED signs again before the receiver can accept.' },
       { id: 'completeness', title: 'Completeness', body: "The share of the template's checks that are met or resolved. Required items block signing; warnings only lower the number." },
       { id: 'contingency', title: 'Contingency plan', body: 'If this happens, do that: how the patient could get worse, and what to do about it.' },
-      { id: 'entered', title: 'Entered, not yet in the chart', body: 'A value the ED clinician entered in the sign off (isolation, code status, an allergy) because the chart had none. The chart value replaces it once a newer draft has one.' },
+      { id: 'entered', title: 'Entered, not yet in the chart', body: 'A value the ED clinician entered in the sign off (isolation, code status, allergies) because the chart had none. It belongs to the patient, so every handoff shows it. The chart value replaces it once a newer draft has one.' },
       { id: 'esi', title: 'ESI', body: 'Emergency Severity Index: the triage level, from 1 (most urgent) to 5.' },
       { id: 'ipass', title: 'I-PASS', body: 'Illness severity, Patient summary, Action list, Situation awareness and contingency, Synthesis by the receiver. The physician handoff format.' },
       { id: 'minimum', title: 'Joint Commission minimum', body: 'A short handoff with the items the Joint Commission says every handoff needs. Any clinician can use it.' },
