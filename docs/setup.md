@@ -136,7 +136,7 @@ Everything above runs on synthetic data. This section is the checklist for point
 | | Demo (as deployed) | Real data |
 | --- | --- | --- |
 | `EDIP_SYNTHETIC_DATA` | `true`: the data is synthetic, so the two demo features below are allowed | `false`, or not set: both demo features are off, whatever the other settings say |
-| Clock | Replay: one recorded week, with a clock you move back, forward or play | Live: the current time. A read only past view can look back up to `EDIP_PAST_VIEW_HOURS` hours (step 4) |
+| Clock | Replay: one recorded week, with a clock you move back, forward or play | Live: the current time. A read only, logged past view can look back up to `EDIP_PAST_VIEW_HOURS` hours (step 4) |
 | Who you are | Demo personas: anyone picks any role in the menu at the bottom left | Your own sign in. Your role comes from `EDIP_ROLE_MAP`; anyone not in it can only read |
 
 ### How the app decides
@@ -157,20 +157,26 @@ A change takes effect only after a redeploy: `databricks bundle deploy -t <targe
 
 ### The checklist
 
-**1. A separate catalog and real feeds.** Deploy with your own catalog (`--var catalog=<name>`) that never held the synthetic week, and land your feeds in its bronze tables as [ingestion/README.md](ingestion/README.md) explains. Do not run `edip_setup` against that catalog: its `data` task generates the synthetic week and replaces the bronze tables, and its `pipeline` task runs a full refresh. Its last task, `lakebase` (`jobs/setup_lakebase.py`), is the step that creates the Lakebase synced tables and lets the app read them. The repo has no job that runs that step on its own, so plan how you will run it once for your catalog.
+**1. A separate catalog and real feeds.** Deploy with your own catalog (`--var catalog=<name>`) that never held the synthetic week, and land your feeds in its bronze tables as [ingestion/README.md](ingestion/README.md) explains. Do not run `edip_setup` against that catalog: its `data` task generates the synthetic week and replaces the bronze tables, and its `pipeline` task runs a full refresh. Its last task, `lakebase` (`jobs/setup_lakebase.py`), is the step that creates the Lakebase synced tables and lets the app read them, and the job `edip_lakebase_setup` runs that step on its own, with no data loading:
 
-**2. App settings.** In the app's `config.env` in `databricks.yml`:
+```bash
+databricks bundle run edip_lakebase_setup -t <target> --var catalog=<name>
+```
+
+Run it once the pipeline has filled silver and the handoff job has run once (step 3; the job creates `gold.handoff_draft`). It creates the synced tables, waits for the first sync and grants the app read access (about 3 minutes); later handoff runs keep Lakebase up to date. Run it again if a synced table is recreated, or when a handoff run's log asks for it after an upgrade.
+
+**2. App settings.** In the app's `config.env` in `databricks.yml`, except the role map, which is a bundle variable (below):
 
 | Setting | Set it to | What it does |
 | --- | --- | --- |
 | `EDIP_SYNTHETIC_DATA` | `false` | The switch described above. Removing the line has the same effect. |
 | `EDIP_CLOCK_MODE` | `live` | Already forced to `live` when the data is not synthetic; set it anyway so the file says what happens. |
 | `EDIP_DEMO_PERSONAS` | `false` | Already forced off when the data is not synthetic; set it anyway for the same reason. |
-| `EDIP_ROLE_MAP` | A JSON map of email to persona id (below) | Gives each signed in user their role. Anyone not in it can read but not change anything. |
+| `EDIP_ROLE_MAP` | A JSON map of email to persona id (below), through the bundle variable `role_map` | Gives each signed in user their role. Anyone not in it can read but not change anything. |
 | `EDIP_TIMEZONE` | Your facilities' time zone, an IANA name such as `America/Chicago` | The server and the client show times in it. Default `America/New_York`. A name the app does not know falls back to the default, with a warning in the app log. |
 | `EDIP_STALE_BOARDING_HOURS` | Check the default, 24 | With the live clock, a patient with an admit decision and no ED departure for longer than this is left off the board and the boarding counts, so a departure your feeds missed does not keep them boarding forever. |
 | `EDIP_ACTIONS_TTL` | Check the default, 2 | Seconds the app reuses the clinician actions it read from Lakebase before reading them again, so every app process sees what the others saved. |
-| `EDIP_PAST_VIEW_HOURS` | Check the default, 72 | How far back the past view goes (step 4). `0` turns it off. |
+| `EDIP_PAST_VIEW_HOURS` | Check the default, 72 | How far back the past view goes, in hours (step 4); at most 8760. `0` turns it off. |
 
 Persona ids for `EDIP_ROLE_MAP` (details in [app/README.md](../app/README.md#live-mode-deployed)):
 
@@ -182,15 +188,23 @@ Persona ids for `EDIP_ROLE_MAP` (details in [app/README.md](../app/README.md#liv
 | `unit-<facility>-<unit code>`, lowercased | Receiving nurse of one unit: sees only patients bound for it, accepts SBAR and the custom template. Use the facility and unit codes as they appear in your data; in the synthetic week, `unit-sgh-micu` or `unit-lks-3s` |
 | `viewer` | Read only. You do not need to list viewers: anyone not in the map gets this role |
 
-A worked example, with the rest of the app's `config.env` unchanged:
+A worked example, with the rest of the app's `config.env` unchanged (the `EDIP_ROLE_MAP` line stays as it is: it reads the variable):
 
 ```yaml
           - {name: EDIP_SYNTHETIC_DATA, value: "false"}
           - {name: EDIP_CLOCK_MODE, value: live}
           - {name: EDIP_DEMO_PERSONAS, value: "false"}
-          - {name: EDIP_ROLE_MAP, value: '{"ed.nurse@example.org": "ed-rn", "ed.doctor@example.org": "ed-md", "hospitalist@example.org": "hosp-md", "icu.nurse@example.org": "unit-sgh-micu"}'}
+          - {name: EDIP_ROLE_MAP, value: "${var.role_map}"}
           - {name: EDIP_TIMEZONE, value: America/Chicago}
 ```
+
+The map holds staff emails, so it stays out of `databricks.yml` and git. Put it in `.databricks/bundle/<target>/variable-overrides.json` in your copy of the repo; git ignores that folder, and every `databricks bundle` command (and `scripts/deploy.sh`) reads the file for that target. The value is a string that holds the JSON map:
+
+```json
+{"role_map": "{\"ed.nurse@example.org\": \"ed-rn\", \"ed.doctor@example.org\": \"ed-md\", \"hospitalist@example.org\": \"hosp-md\", \"icu.nurse@example.org\": \"unit-sgh-micu\"}"}
+```
+
+Or export `BUNDLE_VAR_role_map` with the JSON map in the terminal you deploy from. `--var role_map=...` does not work for it: the CLI splits `--var` values at commas and refuses double quotes. After any change, run `databricks bundle deploy -t <target>` and `databricks bundle run edip_app -t <target>`. Anyone who can view the app's settings in the workspace can read the map.
 
 Emails match without regard to case. The app checks the map when it starts and writes a warning to the app log (**Compute > Apps > <app> > Logs**) for each problem:
 
@@ -198,8 +212,6 @@ Emails match without regard to case. The app checks the map when it starts and w
 - A persona id that does not exist, or an empty one: that person gets the viewer role.
 - The same email twice with different personas (for example in different letter case): the later one is used.
 - A well formed unit id the data does not list yet is kept, so a nurse of a unit with no patients keeps their role. This means a misspelled unit id is not caught: that nurse sees an empty board. Check unit ids against your data.
-
-The map holds staff emails. If your copy of the repo is public, keep this change out of it.
 
 **3. Feeds and drafts.**
 
@@ -209,21 +221,27 @@ The map holds staff emails. If your copy of the repo is public, keep this change
 - **Model spend.** Every trigger run that finds new points makes one model call per point. [ai/README.md](../ai/README.md#cost) has the measured cost per call and an estimate for a day of live use; scale it by your volume and your model's price. Pay per token endpoints are rate limited; the job's `workers` parameter sets how many calls run at once.
 - **The nightly shutdown.** The job `edip-nightly-shutdown-<target>` stops this deployment's app and pipeline at 01:00 Pacific every night and does not start them again. For a service that runs around the clock, pause its schedule under **Jobs**.
 
-**4. The past view.** With the live clock, a user can view the board and the handoffs at an earlier time, read only, back to `EDIP_PAST_VIEW_HOURS` hours (default 72; `0` turns it off). Drafts show at the time they were written; arrival, admit and departure times show at the time they happened. Every past view is logged in the Lakebase table `app.view_log` (who, which patient, which time); if the log cannot be written, the past view is refused. Signing and acknowledging always happen at the current time.
+**4. The past view.** With the live clock, a user can look at the board, a handoff and analytics as they were at an earlier time, read only, up to `EDIP_PAST_VIEW_HOURS` hours back (default 72; `0` turns it off).
+
+- **Limits.** A time older than the limit is refused (the app answers 400 and says how far back it can look); it is not moved to the limit. A time later than now counts as now, and so does one within 2 minutes of now, because device clocks differ.
+- **Read only.** Edits, attestations, sign offs and read backs always carry the server's current time, and are refused while the user looks at an earlier time, so nothing can be backdated.
+- **Logged.** Before it answers, the app writes a row to the Lakebase table `app.view_log` for every look at an earlier time, on the board, a handoff or analytics: who, the page and patient, the time viewed, and when. If that row cannot be written, the view is refused. Reads at the current time write nothing.
+- **What an earlier time shows.** A draft shows from when the handoff job saved it (`created_ts`), or from its chart time if that is later. The Lakebase sync and the app's reload once a minute come after `created_ts`, so an earlier time can show a draft a few minutes before the app could show it then. Arrival, admit decision and departure show at the time they happened, so a feed message that came in late shows at that time. Encounter details (status, ESI, service) show as they are now. A canceled admission shows canceled from the time of the cancel.
 
 **5. PHI and governance.**
 
 - Confirm every feature with your Databricks account team and work through [Before using real patient data](feature-status.md#before-using-real-patient-data) in feature-status.md.
 - The app reads data as its own identity (the app's service principal), not as the signed in user, so Unity Catalog row filters and column masks do not apply per user; per unit access is enforced in app code. If your policy requires per user data access, user authorization is the option ([feature-status.md](feature-status.md#feature-table), row "Apps forwarded user headers and user authorization").
 - Grant access to the catalog (every bronze table holds PHI) and the Lakebase project only to the groups that need it; grant `CAN USE` on the app only to the clinical groups who use it. [data-model.md](data-model.md#who-can-read-and-write-what) lists what the app's identity can read and write in Lakebase.
-- Two Lakebase tables record who did what: `app.handoff_action` (every edit, attestation, sign off and read back, append only) and `app.view_log` (every past view). Include both in your audit and retention plan.
+- Two Lakebase tables record who did what: `app.handoff_action` (every edit, attestation, sign off and read back, append only) and `app.view_log` (every look at an earlier time: who, the page and patient, the time viewed, and when; the app refuses the view if it cannot write the row). Include both in your audit and retention plan.
 
 **6. Check it worked.**
 
-- The clock at the top right shows **Live** and the current time, without the replay controls (Back 1 hour, Forward 1 hour, Play and the "Replay the reference week" panel) and without the "This demo replays one recorded week" note.
+- The clock at the top right shows **Live** and the current time, with **View an earlier time** next to it (a clock icon on a phone; it is missing when `EDIP_PAST_VIEW_HOURS` is `0`). There is no Play button, no "Replay the reference week" panel and no "This demo replays one recorded week" note.
+- **View an earlier time** opens a picker of days and hours within the limit. Pick one: a bar under the top of the page says **Viewing** and the time, **read only**; Edit, the sign off choices, Sign and Accept handoff are turned off; arrows next to the time move one hour back or forward; **Back to live** returns. The look is a new row in `app.view_log`.
 - The bottom of the left menu shows your own name (or email) and your role or unit, with no menu of demo people to switch between.
 - A colleague who is not in `EDIP_ROLE_MAP` sees "Viewer (read only)" under their name and cannot edit, sign or accept a handoff.
-- `<app URL>/api/config` shows `"clock": "live"`, `"demo_personas": false` and `"personas": []`. `<app URL>/api/me` shows your `role` and `user_email`.
+- `<app URL>/api/config` shows `"clock": "live"`, `"demo_personas": false`, `"personas": []` and `"past_view_hours"` with your limit. `<app URL>/api/me` shows your `role` and `user_email`.
 - `<app URL>/api/health` shows `"status": "ok"` and your encounter and draft counts. Its `"mode": "live"` means the app reads Lakebase (`EDIP_MODE`), not the clock: it says `live` in the demo too.
 
 ## Remove it
