@@ -142,7 +142,7 @@ function Banner({ s, sender }: { s: CaseSummary; sender: boolean }) {
             </dt>
             <dd className="font-medium">
               {d.pending_unit ? `${s.facility} ${bed(d.pending_unit, d.pending_room, d.pending_bed)}` : 'Bed pending'}
-              {d.level_of_care && <span className="ml-1 font-normal text-muted-foreground">{LEVEL_LABEL[d.level_of_care] ?? d.level_of_care}</span>}
+              {d.level_of_care && <>{' '}<span className="font-normal text-muted-foreground">{LEVEL_LABEL[d.level_of_care] ?? d.level_of_care}</span></>}
             </dd>
           </div>
           <div className="col-span-2 sm:col-span-1">
