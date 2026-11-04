@@ -82,3 +82,14 @@ def test_setup_defaults_to_reference_and_redrafts_use_the_model():
     assert setup["handoffs"]["run_job_task"]["job_parameters"]["drafts"] == "${var.drafts}"
     params = {p["name"]: p["default"] for p in b["resources"]["jobs"]["handoff_generator"]["parameters"]}
     assert params["drafts"] == "model"
+
+
+def test_attestation_choices_do_not_change_the_fingerprint(tmp_path):
+    import shutil
+    shutil.copytree(ROOT / "ai" / "templates", tmp_path / "ai" / "templates")
+    before = H.templates_sha(str(tmp_path))
+    f = tmp_path / "ai" / "templates" / "sbar_nurse.yaml"
+    f.write_text(f.read_text().replace('attest: ["No isolation needed"]', 'attest: ["No isolation needed", "Droplet"]'))
+    assert H.templates_sha(str(tmp_path)) == before
+    f.write_text(f.read_text().replace("level: hard", "level: soft", 1))
+    assert H.templates_sha(str(tmp_path)) != before

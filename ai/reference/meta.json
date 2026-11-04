@@ -5,6 +5,6 @@
   "models": [
     "databricks-gpt-oss-120b"
   ],
-  "templates_sha": "d5ee30ece8f30f0056989fdc6442a91b58fc2f5d455cc1ebd63612602bb4e75e",
+  "templates_sha": "c9c39df7d8cf90095fbf6a95a2052b48352faa9f99c96421b1e7d47bb1009a5c",
   "population": "synthea (synthetic/population/synthea_3000.json.gz)"
 }

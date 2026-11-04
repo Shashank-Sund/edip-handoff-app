@@ -187,10 +187,15 @@ def main():
 
 
 def templates_sha(code_path):
-    """Fingerprint of the handoff templates the drafts were written for."""
+    """Fingerprint of the handoff templates the drafts were written for. The attestation choices of each rule are
+    left out: the app reads them from the current templates, so they can change without redrafting."""
+    import yaml
     h = hashlib.sha256()
     for f in sorted(__import__("pathlib").Path(code_path, "ai", "templates").glob("*.yaml")):
-        h.update(f.name.encode() + b"\0" + f.read_bytes())
+        t = yaml.safe_load(f.read_text())
+        for rule in (t.get("rules") or []) if isinstance(t, dict) else []:
+            rule.pop("attest", None)
+        h.update(f.name.encode() + b"\0" + json.dumps(t, sort_keys=True, default=str).encode())
     return h.hexdigest()
 
 
