@@ -16,6 +16,7 @@ import {
   ChevronsUpDown,
   Circle,
   CircleHelp,
+  History,
   Lock,
   Menu,
   Moon,
@@ -709,7 +710,7 @@ export const GUIDE: GuideSection[] = [
               This demo replays one past week of made up patients. The date and time <Key><CalendarClock />Wed, Oct 28 16:00</Key> is the moment you are looking at. Every page shows the hospital as it was then: who is in the ED, who is waiting for a bed, the latest draft of each handoff, and what has been signed. Times are the hospital's local time.
             </p>
             <p className="text-muted-foreground">The first time you open the demo, a short note under the clock says so. Close it with its x; it does not come back.</p>
-            <Note>In a hospital the clock reads Live and always shows the current time. There is nothing to set.</Note>
+            <Note>In a hospital the clock reads Live and always shows the current time. To look back, see <GuideLink to="clock-earlier">look at an earlier time</GuideLink>.</Note>
           </>
         ),
       },
@@ -733,6 +734,25 @@ export const GUIDE: GuideSection[] = [
           <p>
             What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions.
           </p>
+        ),
+      },
+      {
+        id: 'earlier',
+        title: 'Look at an earlier time (hospital app)',
+        body: (
+          <>
+            <p>
+              In the hospital the clock reads <Key>Live</Key>. To see the board or a handoff as it was earlier, for example what the night shift saw at 03:00, press <Key><History />View an earlier time</Key> next to it, then pick a day and an hour. You can look back up to 3 days, or the limit your hospital set.
+            </p>
+            <p>
+              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary> and <Primary><CheckCheck />Accept handoff</Primary> are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
+            </p>
+            <p>The app records that you looked at an earlier time: who, which page or patient, and which time.</p>
+            <Note>
+              Each draft shows from when it was written, so you see the drafts as they were then. Everything else is as the chart says now. Arrival, admit decision and departure times show when they happened: if a message from the hospital systems came in late, an earlier time can already show it, although the app did not have it yet at that moment. A canceled admission shows as canceled at every earlier time too.
+            </Note>
+            {__STATIC_DEMO__ && <p className="text-muted-foreground">This demo uses the replay clock instead.</p>}
+          </>
         ),
       },
       {

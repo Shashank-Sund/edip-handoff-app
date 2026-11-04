@@ -6,6 +6,9 @@ import type { CaseTemplate, Persona } from './types';
 
 export const MAX_TEXT = 2000;
 
+/** Why the controls are off while the live app shows an earlier time. */
+export const READ_ONLY = 'You are looking at an earlier time, so this page is read only. To edit, attest, sign or accept, press Back to live.';
+
 /**
  * Whether the ED can still edit, attest and sign: while the patient boards, for an addendum, or after the transfer
  * when the ED never signed or signed an older version.

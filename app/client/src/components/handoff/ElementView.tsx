@@ -459,10 +459,12 @@ function Editor({ e, onSave, onCancel, busy }: { e: Element; onSave: (body: { te
   );
 }
 
-export function ElementView({ e, tpl, canEdit, busy, onEdit }: {
+export function ElementView({ e, tpl, canEdit, locked, busy, onEdit }: {
   e: Element;
   tpl: CaseTemplate;
   canEdit: boolean;
+  /** Read only (live, at an earlier time): Edit and Restore show, turned off; #read-only-why says why. */
+  locked?: boolean;
   busy?: boolean;
   onEdit: (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) => Promise<boolean>;
   /** Unused here: the choices are in the Sign off panel. Kept so callers can pass one handler for both. */
@@ -495,20 +497,20 @@ export function ElementView({ e, tpl, canEdit, busy, onEdit }: {
           {e.kind === 'narrative' && <ModelMark n={e.narrative ?? {}} />}
           {e.kind === 'narrative' && e.id === 'E11' && <HelpButton topic="handoff.items" label="Chips and highlights" className="size-6" />}
           {editable && !editing && e.narrative?.edited && (
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy} onClick={() => onEdit(e.id, { restore: true })} aria-label={`Restore the model's text for ${e.label}`}>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy || locked} aria-describedby={locked ? 'read-only-why' : undefined} onClick={() => onEdit(e.id, { restore: true })} aria-label={`Restore the model's text for ${e.label}`}>
               <RotateCcw className="size-3.5" />
               Restore
             </Button>
           )}
           {editable && !editing && (
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={locked} aria-describedby={locked ? 'read-only-why' : undefined} onClick={() => setEditing(true)} aria-label={`Edit ${e.label}`}>
               <Pencil className="size-3.5" />
               Edit
             </Button>
           )}
         </div>
       </div>
-      {editing ? (
+      {editing && !locked ? (
         <Editor e={e} busy={busy} onCancel={() => setEditing(false)} onSave={async (body) => (await onEdit(e.id, body)) && setEditing(false)} />
       ) : e.kind === 'narrative' ? (
         <NarrativeView e={e} />

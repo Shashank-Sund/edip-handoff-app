@@ -49,6 +49,8 @@ export interface AppConfig {
   detail?: string | null;
   /** The facilities' time zone (IANA name); times are shown in it. */
   timezone?: string;
+  /** Live clock only: how many hours back a clinician can look, read only (0: not at all). */
+  past_view_hours?: number;
 }
 
 export interface Workflow {

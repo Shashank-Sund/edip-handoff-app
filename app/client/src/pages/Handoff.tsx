@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, BedDouble, ChevronDown, Clock3, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BedDouble, ChevronDown, Clock3, Lock, ShieldAlert } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { SectionBadge } from '@/components/common/SectionBadge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import { useLoad } from '@/hooks/useLoad';
 import { ApiError, api } from '@/lib/api';
 import { LEVEL_LABEL, bed, dateTime, duration, triggerLabel } from '@/lib/format';
 import { linkProps } from '@/lib/router';
-import { canChange, signOffStatus } from '@/lib/checks';
+import { READ_ONLY, canChange, signOffStatus } from '@/lib/checks';
 import { cn } from '@/lib/utils';
 import type { CaseDetail, CaseSummary, CaseTemplate, EnteredFlag, NarrativeItem, Persona } from '@/lib/types';
 import { TAB_HELP, TEMPLATE_NAME, TEMPLATE_SHORT } from '@/lib/labels';
@@ -164,8 +164,8 @@ function Banner({ s, sender }: { s: CaseSummary; sender: boolean }) {
 }
 
 export default function Handoff({ csn }: { csn: string }) {
-  const { at, persona, version, bump, config } = useApp();
-  const { data, error, setData, retry } = useLoad(() => api.case(csn, at), [csn, at, persona.id, version]);
+  const { at, apiAt, past, persona, version, bump, config } = useApp();
+  const { data, error, setData, retry } = useLoad(() => api.case(csn, apiAt), [csn, at, persona.id, version]);
   const [tab, setTab] = useState(persona.default_template);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
@@ -177,9 +177,10 @@ export default function Handoff({ csn }: { csn: string }) {
   }, [notice]);
 
   const run = async (kind: 'edit' | 'attest' | 'sign' | 'ack', body: unknown, ok: string) => {
+    if (past) return false; // read only; the server refuses it too
     setBusy(true);
     try {
-      const next: CaseDetail = await api.act(csn, tab, kind, body, at);
+      const next: CaseDetail = await api.act(csn, tab, kind, body, apiAt);
       setData(next);
       setNotice({ tone: 'ok', text: ok });
       bump();
@@ -217,6 +218,8 @@ export default function Handoff({ csn }: { csn: string }) {
   const tpl = data.templates[current];
   const canEdit = persona.can_sign.includes(current) && canChange(tpl, s.phase);
   const canAck = persona.can_ack.includes(current);
+  // Live, at an earlier time: read only. The controls stay in place, turned off, with the reason next to them.
+  const locked = past !== null;
   const onAttest: AttestFn = (r, option, entry) =>
     run('attest', { rule: r.rule, option, ...entry }, entry?.remove ? `${r.label}: ${entry.entry} removed` : option === r.attest_options?.[0] ? `${r.label}: attested` : `${r.label}: ${entry?.entry.trim() || option} entered`);
   const onEdit = (element: string, body: { text?: string; items?: NarrativeItem[]; restore?: boolean }) =>
@@ -227,6 +230,12 @@ export default function Handoff({ csn }: { csn: string }) {
       <EvidenceProvider evidence={tpl.draft.evidence ?? {}}>
         <div className="space-y-5">
           <Banner s={s} sender={persona.can_sign.length > 0} />
+          {locked && (persona.can_sign.length > 0 || persona.can_ack.length > 0) && (
+            <p id="read-only-why" className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-2.5 text-sm">
+              <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {READ_ONLY}
+            </p>
+          )}
           {notice && (
             <div role={notice.tone === 'error' ? 'alert' : 'status'} className={notice.tone === 'error' ? 'rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive' : 'rounded-lg border border-sev-stable/30 bg-sev-stable/10 px-4 py-2.5 text-sm text-sev-stable'}>
               {notice.text}
@@ -276,7 +285,7 @@ export default function Handoff({ csn }: { csn: string }) {
                           </div>
                           <div className="divide-y">
                             {sec.elements.map((e) => (
-                              <ElementView key={e.id} e={e} tpl={tpl} canEdit={canEdit} busy={busy} onEdit={onEdit} onAttest={onAttest} />
+                              <ElementView key={e.id} e={e} tpl={tpl} canEdit={canEdit} locked={locked} busy={busy} onEdit={onEdit} onAttest={onAttest} />
                             ))}
                           </div>
                         </Card>
@@ -284,8 +293,8 @@ export default function Handoff({ csn }: { csn: string }) {
                     </div>
                     {/* At xl the right column scrolls on its own, so Sign off stays in reach on a long handoff. */}
                     <aside className="scroll-subtle min-w-0 space-y-5 xl:sticky xl:top-20 xl:-mx-1 xl:max-h-[calc(100dvh-6rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:px-1 xl:pb-1" aria-label="Sign off and context">
-                      <SignPanel tpl={tpl} persona={persona} template={current} phase={s.phase} busy={busy} onAttest={onAttest} onSign={(callback) => run('sign', { callback }, 'Signed. The receiving team can now accept it.')} />
-                      {canAck && <AckPanel tpl={tpl} busy={busy} onAck={(readback, questions) => run('ack', { readback, questions }, 'Handoff accepted')} />}
+                      <SignPanel tpl={tpl} persona={persona} template={current} phase={s.phase} busy={busy} locked={locked} onAttest={onAttest} onSign={(callback) => run('sign', { callback }, 'Signed. The receiving team can now accept it.')} />
+                      {canAck && <AckPanel tpl={tpl} busy={busy} locked={locked} onAck={(readback, questions) => run('ack', { readback, questions }, 'Handoff accepted')} />}
                       <ChangesCard tpl={tpl} />
                       <VitalsCard draft={tpl.draft} />
                       <LabsCard draft={tpl.draft} />
