@@ -18,7 +18,8 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(`console ${m.text()}`));
 watchRequests(page, 'flow', errors);
 await page.goto(base + '/', { waitUntil: 'networkidle' });
-const first = page.locator('tbody tr').first();
+// The first patient whose nurse handoff is still a draft: on a deployed app, actions from earlier runs persist.
+const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
 const name = (await first.locator('a').first().textContent()).trim();
 await first.click();
 await page.waitForSelector('text=Sign off');
@@ -55,7 +56,7 @@ if (STATIC_DEMO) {
 } else {
   await page.goto(base + '/', { waitUntil: 'networkidle' });
 }
-const state = await page.locator('tbody tr').first().textContent();
+const state = await page.locator('tbody tr', { hasText: name }).first().textContent();
 if (STATIC_DEMO) {
   const clockLabel = () => page.getByRole('button', { name: /Replay time/ }).textContent();
   const before = await clockLabel();
