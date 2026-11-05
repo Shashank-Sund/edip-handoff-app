@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, StrictBool, StrictStr
 
 import config
+from assignment import ROLES
 from data import iso, load_fixtures, ts
 from logic import ActionError, Views
 from personas import demo_personas, mapped_units, parse_role_map, unit_id
@@ -46,21 +47,25 @@ def _templates() -> list[dict]:
 
 # With the live clock, a patient with no ED departure long after the admit decision is a departure the feeds missed.
 STALE_BOARDING = timedelta(hours=config.STALE_BOARDING_HOURS) if config.CLOCK_MODE == "live" else None
+# Who owns a patient: an owner idle for longer than this no longer counts; the shift changes and the banner before them.
+OWNERSHIP = {"stale_owner": timedelta(hours=config.STALE_OWNER_HOURS), "shifts": config.SHIFT_CHANGES,
+             "shift_warning": timedelta(minutes=config.SHIFT_WARNING_MINUTES)}
 if config.MODE == "live":
     from lakebase import LakebaseStore, Reloading
 
     SOURCE = Reloading()
     STORE = LakebaseStore()               # does not fail when Lakebase is unreachable; it retries on use
-    VIEWS = Views(SOURCE.get, STORE, _templates(), STALE_BOARDING)
+    VIEWS = Views(SOURCE.get, STORE, _templates(), STALE_BOARDING, **OWNERSHIP)
 else:
     STORE = MemoryStore()
-    VIEWS = Views(load_fixtures(config.FIXTURES), STORE, _templates(), STALE_BOARDING)
+    VIEWS = Views(load_fixtures(config.FIXTURES), STORE, _templates(), STALE_BOARDING, **OWNERSHIP)
 ROLE_MAP, _problems = parse_role_map(config.ROLE_MAP)
 for _p in _problems:
     log.warning(_p)
 _derived: dict = {}
 _units_seen: dict = {}                    # every receiving unit the data listed since start up
 _warned: set = set()
+_names: dict = {}                         # live: the display name each signed in email last came with
 
 
 def _current():
@@ -99,7 +104,23 @@ def _person(request: Request) -> dict:
         raise HTTPException(400, f"unknown persona {pid}")
     if not config.DEMO_PERSONAS and email:
         p = {**p, "name": request.headers.get("x-forwarded-preferred-username") or email}
-    return {**p, "user_email": email}
+        _names[email.strip().lower()] = p["name"]
+    # Who the person is for owning patients: the persona with demo personas, else the signed in email.
+    key = p["id"] if config.DEMO_PERSONAS or not email else email.strip().lower()
+    return {**p, "user_email": email, "key": key}
+
+
+def _colleagues(person: dict) -> list[dict]:
+    """The people who can own a patient in the caller's ED role, the caller included: the demo personas of that role,
+    or live every email the role map gives a persona of that role (named as they last signed in, else the email)."""
+    if person["role"] not in ROLES:
+        return []
+    personas, _ = _current()
+    if config.DEMO_PERSONAS:
+        return [{"id": p["id"], "name": p["name"]} for p in personas if p["role"] == person["role"]]
+    roles = {p["id"]: p["role"] for p in personas}
+    return sorted(({"id": email, "name": _names.get(email) or email} for email, pid in ROLE_MAP.items()
+                   if roles.get(pid) == person["role"]), key=lambda c: (c["name"].lower(), c["id"]))
 
 
 # The live clock: a read may look back this far (none when 0); an `at` this close to now is now, as the clocks of
@@ -190,8 +211,19 @@ class AckBody(BaseModel):
     questions: Optional[StrictStr] = None
 
 
+class OwnerBody(BaseModel):
+    kind: StrictStr                             # claim (Take), assign or release
+    to: Optional[StrictStr] = None              # assign: the colleague's id (/api/colleagues)
+
+
+class TakeoverBody(BaseModel):
+    colleague: StrictStr
+    csns: list[StrictStr]
+
+
 FIELD = {"element": "item", "text": "text", "items": "action items", "restore": "restore choice", "rule": "rule",
-         "option": "attestation", "entry": "entered value", "entry_note": "note", "remove": "remove choice", "callback": "callback number", "readback": "read back", "questions": "questions"}
+         "option": "attestation", "entry": "entered value", "entry_note": "note", "remove": "remove choice", "callback": "callback number", "readback": "read back", "questions": "questions",
+         "kind": "choice of Take, Assign or Release", "to": "colleague", "colleague": "colleague", "csns": "patients"}
 
 
 def plain_validation(errors: list[dict]) -> str:
@@ -227,6 +259,8 @@ def get_config() -> dict[str, Any]:
             "default_at": iso(default_at), "facilities": ds.meta.get("facilities", []), "units": ds.meta.get("units", []),
             "personas": personas if config.DEMO_PERSONAS else [], "store": STORE.kind, "timezone": config.TIMEZONE,
             **({"past_view_hours": config.PAST_VIEW_HOURS} if config.CLOCK_MODE == "live" else {}),
+            "shifts": {"changes": [f"{h:02d}:{m:02d}" for h, m in config.SHIFT_CHANGES],
+                       "warning_minutes": config.SHIFT_WARNING_MINUTES, "stale_owner_hours": config.STALE_OWNER_HOURS},
             "templates": [{"id": "sbar_nurse", "name": "SBAR", "audience": "Nurse"},
                           {"id": "ipass_physician", "name": "I-PASS", "audience": "Physician"},
                           {"id": "custom_sea58", "name": "Joint Commission minimum", "audience": "Any"}]}
@@ -280,6 +314,41 @@ def post_sign(csn: str, template: str, body: SignBody, request: Request, at: Opt
 @api.post("/handoffs/{csn}/{template}/ack")
 def post_ack(csn: str, template: str, body: AckBody, request: Request, at: Optional[str] = None):
     return _act("ack", csn, template, request, at, body.model_dump())
+
+
+@api.post("/handoffs/{csn}/owner")
+def post_owner(csn: str, body: OwnerBody, request: Request, at: Optional[str] = None):
+    """Take, Assign to a colleague, or Release the patient, for the caller's ED role."""
+    t, p = _act_at(at), _person(request)
+    try:
+        return VIEWS.own(body.kind, csn, t, p, body.to, _colleagues(p))
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@api.get("/colleagues")
+def get_colleagues(request: Request) -> list[dict[str, Any]]:
+    """Who can own a patient in the caller's ED role (the Assign list); empty for other roles."""
+    p = _person(request)
+    return [c | {"you": c["id"] == p["key"]} for c in _colleagues(p)]
+
+
+@api.get("/takeover")
+def get_takeover(request: Request, at: Optional[str] = None, colleague: Optional[str] = None) -> dict[str, Any]:
+    t, p = _read_at(at, request, "board"), _person(request)
+    try:
+        return VIEWS.takeover(t, p, colleague, _colleagues(p))
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@api.post("/takeover")
+def post_takeover(body: TakeoverBody, request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    t, p = _act_at(at), _person(request)
+    try:
+        return VIEWS.take_over(t, p, body.colleague, body.csns, _colleagues(p))
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
 
 
 @api.get("/me")

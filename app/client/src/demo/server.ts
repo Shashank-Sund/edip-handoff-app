@@ -8,10 +8,11 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { ROLES, SHIFT_CHANGES, SHIFT_WARNING_MINUTES, STALE_OWNER_HOURS } from './assignment';
 import { Dataset, type Fixtures } from './data';
 import { ActionError, Views } from './logic';
 import { demoPersonas } from './personas';
-import { iso, parseTs, TZ } from './py';
+import { HOUR, iso, parseTs, TZ } from './py';
 import { MemoryStore } from './workflow';
 
 export interface Request {
@@ -22,6 +23,8 @@ export interface Request {
   /** the X-Demo-Persona header */
   persona?: string | null;
   body?: any;
+  /** other query parameters, such as `colleague` for /api/takeover */
+  params?: Record<string, string> | null;
 }
 export interface Response {
   status: number;
@@ -46,12 +49,15 @@ const BODIES: Record<string, [string[], string[]]> = {
   attest: [['rule', 'option'], ['entry', 'entry_note', 'remove']],
   sign: [['callback'], []],
   ack: [['readback'], ['questions']],
+  owner: [['kind'], ['to']],
+  takeover: [['colleague', 'csns'], []],
 };
 
 /** main.py FIELD: how the validation sentences name each field. */
 const FIELD: Record<string, string> = {
   element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation', entry: 'entered value', entry_note: 'note', remove: 'remove choice',
   callback: 'callback number', readback: 'read back', questions: 'questions',
+  kind: 'choice of Take, Assign or Release', to: 'colleague', colleague: 'colleague', csns: 'patients',
 };
 const UNREADABLE = 'The request could not be read. Reload the page and try again.';
 const missing = (k: string) => `The request is missing the ${FIELD[k] ?? k}.`;
@@ -71,7 +77,7 @@ function item(v: unknown): any {
 export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { clock?: string | null } = {}) {
   const ds = new Dataset(fixtures);
   const store = new MemoryStore();
-  const views = new Views(ds, store, fixtures.templates);
+  const views = new Views(ds, store, fixtures.templates, null, STALE_OWNER_HOURS * HOUR, SHIFT_CHANGES, SHIFT_WARNING_MINUTES * 60000);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
 
@@ -79,7 +85,13 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
     const pid = id || 'ed-rn';
     const p = personas.find((x) => x.id === pid);
     if (!p) throw new HttpError(400, `unknown persona ${pid}`);
-    return { ...p, user_email: null };
+    return { ...p, user_email: null, key: p.id };
+  }
+
+  /** main._colleagues with demo personas: the personas of the caller's ED role, the caller included. */
+  function colleagues(p: any): any[] {
+    if (!ROLES.includes(p.role)) return [];
+    return personas.filter((x) => x.role === p.role).map((x) => ({ id: x.id, name: x.name }));
   }
 
   function at(v: string | null | undefined): number {
@@ -100,7 +112,7 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
     const out: any = {};
     for (const k of required) {
       if (!(k in body)) throw new HttpError(422, missing(k));
-      if (!isStr(body[k])) throw new HttpError(422, invalid(k));
+      if (k === 'csns' ? !Array.isArray(body[k]) || !body[k].every(isStr) : !isStr(body[k])) throw new HttpError(422, invalid(k));
       out[k] = body[k];
     }
     for (const k of optional) {
@@ -135,7 +147,8 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
         mode: 'mock', clock: 'replay', demo_personas: true, ready: !ds.error, detail: ds.error, source: ds.source,
         drafts_from: ds.meta.drafts_from ?? null, models: ds.meta.models ?? [], window: { start: iso(ds.start), end: iso(ds.end) },
         default_at: iso(defaultAt), facilities: ds.meta.facilities ?? [], units: ds.meta.units ?? [], personas, store: store.kind,
-        timezone: TZ, templates: TEMPLATES,
+        timezone: TZ, shifts: { changes: SHIFT_CHANGES.map(([h, m]) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`),
+          warning_minutes: SHIFT_WARNING_MINUTES, stale_owner_hours: STALE_OWNER_HOURS }, templates: TEMPLATES,
       };
     }
     if (key === 'templates') {
@@ -150,6 +163,36 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
     if (key === 'analytics') {
       if (!get) throw new HttpError(405, 'Method Not Allowed');
       return views.analytics(at(req.at));
+    }
+    if (key === 'colleagues') {
+      if (!get) throw new HttpError(405, 'Method Not Allowed');
+      const me = person(req.persona);
+      return colleagues(me).map((c) => ({ ...c, you: c.id === me.key }));
+    }
+    if (key === 'takeover') {
+      if (!get && !post) throw new HttpError(405, 'Method Not Allowed');
+      const body = post ? dump('takeover', req.body) : null;
+      const t = at(req.at);
+      const me = person(req.persona);
+      try {
+        if (get) return views.takeover(t, me, req.params?.colleague ?? null, colleagues(me));
+        return views.takeOver(t, me, body.colleague, body.csns, colleagues(me));
+      } catch (e) {
+        if (e instanceof ActionError) throw new HttpError(409, e.message);
+        throw e;
+      }
+    }
+    if (p[0] === 'handoffs' && p.length === 3 && p[1] && p[2] === 'owner') {
+      if (!post) throw new HttpError(405, 'Method Not Allowed');
+      const body = dump('owner', req.body);
+      const t = at(req.at);
+      const me = person(req.persona);
+      try {
+        return views.own(body.kind, decodeURIComponent(p[1]), t, me, body.to, colleagues(me));
+      } catch (e) {
+        if (e instanceof ActionError) throw new HttpError(409, e.message);
+        throw e;
+      }
     }
     if (key === 'me') {
       if (!get) throw new HttpError(405, 'Method Not Allowed');
@@ -172,7 +215,7 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
       if (c === null) throw new HttpError(404, 'This patient is not on your board at this time.');
       return c;
     }
-    if (p[0] === 'handoffs' && p.length === 4 && p[1] && p[2] && p[3] in BODIES) {
+    if (p[0] === 'handoffs' && p.length === 4 && p[1] && p[2] && ['edit', 'attest', 'sign', 'ack'].includes(p[3])) {
       if (!post) throw new HttpError(405, 'Method Not Allowed');
       const body = dump(p[3], req.body);
       const t = at(req.at);

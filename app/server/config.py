@@ -29,6 +29,11 @@ only reads them to record who acted or looked, and to map the user to a role (ED
                    (created_ts) or its as_of, whichever is later, so an earlier time shows the drafts as they were
                    then; a canceled admission shows canceled from the cancel's time (retracted_ts, with prior_status
                    before it), and encounter details are as the data is now (app/README.md)
+  EDIP_SHIFT_CHANGES  the times of day, facility local, when ED shifts change (default "07:00,19:00"); the board
+                   shows a shift change banner to ED nurses and physicians before each one
+  EDIP_SHIFT_WARNING_MINUTES  how long before a shift change the banner shows (default 30)
+  EDIP_STALE_OWNER_HOURS  an ED owner of a patient who has not acted on the patient, taken it or been given it for
+                   longer than this (default 14) no longer counts: the patient shows as Unassigned
   EDIP_ACTIONS_TTL live mode: seconds the app reuses the clinician actions it read from Lakebase before reading them
                    again (default 2), so every app process sees the actions the others saved
   EDIP_PG_ENDPOINT live mode: projects/<p>/branches/<b>/endpoints/<e> (PGHOST and the rest come from the app's
@@ -70,3 +75,31 @@ if not 0 <= PAST_VIEW_HOURS <= 24 * 365:             # also nan; inf would not f
     logging.getLogger("edip").warning("EDIP_PAST_VIEW_HOURS %r is not 0 to 8760; using %s", PAST_VIEW_HOURS,
                                       "8760" if PAST_VIEW_HOURS > 0 else "0")
     PAST_VIEW_HOURS = 24.0 * 365 if PAST_VIEW_HOURS > 0 else 0.0
+
+
+def _shift_changes(raw: str) -> list[tuple[int, int]]:
+    """EDIP_SHIFT_CHANGES as sorted (hour, minute) pairs; a value that cannot be read falls back to 07:00 and 19:00."""
+    try:
+        out = sorted({(int(h), int(m)) for h, m in (x.strip().split(":") for x in raw.split(",") if x.strip())})
+        if out and all(0 <= h < 24 and 0 <= m < 60 for h, m in out):
+            return out
+    except ValueError:
+        pass
+    logging.getLogger("edip").warning("EDIP_SHIFT_CHANGES %r is not a list of times like 07:00,19:00; using 07:00,19:00", raw)
+    return [(7, 0), (19, 0)]
+
+
+def _number(name: str, default: float, low: float, high: float) -> float:
+    try:
+        v = float(os.getenv(name, str(default)))
+    except ValueError:
+        v = float("nan")
+    if not low <= v <= high:
+        logging.getLogger("edip").warning("%s is not %g to %g; using %g", name, low, high, default)
+        return default
+    return v
+
+
+SHIFT_CHANGES = _shift_changes(os.getenv("EDIP_SHIFT_CHANGES") or "07:00,19:00")
+SHIFT_WARNING_MINUTES = _number("EDIP_SHIFT_WARNING_MINUTES", 30, 0, 24 * 60)
+STALE_OWNER_HOURS = _number("EDIP_STALE_OWNER_HOURS", 14, 1, 24 * 30)

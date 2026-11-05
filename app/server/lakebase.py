@@ -49,7 +49,7 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS ix_view_recorded ON app.view_log (recorded_ts)",
 ]
 DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "entry", "entry_note", "remove", "callback",
-          "readback", "questions")
+          "readback", "questions", "by_id", "off_assignment", "assigned_to")
 UNREACHABLE = "The handoff database cannot be reached right now. Wait a minute and try again."
 UNLOGGED = ("The app could not record that you are looking at an earlier time, so it cannot show it. Go back to live, "
             "or wait a minute and try again.")
@@ -202,6 +202,13 @@ class LakebaseStore:
 
     def all_actions(self, at: datetime | None = None) -> list[dict]:
         return [r for r in self._all() if at is None or r["at"] <= at]
+
+    def assignments(self, csn: str, at: datetime | None = None) -> list[dict]:
+        # Who owns each patient is not stored in Lakebase yet (app.assignment comes next): live, no one owns a patient.
+        return []
+
+    def assign(self, row: dict) -> dict:
+        raise StoreUnavailable("Taking and handing over patients is not available in this deployment yet.")
 
     def reset(self):
         raise PermissionError("actions are a permanent record in live mode")

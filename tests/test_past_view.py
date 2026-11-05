@@ -22,7 +22,7 @@ pytest.importorskip("httpx")
 import live_local  # noqa: E402
 import parity  # noqa: E402
 
-MODS = ("config", "data", "logic", "personas", "workflow", "main", "lakebase")
+MODS = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
 RN, MD, HOSP = "rn@example.org", "md@example.org", "hosp@example.org"
 ROLES = {RN: "ed-rn", MD: "ed-md", HOSP: "hosp-md"}
 

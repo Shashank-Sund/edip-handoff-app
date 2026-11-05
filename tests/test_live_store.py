@@ -61,13 +61,13 @@ class FakeConn:
 @pytest.fixture
 def lakebase(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "app/server"))
-    for m in ("config", "data", "workflow", "lakebase"):
+    for m in ("config", "data", "assignment", "workflow", "lakebase"):
         sys.modules.pop(m, None)
     mod = importlib.import_module("lakebase")
     db = FakeDB()
     monkeypatch.setattr(mod.PG, "connect", db.connect)
     yield mod, db
-    for m in ("config", "data", "workflow", "lakebase"):
+    for m in ("config", "data", "assignment", "workflow", "lakebase"):
         sys.modules.pop(m, None)
 
 
@@ -107,7 +107,7 @@ def test_live_app_starts_without_lakebase(monkeypatch):
     for k in ("PGHOST", "EDIP_SYNTHETIC_DATA", "EDIP_DEMO_PERSONAS", "EDIP_CLOCK_MODE"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.syspath_prepend(str(ROOT / "app/server"))
-    mods = ("config", "data", "logic", "personas", "workflow", "main", "lakebase")
+    mods = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
     for m in mods:
         sys.modules.pop(m, None)
     try:

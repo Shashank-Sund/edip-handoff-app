@@ -15,7 +15,9 @@ const ROLE_LABEL: Record<string, string> = {
 export function demoPersonas(units: any[]): any[] {
   const people: any[] = [
     { id: 'ed-rn', name: 'Jordan Reyes, RN', role: 'ed_nurse', unit: null, facility: null },
+    { id: 'ed-rn-2', name: 'Robin Asante, RN', role: 'ed_nurse', unit: null, facility: null },
     { id: 'ed-md', name: 'Alex Chen, MD', role: 'ed_physician', unit: null, facility: null },
+    { id: 'ed-md-2', name: 'Kai Moreno, MD', role: 'ed_physician', unit: null, facility: null },
     { id: 'hosp-md', name: 'Morgan Patel, MD', role: 'admitting_physician', unit: null, facility: null },
   ];
   const names = ['Sam Okafor, RN', 'Riley Novak, RN', 'Casey Lindqvist, RN', 'Taylor Brooks, RN', 'Jamie Alvarez, RN',
