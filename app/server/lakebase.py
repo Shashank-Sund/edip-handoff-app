@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 import config
 from data import Dataset
-from workflow import StoreUnavailable
+from workflow import StoreUnavailable, last_names
 
 DDL = [
     "CREATE SCHEMA IF NOT EXISTS app",
@@ -257,6 +257,10 @@ class LakebaseStore:
 
     def assignments(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
         return [r for r in self._all_assigned(fresh).get(csn, []) if at is None or r["at"] <= at]
+
+    def names(self) -> dict[str, str]:
+        """The display name each signed in email last used, from the rows already read (and reread with them)."""
+        return last_names(self._all(), [r for rows in self._all_assigned().values() for r in rows])
 
     def assign(self, row: dict) -> dict:
         """One ownership change, a row in app.assignment."""

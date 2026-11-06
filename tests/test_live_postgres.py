@@ -1,7 +1,8 @@
 """Live mode against a real Postgres (no Databricks): the app's tables created and upgraded in place, who owns each
 patient in app.assignment, and the whole app on the fixtures loaded by app/fixtures/live_local.py.
 
-Skipped unless EDIP_TEST_PG names a Postgres the tests may create databases in, for example:
+Skipped unless EDIP_TEST_PG names a Postgres the tests may create databases in (CI runs a Postgres 16 service for
+it, .github/workflows/ci.yml), for example:
 
     docker run -d --name edip-pg-test -e POSTGRES_PASSWORD=edip -p 55432:5432 postgres:16
     EDIP_TEST_PG=postgresql://postgres:edip@localhost:55432/postgres .venv/bin/python -m pytest tests/test_live_postgres.py
@@ -107,13 +108,25 @@ def test_assignments_are_kept_in_order_and_every_process_sees_them(db, monkeypat
     assert mod.LakebaseStore(ttl=0).assignments("2") == []
 
 
+@pytest.fixture(scope="module")
+def fixtures(tmp_path_factory):
+    """EDIP_FIXTURES when it holds fixtures, else fixtures built from the stand in world (as in CI)."""
+    given = Path(os.getenv("EDIP_FIXTURES", ROOT / "app/fixtures/data"))
+    if (given / "meta.json").exists():
+        return given
+    sys.path[:0] = [str(ROOT / "ai"), str(ROOT / "synthetic"), str(ROOT / "pipelines")]
+    from eval import run_eval
+    world, out = tmp_path_factory.mktemp("world"), tmp_path_factory.mktemp("fixtures")
+    run_eval.build_world(world)
+    subprocess.run([sys.executable, str(ROOT / "app/fixtures/build.py"), "--world", str(world), "--out", str(out)],
+                   check=True, capture_output=True)
+    return out
+
+
 @pytest.fixture
-def live_app(db, monkeypatch):
+def live_app(db, fixtures, monkeypatch):
     """The app in live mode on the fixtures moved to end now (live_local.py), two ED nurses and a physician in the
     role map, as a deployment for real use runs (no demo personas, the live clock)."""
-    fixtures = Path(os.getenv("EDIP_FIXTURES", ROOT / "app/fixtures/data"))
-    if not (fixtures / "meta.json").exists():
-        pytest.skip(f"no fixtures in {fixtures}")
     subprocess.run([sys.executable, str(ROOT / "app/fixtures/live_local.py"), "--dsn", db, "--fixtures", str(fixtures)],
                    check=True, capture_output=True)
     for k, v in {"EDIP_MODE": "live", "EDIP_SYNTHETIC_DATA": "false", "EDIP_STATIC": "/nonexistent", "EDIP_FIXTURES": str(fixtures),
@@ -161,3 +174,22 @@ def test_the_live_app_takes_assigns_and_hands_over_through_app_assignment(live_a
         assert kinds[1][3] == "Sam Two" and kinds[1][4] == "rn.two@example.org"
         assert conn.execute("SELECT detail->>'off_assignment' FROM app.handoff_action").fetchone()[0] == "true"
         assert conn.execute("SELECT page FROM app.view_log").fetchall() == [("takeover",)]
+
+
+def test_colleagues_keep_the_name_they_last_used_after_a_restart(live_app, monkeypatch):
+    c, main = live_app
+    csn = next(r["csn"] for r in c.get("/api/board", headers=who("rn.one@example.org")).json()["rows"] if r["phase"] == "boarding")
+    # Sam acts under one name, then takes the patient under a newer one; the physician never does anything.
+    c.post(f"/api/handoffs/{csn}/sbar_nurse/edit", json={"element": "E25", "text": "Plan"}, headers=who("rn.two@example.org", "Sam T"))
+    c.post(f"/api/handoffs/{csn}/owner", json={"kind": "claim"}, headers=who("RN.Two@example.org", "Sam Two"))
+    # A new app process: nothing in memory, so the names come from app.handoff_action and app.assignment.
+    _lakebase(monkeypatch)
+    main2 = importlib.import_module("main")
+    from fastapi.testclient import TestClient
+    c2 = TestClient(main2.app)
+    col = c2.get("/api/colleagues", headers={"x-forwarded-email": "rn.one@example.org"}).json()
+    assert col == [{"id": "rn.one@example.org", "name": "rn.one@example.org", "you": True},
+                   {"id": "rn.two@example.org", "name": "Sam Two", "you": False}]
+    # Signing in again wins over the saved name.
+    c2.get("/api/me", headers=who("rn.one@example.org", "Pat One"))
+    assert c2.get("/api/colleagues", headers=who("rn.two@example.org")).json()[0]["name"] == "Pat One"

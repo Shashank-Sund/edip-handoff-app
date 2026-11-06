@@ -201,7 +201,7 @@ Persona ids for `EDIP_ROLE_MAP` (details in [app/README.md](../app/README.md#liv
 | `unit-<facility>-<unit code>`, lowercased | Receiving nurse of one unit: sees only patients bound for it, accepts SBAR and the custom template. Use the facility and unit codes as they appear in your data; in the synthetic week, `unit-sgh-micu` or `unit-lks-3s` |
 | `viewer` | Read only. You do not need to list viewers: anyone not in the map gets this role |
 
-Map every ED nurse to `ed-rn` and every ED physician to `ed-md`, one line per email. Each person is their sign in email, so many people share one persona id. The role map is also the list behind **Assign to a colleague** and **Take over**: a colleague shows there once they are in the map, by email until they sign in once and by name afterwards (the app keeps the names in memory, so after a restart a colleague shows by email until they sign in again). `ed-rn-2` and `ed-md-2` are the second demo nurse and physician; a deployment for real use does not need them.
+Map every ED nurse to `ed-rn` and every ED physician to `ed-md`, one line per email. Each person is their sign in email, so many people share one persona id. The role map is also the list behind **Assign to a colleague** and **Take over**: a colleague shows there once they are in the map, by email until they first act in the app (an edit, a signature, a Take), then by the display name they last used: the app reads it back from `app.handoff_action` and `app.assignment`, so it survives a restart. `ed-rn-2` and `ed-md-2` are the second demo nurse and physician; a deployment for real use does not need them.
 
 A worked example, with the rest of the app's `config.env` unchanged (the `EDIP_ROLE_MAP` line stays as it is: it reads the variable):
 

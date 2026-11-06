@@ -121,14 +121,20 @@ def _person(request: Request) -> dict:
 
 def _colleagues(person: dict) -> list[dict]:
     """The people who can own a patient in the caller's ED role, the caller included: the demo personas of that role,
-    or live every email the role map gives a persona of that role (named as they last signed in, else the email)."""
+    or live every email the role map gives a persona of that role, named as they last signed in to this process, else
+    as they last acted (app.handoff_action, app.assignment), else by their email."""
     if person["role"] not in ROLES:
         return []
     personas, _ = _current()
     if config.DEMO_PERSONAS:
         return [{"id": p["id"], "name": p["name"]} for p in personas if p["role"] == person["role"]]
     roles = {p["id"]: p["role"] for p in personas}
-    return sorted(({"id": email, "name": _names.get(email) or email} for email, pid in ROLE_MAP.items()
+    try:
+        # Names from earlier actions and ownership changes, so a colleague keeps their name after a restart.
+        saved = STORE.names()
+    except StoreUnavailable:
+        saved = {}
+    return sorted(({"id": email, "name": _names.get(email) or saved.get(email) or email} for email, pid in ROLE_MAP.items()
                    if roles.get(pid) == person["role"]), key=lambda c: (c["name"].lower(), c["id"]))
 
 

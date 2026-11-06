@@ -20,6 +20,14 @@ from assignment import KINDS as ASSIGNMENT_KINDS
 KINDS = ("edit", "attest", "sign", "ack")       # a Restore is an edit with restore set: the model's text again
 
 
+def last_names(actions: list[dict], assignments: list[dict]) -> dict[str, str]:
+    """{lowercased email: the display name that person last used}, from clinician actions (by) and ownership changes
+    (by_name), the latest saved winning. Live mode names colleagues with it after a restart (main._colleagues)."""
+    seen = [(r["recorded_ts"], (r.get("user_email") or "").strip().lower(), r.get("by")) for r in actions]
+    seen += [(r["recorded_ts"], (r.get("user_email") or "").strip().lower(), r.get("by_name")) for r in assignments]
+    return {email: name for _, email, name in sorted(seen, key=lambda x: x[0]) if email and name}
+
+
 class StoreUnavailable(RuntimeError):
     """The action store cannot be read or written now (live mode: Lakebase unreachable); the message is shown."""
 
@@ -68,6 +76,12 @@ class MemoryStore:
         with self._lock:
             rows = list(self._assigned.get(csn, []))
         return [r for r in rows if at is None or r["at"] <= at]
+
+    def names(self) -> dict[str, str]:
+        with self._lock:
+            acts = [r for v in self._rows.values() for r in v]
+            assigned = [r for v in self._assigned.values() for r in v]
+        return last_names(acts, assigned)
 
     def reset(self):
         with self._lock:

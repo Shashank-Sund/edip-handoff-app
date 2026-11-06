@@ -5,6 +5,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A throwaway Postgres for the live store tests (tests/test_live_postgres.py creates and drops its own
+    # databases in it). The password only ever exists in this job.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: edip
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      EDIP_TEST_PG: postgresql://postgres:edip@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,8 +30,9 @@ jobs:
         run: python3 -I scripts/scan_sensitive.py .
       - name: Install
         run: pip install -e ".[dev]"
-      - name: Unit tests (local only, no Databricks credentials)
-        run: pytest -q
+      - name: Unit tests and live store tests (the Postgres service above; no Databricks credentials)
+        # -rs lists every skipped test with its reason: tests/test_live_postgres.py must not be among them.
+        run: pytest -q -rs
   client:
     runs-on: ubuntu-latest
     defaults:
