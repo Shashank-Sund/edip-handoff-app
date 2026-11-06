@@ -46,6 +46,10 @@ class FakeConn:
         return self
 
     def execute(self, sql, params=None):
+        if sql.startswith("INSERT INTO app.assignment"):
+            raise AssertionError("not used here: tests/test_live_postgres.py covers app.assignment")
+        if sql.startswith("SELECT * FROM app.assignment"):
+            return Result([])
         if sql.startswith("INSERT"):
             csn, template, version, kind, at, by, role, email, detail = params
             self.db.rows.append({"action_id": len(self.db.rows) + 1, "csn": csn, "template": template, "version": version,

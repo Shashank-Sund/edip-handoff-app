@@ -64,7 +64,7 @@ class MemoryStore:
             self._assigned[row["csn"]].append(row)
         return row
 
-    def assignments(self, csn: str, at: datetime | None = None) -> list[dict]:
+    def assignments(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
         with self._lock:
             rows = list(self._assigned.get(csn, []))
         return [r for r in rows if at is None or r["at"] <= at]

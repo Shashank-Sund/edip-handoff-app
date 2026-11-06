@@ -344,7 +344,7 @@ def get_colleagues(request: Request) -> list[dict[str, Any]]:
 
 @api.get("/takeover")
 def get_takeover(request: Request, at: Optional[str] = None, colleague: Optional[str] = None) -> dict[str, Any]:
-    t, p = _read_at(at, request, "board"), _person(request)
+    t, p = _read_at(at, request, "takeover"), _person(request)
     try:
         return VIEWS.takeover(t, p, colleague, _colleagues(p))
     except ActionError as exc:

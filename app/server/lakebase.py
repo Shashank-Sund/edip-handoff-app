@@ -5,8 +5,9 @@ is a short lived token from the Databricks SDK for the endpoint in EDIP_PG_ENDPO
 endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
-refreshed by the handoff job; retracted_ts and prior_status once the sync has them). Writes: app.handoff_action and app.view_log (with
-the live clock, every view of an earlier time), created here on first start, append only.
+refreshed by the handoff job; retracted_ts and prior_status once the sync has them). Writes: app.handoff_action, app.assignment
+(who owns each patient: claim, assign, release, handover) and app.view_log (with the live clock, every view of an
+earlier time), created here on first start, append only. Every statement is safe to run again on a deployed database.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS ix_action_csn ON app.handoff_action (csn, at)",
     """CREATE TABLE IF NOT EXISTS app.view_log (
         view_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        page          TEXT        NOT NULL CHECK (page IN ('board', 'handoff', 'analytics')),
+        page          TEXT        NOT NULL CONSTRAINT view_log_page_check CHECK (page IN ('board', 'handoff', 'analytics', 'takeover')),
         csn           TEXT,
         at            TIMESTAMPTZ NOT NULL,
         recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -47,7 +48,38 @@ DDL = [
         user_email    TEXT
     )""",
     "CREATE INDEX IF NOT EXISTS ix_view_recorded ON app.view_log (recorded_ts)",
+    # A view_log created before the Take over page has the page check without 'takeover' (Postgres named the inline
+    # check view_log_page_check). Widen it once; the check of pg_constraint makes this a no op afterwards, and the DO
+    # block is one transaction, so a second app process starting at the same time redoes it harmlessly.
+    """DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'app.view_log'::regclass
+                       AND conname = 'view_log_page_check' AND pg_get_constraintdef(oid) LIKE '%takeover%') THEN
+            ALTER TABLE app.view_log DROP CONSTRAINT IF EXISTS view_log_page_check;
+            ALTER TABLE app.view_log ADD CONSTRAINT view_log_page_check
+                CHECK (page IN ('board', 'handoff', 'analytics', 'takeover'));
+        END IF;
+    END $$""",
+    """CREATE TABLE IF NOT EXISTS app.assignment (
+        assignment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        csn           TEXT        NOT NULL,
+        role          TEXT        NOT NULL CHECK (role IN ('ed_nurse', 'ed_physician')),
+        kind          TEXT        NOT NULL CHECK (kind IN ('claim', 'assign', 'release', 'handover')),
+        assignee_id   TEXT,
+        assignee_name TEXT,
+        from_id       TEXT,
+        from_name     TEXT,
+        at            TIMESTAMPTZ NOT NULL,
+        recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        by_name       TEXT        NOT NULL,
+        by_role       TEXT        NOT NULL,
+        user_email    TEXT,
+        detail        JSONB       NOT NULL DEFAULT '{}'::jsonb
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_assignment_csn ON app.assignment (csn, role, at)",
 ]
+# app.assignment columns written from an assignment row; by_id (who acted, for the stale rule) goes in detail.
+ASSIGNMENT = ("csn", "role", "kind", "assignee_id", "assignee_name", "from_id", "from_name", "at", "by_name", "by_role",
+              "user_email")
 DETAIL = ("element", "text", "items", "model_before", "restore", "rule", "option", "entry", "entry_note", "remove", "callback",
           "readback", "questions", "by_id", "off_assignment", "assigned_to")
 UNREACHABLE = "The handoff database cannot be reached right now. Wait a minute and try again."
@@ -138,6 +170,8 @@ class LakebaseStore:
         self._lock = threading.Lock()
         self._rows: list[dict] | None = None
         self._read = 0.0
+        self._assigned: dict[str, list[dict]] | None = None
+        self._assigned_read = 0.0
         self.ttl = config.ACTIONS_TTL if ttl is None else ttl
         self._ready = False
         try:
@@ -203,12 +237,42 @@ class LakebaseStore:
     def all_actions(self, at: datetime | None = None) -> list[dict]:
         return [r for r in self._all() if at is None or r["at"] <= at]
 
-    def assignments(self, csn: str, at: datetime | None = None) -> list[dict]:
-        # Who owns each patient is not stored in Lakebase yet (app.assignment comes next): live, no one owns a patient.
-        return []
+    def _all_assigned(self, fresh: bool = False) -> dict[str, list[dict]]:
+        """Every row of app.assignment by csn, reread like the actions (ttl, or fresh)."""
+        with self._lock:
+            if fresh or self._assigned is None or time.time() - self._assigned_read > self.ttl:
+                try:
+                    self._ensure()
+                    from psycopg.rows import dict_row
+                    with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                        rows = cur.execute("SELECT * FROM app.assignment ORDER BY at, assignment_id").fetchall()
+                except Exception as exc:
+                    raise StoreUnavailable(UNREACHABLE) from exc
+                out: dict[str, list[dict]] = {}
+                for r in rows:
+                    d = r["detail"] if isinstance(r["detail"], dict) else json.loads(r["detail"] or "{}")
+                    out.setdefault(r["csn"], []).append({**r, "detail": d, "by_id": d.get("by_id")})
+                self._assigned, self._assigned_read = out, time.time()
+            return self._assigned
+
+    def assignments(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
+        return [r for r in self._all_assigned(fresh).get(csn, []) if at is None or r["at"] <= at]
 
     def assign(self, row: dict) -> dict:
-        raise StoreUnavailable("Taking and handing over patients is not available in this deployment yet.")
+        """One ownership change, a row in app.assignment."""
+        from psycopg.types.json import Jsonb
+        detail = {**(row.get("detail") or {}), **({"by_id": row["by_id"]} if row.get("by_id") else {})}
+        try:
+            self._ensure()
+            with PG.connect() as conn:
+                aid, recorded = conn.execute(
+                    f"INSERT INTO app.assignment ({', '.join(ASSIGNMENT)}, detail) VALUES ({', '.join(['%s'] * (len(ASSIGNMENT) + 1))}) "
+                    "RETURNING assignment_id, recorded_ts", [row.get(k) for k in ASSIGNMENT] + [Jsonb(detail)]).fetchone()
+        except Exception as exc:
+            raise StoreUnavailable(UNREACHABLE) from exc
+        with self._lock:
+            self._assigned = None
+        return {**row, "assignment_id": aid, "recorded_ts": recorded}
 
     def reset(self):
         raise PermissionError("actions are a permanent record in live mode")

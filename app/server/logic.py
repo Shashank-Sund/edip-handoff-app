@@ -714,7 +714,7 @@ class Views:
     def _assignment(self, csn: str, at: datetime, person: dict, kind: str, to: dict | None, owner: dict | None) -> dict:
         """An assignment row for the caller's role; like actions, it cannot go before one already recorded."""
         role = person["role"]
-        if any(r["role"] == role and r["at"] > at for r in self.store.assignments(csn)):
+        if any(r["role"] == role and r["at"] > at for r in self.store.assignments(csn, fresh=True)):
             raise ActionError(EARLIER)
         return {"csn": csn, "role": role, "kind": kind, "assignee_id": to["id"] if to else None,
                 "assignee_name": to["name"] if to else None, "from_id": owner["id"] if owner else None,

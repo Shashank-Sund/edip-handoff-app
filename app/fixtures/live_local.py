@@ -10,7 +10,7 @@ time, and patients who boarded last week are long gone (or dropped as stale, EDI
         ../../.venv/bin/uvicorn main:app --port 8000
 
 It writes gold.encounter_state_pg and gold.handoff_draft_pg (replaced on every run) and creates the app schema the
-app uses (app.handoff_action, app.view_log); --reset empties that schema first. A draft's created_ts, when the
+app uses (app.handoff_action, app.assignment, app.view_log); --reset empties that schema first. A draft's created_ts, when the
 handoff job wrote it, is its as_of plus --lag minutes. The signed in user comes from the X-Forwarded-Email header,
 which Databricks Apps sets; locally, send it yourself (a small proxy, or extra headers in Playwright). The data is
 the synthetic week; nothing here talks to Databricks.
@@ -113,7 +113,7 @@ def main():
     ap.add_argument("--fixtures", default=str(ROOT / "app/fixtures/data"))
     ap.add_argument("--end", help="ISO time the week ends at (default: now)")
     ap.add_argument("--lag", type=float, default=3, help="minutes from a draft's as_of to its created_ts (default 3)")
-    ap.add_argument("--reset", action="store_true", help="empty the app schema (clinician actions, view log) first")
+    ap.add_argument("--reset", action="store_true", help="empty the app schema (clinician actions, owners, view log) first")
     a = ap.parse_args()
     end = _ts(a.end) if a.end else datetime.now(timezone.utc)
     encounters, drafts = shifted(Path(a.fixtures), end, timedelta(minutes=a.lag))
