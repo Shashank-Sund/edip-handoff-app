@@ -332,7 +332,8 @@ export interface CaseDetail {
 
 export interface Analytics {
   at: string;
-  series: { t: string; ed: number; boarding: number }[];
+  /** unassigned_rn, unassigned_md: boarding patients with no nurse owner, and with no physician owner, that hour. */
+  series: { t: string; ed: number; boarding: number; unassigned_rn?: number; unassigned_md?: number }[];
   units: { unit: string; n: number; median_min: number | null; p90_min: number | null }[];
   admitted: number;
   drafts_per_patient: { median: number | null; max: number | null };
@@ -344,6 +345,13 @@ export interface Analytics {
   drafts: number;
   model_calls: number;
   addenda: number;
+  /** Owners: ED actions outside an assignment (of all ED edits, attestations and signatures), handovers by distance
+   *  from the nearest shift change, and minutes from admit decision to the first signature by who owned the patient. */
+  owners?: {
+    outside: { role: EdRole; n: number; of: number }[];
+    handovers: { bucket: string; n: number }[];
+    to_sign: { role: EdRole; owner: string | null; n: number; median_min: number }[];
+  };
 }
 
 export interface TemplateDef {

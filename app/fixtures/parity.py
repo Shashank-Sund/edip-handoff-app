@@ -657,6 +657,7 @@ def assignment_scenarios(rec, ds, default, boarding, units):
     rec("off assignment: physician on an unowned template", "POST", f"{url}/custom_sea58/edit", persona="ed-md",
         body={"element": "E25", "text": "Physician note"})
     rec("off assignment: case", "GET", url, persona="ed-rn")
+    rec("owners analytics after acting outside the assignment", "GET", "/api/analytics")
     # The clock: an hour earlier no one owns anything yet, and an assignment cannot go before one recorded.
     rec("owners board an hour earlier", "GET", "/api/board", at=iso(default - timedelta(hours=1)), persona="ed-rn")
     rec("owners case an hour earlier", "GET", url, at=iso(default - timedelta(hours=1)), persona="ed-rn")
@@ -733,6 +734,11 @@ def assignment_scenarios(rec, ds, default, boarding, units):
     if csns:
         rec("take over after: case", "GET", f"/api/handoffs/{csns[0]}", at=tt, persona="ed-rn")
     T("after: list", "ed-rn-2", {"colleague": "ed-rn"})
+    # Analytics with handovers on both sides of the shift change, a signature by an owner, and after the week.
+    if csns:
+        P("after the change", "ed-rn", {"colleague": "ed-rn-2", "csns": csns[:1]}, iso(nxt + timedelta(minutes=40)))
+    for label, t in (("before the change", tt), ("after the change", iso(nxt + timedelta(hours=1))), ("end", iso(ds.end))):
+        rec(f"owners analytics {label}", "GET", "/api/analytics", at=t)
     rec("owner reset end", "POST", "/api/demo/reset")
 
 

@@ -364,6 +364,49 @@ def test_the_demo_starts_with_owners_who_board_through_the_shift_change_and_rese
     assert [(r["csn"], r["role"], r["at"]) for r in again] == [(r["csn"], r["role"], r["at"]) for r in rows]
 
 
+def test_analytics_counts_unassigned_patients_outside_actions_handovers_and_time_to_sign(client):
+    c, main = client
+    from assignment import HANDOVER_BUCKETS, handover_bucket, next_shift
+    from data import TZ
+    c.post("/api/demo/reset")
+    default = main._current()[1]
+    before = c.get("/api/analytics").json()
+    point = before["series"][-1]
+    assert point["unassigned_rn"] <= point["boarding"] and point["unassigned_md"] <= point["boarding"]
+    rows = boarding(c)
+    csn = rows[0]["csn"]
+    own(c, csn, "ed-rn", "claim")
+    after = c.get("/api/analytics").json()
+    assert after["series"][-1]["unassigned_rn"] == point["unassigned_rn"] - 1
+    assert after["series"][-1]["unassigned_md"] == point["unassigned_md"]
+    url = f"/api/handoffs/{csn}"
+    c.post(f"{url}/sbar_nurse/edit", json={"element": "E25", "text": "By a colleague"}, headers=h("ed-rn-2"))
+    d = c.get(url, headers=h("ed-rn")).json()["templates"]["sbar_nurse"]["draft"]
+    for rule in d["rules"]:
+        if rule["rule"] in d["completeness"]["blocking"]:
+            opts = rule.get("attest_options") or []
+            body, kind = ({"rule": rule["rule"], "option": opts[0]}, "attest") if opts and rule["status"] != "missing" else \
+                ({"element": rule["element"], "text": "Written by the nurse"}, "edit")
+            c.post(f"{url}/sbar_nurse/{kind}", json=body, headers=h("ed-rn"))
+    assert c.post(f"{url}/sbar_nurse/sign", json={"callback": "x4471"}, headers=h("ed-rn")).status_code == 200
+    o = c.get("/api/analytics").json()["owners"]
+    nurse = next(x for x in o["outside"] if x["role"] == "ed_nurse")
+    assert nurse["n"] == 1 and nurse["of"] >= 3
+    mine = next(r for r in o["to_sign"] if r["role"] == "ed_nurse" and r["owner"] == "Jordan Reyes, RN")
+    admit = main.VIEWS.ds.enc[csn]["admit_decision_ts"]
+    assert mine["n"] == 1 and mine["median_min"] == round((default - admit).total_seconds() / 60)
+    assert [x["bucket"] for x in o["handovers"]] == list(HANDOVER_BUCKETS) and sum(x["n"] for x in o["handovers"]) == 0
+    # The buckets around the shift change, at the facility's time of day.
+    nxt = next_shift(default, [(7, 0), (19, 0)])
+    for minutes, bucket in ((-45, 0), (-30, 1), (-1, 1), (0, 2), (30, 2), (31, 3), (5 * 60, 3)):
+        assert handover_bucket(nxt + timedelta(minutes=minutes), [(7, 0), (19, 0)]) == HANDOVER_BUCKETS[bucket], minutes
+    assert nxt.astimezone(TZ).hour in (7, 19)
+    took = c.post("/api/takeover", json={"colleague": "ed-rn", "csns": [csn]}, headers=h("ed-rn-2"))
+    assert took.status_code == 200
+    o = c.get("/api/analytics").json()["owners"]
+    assert sum(x["n"] for x in o["handovers"]) == 1
+
+
 def test_colleagues_come_from_the_demo_personas_and_live_from_the_role_map(client):
     c, main = client
     names = lambda p: [(x["id"], x["you"]) for x in c.get("/api/colleagues", headers=h(p)).json()]  # noqa: E731

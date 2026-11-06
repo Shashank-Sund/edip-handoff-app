@@ -29,6 +29,7 @@ export const createChart = vi.fn(() => {
 });
 
 export const LineSeries = { type: 'Line' };
+export const AreaSeries = { type: 'Area' };
 export const CandlestickSeries = { type: 'Candlestick' };
 export const HistogramSeries = { type: 'Histogram' };
 export const ColorType = { Solid: 'solid' };

@@ -817,6 +817,26 @@ export const GUIDE: GuideSection[] = [
         body: <p>The blue area is how many patients were in the ED each hour; the orange line is how many of them were boarding. Point at the chart to read the numbers for an hour, and click a name above it to hide that line. Drag to scroll, or use the mouse wheel to zoom.</p>,
       },
       {
+        id: 'unassigned',
+        title: 'Unassigned boarding patients',
+        body: <p>For each hour, how many boarding patients had no nurse owner, and how many had no physician owner, against the dashed line of everyone boarding. A patient whose owner had not acted on them for 14 hours counts as having no owner. A line that stays close to the dashed one means patients wait without anyone taking them.</p>,
+      },
+      {
+        id: 'outside',
+        title: 'Actions outside an assignment',
+        body: <p>For ED nurses and ED physicians: how many edits, attestations and signatures were on a patient a colleague in the same role owned at the time, out of all of them. Helping a colleague is normal; a high share can mean owners are not kept up to date, for example after a shift change.</p>,
+      },
+      {
+        id: 'handovers',
+        title: 'Handovers around the shift change',
+        body: <p>Every patient taken over on the Take over page, by how far it was from the nearest shift change (07:00 and 19:00, or the times your hospital set): more than 30 minutes before, up to 30 minutes before, up to 30 minutes after, or more than 30 minutes after. Most handovers should sit close to the change.</p>,
+      },
+      {
+        id: 'to-sign',
+        title: 'Admit decision to signature, by owner',
+        body: <p>For each nurse and physician who owned patients: how many handoffs for their role (SBAR for nurses, I-PASS for physicians) were first signed while they owned the patient, and the median time from the admit decision to that signature. <b>Unassigned</b> counts handoffs signed while no one owned the patient for that role. Use it to see whether owned patients get signed sooner.</p>,
+      },
+      {
         id: 'units',
         title: 'Boarding time by destination',
         body: <p>For each unit, the dark bar is the median wait from admit decision to leaving the ED: half waited less, half waited more. The light bar is the 90th percentile: 1 patient in 10 waited longer. Point at a bar for the exact time and number of patients.</p>,

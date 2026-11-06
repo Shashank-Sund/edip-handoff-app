@@ -17,7 +17,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { counts, nextShift, ownerAt, personKey, ROLES } from './assignment';
+import { counts, HANDOVER_BUCKETS, handoverBucket, nextShift, ownerAt, personKey, ROLES } from './assignment';
 import { statusAt, type Dataset, type Row } from './data';
 import { ACKS, SIGNS, sees } from './personas';
 import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy } from './py';
@@ -55,6 +55,8 @@ const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physic
 // The patient level items Take over lists when their attestation is not confirmed yet.
 const CONFIRM_LABEL: Record<string, string> = { E08: 'Code status', E09: 'Allergies', E10: 'Isolation' };
 const NOT_ED = 'Only ED nurses and physicians take patients.';
+// The template each ED role signs and owns the patient for, in Analytics.
+const OWN_TEMPLATE: [string, string][] = [['ed_nurse', 'sbar_nurse'], ['ed_physician', 'ipass_physician']];
 
 type Rules = Record<string, any>;
 
@@ -590,12 +592,19 @@ export class Views {
     const stop = Math.min(at, ds.end);
     for (let t = ds.start; t <= stop; t += HOUR) {
       let ed = 0, board = 0;
+      // Boarding patients no one owns (or whose owner went stale) for each ED role, at this hour.
+      const free: Record<string, number> = { ed_nurse: 0, ed_physician: 0 };
       for (const e of encs) {
         if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && !ds.canceledAt(e, t)) ed++;
         if (e.admit_decision_ts !== null && e.admit_decision_ts <= t && (e.ed_departure_ts === null || e.ed_departure_ts > t) && truthy(ds.versions.get(e.csn) ?? null)
-          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
+          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) {
+          board++;
+          const assigned = this.store.assignments(e.csn, t);
+          const actsE = assigned.length ? this.store.actions(e.csn, t) : [];
+          for (const role of ROLES) if (!(assigned.length && counts(ownerAt(assigned, role, actsE, t, this.staleOwner, null)))) free[role]++;
+        }
       }
-      series.push({ t: iso(t), ed, boarding: board });
+      series.push({ t: iso(t), ed, boarding: board, unassigned_rn: free.ed_nurse, unassigned_md: free.ed_physician });
     }
     const done = encs.filter((e) => e.ed_departure_ts !== null && e.ed_departure_ts <= at && e.admit_decision_ts !== null && truthy(ds.versions.get(e.csn) ?? null));
     const byUnit = new Map<string, number[]>();
@@ -646,7 +655,49 @@ export class Views {
       drafts: drafts.length,
       model_calls: new Set(drafts.map((r) => `${r.csn}|${r.at}`)).size,
       addenda: new Set(drafts.filter((r) => statusAt(r, at) === 'addendum').map((r) => `${r.csn}|${r.at}`)).size,
+      owners: this.ownerAnalytics(at, acts),
     };
+  }
+
+  /** logic.py _owner_analytics: outside an assignment, handovers around the shift change, admit decision to signature. */
+  private ownerAnalytics(at: number, acts: Action[]): any {
+    const ed = acts.filter((a) => ROLES.includes(a.role) && ['edit', 'attest', 'sign'].includes(a.kind));
+    const outside = ROLES.map((role) => ({
+      role, n: ed.filter((a) => a.role === role && truthy(get(a, 'off_assignment'))).length, of: ed.filter((a) => a.role === role).length,
+    }));
+    const handovers = new Map<string, number>();
+    for (const csn of this.ds.enc.keys()) {
+      for (const r of this.store.assignments(csn, at)) {
+        if (r.kind === 'handover') {
+          const b = handoverBucket(r.at, this.shifts);
+          handovers.set(b, (handovers.get(b) ?? 0) + 1);
+        }
+      }
+    }
+    const byCsn = new Map<string, Action[]>();
+    for (const a of acts) {
+      if (!byCsn.has(a.csn)) byCsn.set(a.csn, []);
+      byCsn.get(a.csn)!.push(a);
+    }
+    const waits = new Map<string, { role: string; owner: string | null; v: number[] }>();
+    for (const [csn, mine] of byCsn) {
+      const e = this.ds.enc.get(csn);
+      if (!e || e.admit_decision_ts === null) continue;
+      for (const [role, tpl] of OWN_TEMPLATE) {
+        const signs = ordered(mine.filter((a) => a.kind === 'sign' && a.template === tpl));
+        if (!signs.length) continue;
+        const s = signs[0];
+        const o = ownerAt(this.store.assignments(csn, s.at), role, mine.filter((a) => a.at <= s.at), s.at, this.staleOwner, null);
+        const owner = counts(o) ? o.name : null;
+        const k = `${role}|${owner ?? ''}|${owner === null}`;
+        if (!waits.has(k)) waits.set(k, { role, owner, v: [] });
+        waits.get(k)!.v.push((s.at - (e.admit_decision_ts as number)) / 60000);
+      }
+    }
+    const toSign = [...waits.values()]
+      .sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || Number(a.owner === null) - Number(b.owner === null) || cmpStr(a.owner ?? '', b.owner ?? ''))
+      .map((w) => ({ role: w.role, owner: w.owner, n: w.v.length, median_min: pyRound(median(w.v)) }));
+    return { outside, handovers: HANDOVER_BUCKETS.map((b) => ({ bucket: b, n: handovers.get(b) ?? 0 })), to_sign: toSign };
   }
 
   // ---------------------------------------------------------------------------------------------- actions

@@ -8,6 +8,7 @@ import { SidebarBody } from '@/components/layout/Sidebar';
 import { READ_ONLY } from '@/lib/checks';
 import { board, caseSummary, caseTemplate, config, edNurse } from '@/test/fixtures';
 import type { AppConfig, CaseDetail, Owner, Persona, Takeover as TakeoverData } from '@/lib/types';
+import Analytics from './Analytics';
 import Board from './Board';
 import Handoff from './Handoff';
 import Takeover from './Takeover';
@@ -15,7 +16,7 @@ import Takeover from './Takeover';
 vi.mock('@/lib/api', () => ({
   setPersona: vi.fn(),
   ApiError: class extends Error {},
-  api: { board: vi.fn(), case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(), takeover: vi.fn(), takeOver: vi.fn(), reset: vi.fn() },
+  api: { board: vi.fn(), case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(), takeover: vi.fn(), takeOver: vi.fn(), analytics: vi.fn(), reset: vi.fn() },
 }));
 const { api } = await import('@/lib/api');
 
@@ -222,6 +223,32 @@ describe('Take over', () => {
     wrap(<Takeover />, { ...config, personas: [unitNurse] });
     expect(await screen.findByText('Take over is for ED nurses and physicians')).toBeInTheDocument();
     expect(api.takeover).not.toHaveBeenCalled();
+  });
+});
+
+describe('Analytics owners', () => {
+  it('shows outside actions, handovers around the shift change and time to sign by owner, each with its ?', async () => {
+    vi.mocked(api.analytics).mockResolvedValue({
+      at: config.default_at, series: [{ t: config.default_at, ed: 20, boarding: 5, unassigned_rn: 3, unassigned_md: 4 }], units: [], admitted: 0,
+      drafts_per_patient: { median: null, max: null }, completeness_at_transfer: { median: null, histogram: [] }, blocking_at_transfer: [],
+      severity_at_transfer: {}, signed_before_transfer: 0, transferred_without_sign_off: 0, drafts: 0, model_calls: 0, addenda: 0,
+      owners: {
+        outside: [{ role: 'ed_nurse', n: 2, of: 8 }, { role: 'ed_physician', n: 0, of: 0 }],
+        handovers: [{ bucket: 'More than 30 min before', n: 0 }, { bucket: 'Up to 30 min before', n: 3 }, { bucket: 'Up to 30 min after', n: 1 }, { bucket: 'More than 30 min after', n: 0 }],
+        to_sign: [{ role: 'ed_nurse', owner: 'Jordan Reyes, RN', n: 2, median_min: 125 }, { role: 'ed_nurse', owner: null, n: 1, median_min: 300 }],
+      },
+    });
+    wrap(<Analytics />);
+    expect(await screen.findByText('Unassigned boarding patients')).toBeInTheDocument();
+    expect(screen.getByText('25% of 8 actions')).toBeInTheDocument();
+    expect(screen.getByText('No actions yet')).toBeInTheDocument();
+    const hand = screen.getByText('Up to 30 min before').closest('li')!;
+    expect(hand).toHaveTextContent('3');
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row').slice(1).map((r) => r.textContent)).toEqual(['Jordan ReyesNurse owner22 h 5 min', 'UnassignedNurse owner15 h']);
+    for (const name of ['Unassigned boarding patients', 'Actions outside an assignment', 'Handovers around the shift change', 'Admit decision to signature, by owner']) {
+      expect(screen.getAllByRole('button', { name: new RegExp(`How to read this chart: ${name}`) })).toHaveLength(1);
+    }
   });
 });
 

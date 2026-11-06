@@ -11,12 +11,97 @@ import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
 import { api } from '@/lib/api';
 import { dateTime, duration, pct, span } from '@/lib/format';
+import { ROLE_OWNER, shortName } from '@/lib/owners';
+import type { Analytics as AnalyticsData } from '@/lib/types';
 
 const unitConfig: ChartConfig = {
   median_min: { label: 'Median', color: 'var(--series-1)' },
   p90_min: { label: '90th percentile', color: 'var(--series-1)' },
 };
 const histConfig: ChartConfig = { n: { label: 'Handoffs', color: 'var(--series-3)' } };
+
+const ROLE_PLURAL = { ed_nurse: 'ED nurses', ed_physician: 'ED physicians' } as const;
+
+/** Owners: unassigned boarding patients by hour, actions outside an assignment, handovers around the shift change,
+ *  and admit decision to signature by owner. */
+function OwnerPanels({ data }: { data: AnalyticsData }) {
+  const o = data.owners;
+  if (!o) return null;
+  const maxHand = Math.max(1, ...o.handovers.map((h) => h.n));
+  const handed = o.handovers.reduce((n, h) => n + h.n, 0);
+  return (
+    <>
+      <Panel help="analytics.unassigned" title="Unassigned boarding patients" description="Patients boarding with no nurse owner, and with no physician owner, hourly. A stale owner counts as no owner.">
+        <TimeChart
+          ariaLabel="Unassigned boarding patients by hour"
+          height={240}
+          lines={[
+            { key: 'boarding', label: 'Boarding', color: 'var(--series-2)', data: data.series.map((p) => ({ t: p.t, v: p.boarding })), points: false, dashed: true, format: (v) => String(Math.round(v)) },
+            { key: 'rn', label: 'No nurse owner', color: 'var(--series-3)', data: data.series.map((p) => ({ t: p.t, v: p.unassigned_rn ?? null })), points: false, format: (v) => String(Math.round(v)) },
+            { key: 'md', label: 'No physician owner', color: 'var(--series-4)', data: data.series.map((p) => ({ t: p.t, v: p.unassigned_md ?? null })), points: false, format: (v) => String(Math.round(v)) },
+          ]}
+        />
+      </Panel>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Panel help="analytics.outside" title="Actions outside an assignment" description="Edits, attestations and signatures on a patient a colleague in the same role owned.">
+          <dl className="grid grid-cols-2 gap-3 pt-2">
+            {o.outside.map((x) => (
+              <div key={x.role} className="rounded-lg border px-3 py-3">
+                <dt className="text-xs text-muted-foreground">{ROLE_PLURAL[x.role]}</dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums">{x.n}</dd>
+                <dd className="text-xs text-muted-foreground tabular-nums">{x.of ? `${pct(x.n / x.of)} of ${x.of} actions` : 'No actions yet'}</dd>
+              </div>
+            ))}
+          </dl>
+        </Panel>
+        <Panel help="analytics.handovers" title="Handovers around the shift change" description="Patients taken over, by how far from the nearest shift change.">
+          {handed ? (
+            <ul className="space-y-3 pt-2">
+              {o.handovers.map((h) => (
+                <li key={h.bucket} className="grid grid-cols-[9.5rem_1fr_2rem] items-center gap-3 text-sm">
+                  <span className="text-muted-foreground">{h.bucket}</span>
+                  <span className="h-2.5 rounded-full bg-muted" aria-hidden>
+                    <span className="block h-2.5 rounded-full bg-[var(--series-3)]" style={{ width: `${(h.n / maxHand) * 100}%` }} />
+                  </span>
+                  <span className="text-right font-medium tabular-nums">{h.n}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">No handovers yet.</p>
+          )}
+        </Panel>
+        <Panel help="analytics.to-sign" title="Admit decision to signature, by owner" description="Median minutes to the first signature of the role's handoff, by who owned the patient then.">
+          {o.to_sign.length ? (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th scope="col" className="pb-2 font-medium">Owner</th>
+                  <th scope="col" className="pb-2 text-right font-medium">Signed</th>
+                  <th scope="col" className="pb-2 text-right font-medium">Median</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {o.to_sign.map((r) => (
+                  <tr key={`${r.role}|${r.owner}`}>
+                    <td className="py-1.5">
+                      <div className={r.owner ? 'font-medium' : 'italic text-muted-foreground'}>{r.owner ? shortName(r.owner) : 'Unassigned'}</div>
+                      <div className="text-xs text-muted-foreground">{ROLE_OWNER[r.role]}</div>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">{r.n}</td>
+                    <td className="py-1.5 text-right tabular-nums">{duration(r.median_min)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">No handoffs signed yet.</p>
+          )}
+        </Panel>
+      </div>
+    </>
+  );
+}
 
 function Panel({ title, description, children, className, help }: { title: string; description?: string; children: React.ReactNode; className?: string; help?: string }) {
   return (
@@ -73,6 +158,8 @@ export default function Analytics() {
               : 'The week has not started yet.'}
           </p>
         </Panel>
+
+        <OwnerPanels data={data} />
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Panel help="analytics.units" title="Boarding time by destination" description="Admit decision to leaving the ED, patients transferred so far.">

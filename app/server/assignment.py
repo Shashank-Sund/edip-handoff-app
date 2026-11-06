@@ -68,3 +68,26 @@ def next_shift(at: datetime, changes: list[tuple[int, int]]) -> datetime:
             if t > at:
                 return t
     raise ValueError("no shift change in the next two days")
+
+
+def last_shift(at: datetime, changes: list[tuple[int, int]]) -> datetime:
+    """The latest shift change at or before `at`, at the facility's local time of day."""
+    day = at.astimezone(TZ).date()
+    for d in range(0, 3):
+        for h, m in reversed(changes):
+            t = datetime.combine(day - timedelta(days=d), time(h, m)).replace(tzinfo=TZ)
+            if t <= at:
+                return t
+    raise ValueError("no shift change in the last two days")
+
+
+# How far a handover was from the nearest shift change, for Analytics.
+HANDOVER_BUCKETS = ("More than 30 min before", "Up to 30 min before", "Up to 30 min after", "More than 30 min after")
+
+
+def handover_bucket(at: datetime, changes: list[tuple[int, int]]) -> str:
+    """Which of HANDOVER_BUCKETS a handover at `at` falls in, measured from the nearest shift change."""
+    before, after = next_shift(at, changes), last_shift(at, changes)
+    near = after if at - after <= before - at else before
+    m = (at - near).total_seconds() / 60
+    return HANDOVER_BUCKETS[0 if m < -30 else 1 if m < 0 else 2 if m <= 30 else 3]

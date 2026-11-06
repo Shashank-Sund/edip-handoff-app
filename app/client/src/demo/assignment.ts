@@ -61,3 +61,25 @@ export function nextShift(at: number, changes: [number, number][]): number {
   }
   throw new Error('no shift change in the next two days');
 }
+
+/** The latest shift change at or before `at`, at the facility's local time of day. */
+export function lastShift(at: number, changes: [number, number][]): number {
+  const day = Math.floor(wall(at) / DAY) * DAY;
+  for (let d = 0; d < 3; d++) {
+    for (const [h, m] of [...changes].reverse()) {
+      const t = fromWall(day - d * DAY + h * HOUR + m * MINUTE);
+      if (t <= at) return t;
+    }
+  }
+  throw new Error('no shift change in the last two days');
+}
+
+/** How far a handover was from the nearest shift change, for Analytics. */
+export const HANDOVER_BUCKETS = ['More than 30 min before', 'Up to 30 min before', 'Up to 30 min after', 'More than 30 min after'];
+
+export function handoverBucket(at: number, changes: [number, number][]): string {
+  const before = nextShift(at, changes), after = lastShift(at, changes);
+  const near = at - after <= before - at ? after : before;
+  const m = (at - near) / MINUTE;
+  return HANDOVER_BUCKETS[m < -30 ? 0 : m < 0 ? 1 : m <= 30 ? 2 : 3];
+}

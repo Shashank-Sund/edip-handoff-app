@@ -23,7 +23,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from assignment import ROLES, counts, next_shift, owner_at, person_key
+from assignment import HANDOVER_BUCKETS, ROLES, counts, handover_bucket, next_shift, owner_at, person_key
 from data import Dataset, iso, status_at
 from personas import ACKS, SIGNS, sees
 
@@ -55,6 +55,8 @@ PATIENT = ("E08", "E09", "E10")
 ALLERGY = "Add an allergy"
 PATIENT_LABEL = {"E08": "Code status", "E09": "An allergy", "E10": "Isolation"}
 TEMPLATE_NAME = {"sbar_nurse": "SBAR", "ipass_physician": "I-PASS", "custom_sea58": "Joint Commission minimum"}
+# The template each ED role signs and owns the patient for, in Analytics.
+OWN_TEMPLATE = {"ed_nurse": "sbar_nurse", "ed_physician": "ipass_physician"}
 # The patient level items Take over lists when their attestation is not confirmed yet.
 CONFIRM_LABEL = {"E08": "Code status", "E09": "Allergies", "E10": "Isolation"}
 NOT_ED = "Only ED nurses and physicians take patients."
@@ -550,11 +552,19 @@ class Views:
         while t <= min(at, ds.end):
             ed = sum(1 for e in encs if e["arrival_ts"] and e["arrival_ts"] <= t and (e["left_ts"] is None or e["left_ts"] > t)
                      and not ds.canceled_at(e, t))
-            board = sum(1 for e in encs if e["admit_decision_ts"] and e["admit_decision_ts"] <= t
-                        and (e["ed_departure_ts"] is None or e["ed_departure_ts"] > t) and ds.versions.get(e["csn"])
-                        and not ds.canceled_at(e, t)
-                        and (e["ed_departure_ts"] or self.stale_boarding is None or t - e["admit_decision_ts"] <= self.stale_boarding))
-            series.append({"t": iso(t), "ed": ed, "boarding": board})
+            board = [e for e in encs if e["admit_decision_ts"] and e["admit_decision_ts"] <= t
+                     and (e["ed_departure_ts"] is None or e["ed_departure_ts"] > t) and ds.versions.get(e["csn"])
+                     and not ds.canceled_at(e, t)
+                     and (e["ed_departure_ts"] or self.stale_boarding is None or t - e["admit_decision_ts"] <= self.stale_boarding)]
+            # Boarding patients no one owns (or whose owner went stale) for each ED role, at this hour.
+            free = dict.fromkeys(ROLES, 0)
+            for e in board:
+                assigned = self.store.assignments(e["csn"], t)
+                acts_e = self.store.actions(e["csn"], t) if assigned else []
+                for role in ROLES:
+                    free[role] += not (assigned and counts(owner_at(assigned, role, acts_e, t, self.stale_owner, None)))
+            series.append({"t": iso(t), "ed": ed, "boarding": len(board), "unassigned_rn": free["ed_nurse"],
+                           "unassigned_md": free["ed_physician"]})
             t += timedelta(hours=1)
         done = [e for e in encs if e["ed_departure_ts"] and e["ed_departure_ts"] <= at and e["admit_decision_ts"]
                 and ds.versions.get(e["csn"])]
@@ -596,7 +606,39 @@ class Views:
             "transferred_without_sign_off": len(done) - signed_before,
             "drafts": len(drafts), "model_calls": len({(r["csn"], r["at"]) for r in drafts}),
             "addenda": len({(r["csn"], r["at"]) for r in drafts if status_at(r, at) == "addendum"}),
+            "owners": self._owner_analytics(at, acts),
         }
+
+    def _owner_analytics(self, at: datetime, acts: list[dict]) -> dict:
+        """Owners in Analytics: ED actions taken outside an assignment, handovers by their distance from the nearest
+        shift change, and minutes from the admit decision to the first signature of each role's template, by who
+        owned the patient for that role when it was signed (owner null: no one)."""
+        ed = [a for a in acts if a["role"] in ROLES and a["kind"] in ("edit", "attest", "sign")]
+        outside = [{"role": role, "n": sum(1 for a in ed if a["role"] == role and a.get("off_assignment")),
+                    "of": sum(1 for a in ed if a["role"] == role)} for role in ROLES]
+        handovers = Counter(handover_bucket(r["at"], self.shifts) for csn in self.ds.enc
+                            for r in self.store.assignments(csn, at) if r["kind"] == "handover")
+        by_csn = defaultdict(list)
+        for a in acts:
+            by_csn[a["csn"]].append(a)
+        waits = defaultdict(list)
+        for csn, mine in by_csn.items():
+            e = self.ds.enc.get(csn)
+            if not e or not e["admit_decision_ts"]:
+                continue
+            for role, tpl in OWN_TEMPLATE.items():
+                signs = _ordered([a for a in mine if a["kind"] == "sign" and a["template"] == tpl])
+                if not signs:
+                    continue
+                s = signs[0]
+                o = owner_at(self.store.assignments(csn, s["at"]), role, [a for a in mine if a["at"] <= s["at"]], s["at"],
+                             self.stale_owner, None)
+                waits[(role, o["name"] if counts(o) else None)].append((s["at"] - e["admit_decision_ts"]).total_seconds() / 60)
+        to_sign = [{"role": role, "owner": name, "n": len(v), "median_min": round(statistics.median(v))}
+                   for (role, name), v in sorted(waits.items(), key=lambda kv: (ROLES.index(kv[0][0]), kv[0][1] is None,
+                                                                                 kv[0][1] or ""))]
+        return {"outside": outside, "handovers": [{"bucket": b, "n": handovers.get(b, 0)} for b in HANDOVER_BUCKETS],
+                "to_sign": to_sign}
 
     # -------------------------------------------------------------------------------------------- actions
     def act(self, kind: str, csn: str, template: str, at: datetime, person: dict, body: dict) -> dict:
