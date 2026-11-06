@@ -58,8 +58,9 @@ def own(c, csn, persona, kind, to=None, at=None):
 
 
 def boarding(c, at=None, persona="ed-rn"):
+    """Boarding patients no one owns yet: the demo seed gives a few patients owners at start up and after Reset."""
     b = c.get("/api/board", headers=h(persona), params={"at": at} if at else None).json()
-    return [r for r in b["rows"] if r["phase"] == "boarding"]
+    return [r for r in b["rows"] if r["phase"] == "boarding" and not any(r["owners"].values())]
 
 
 # ---------------------------------------------------------------------------------------- the rules alone
@@ -193,10 +194,13 @@ def test_board_counts_my_patients_and_the_unassigned_for_ed_roles_only(client):
     own(c, rows[0]["csn"], "ed-rn", "claim")
     own(c, rows[1]["csn"], "ed-rn-2", "claim")
     b = c.get("/api/board", headers=h("ed-rn")).json()
-    assert b["kpis"]["mine"] == 1 and b["kpis"]["unassigned"] == len(rows) - 2
-    assert b["shift"]["mine"] == 1 and b["shift"]["unsigned"] == 1
+    all_boarding = [r for r in b["rows"] if r["phase"] == "boarding"]
+    mine = [r for r in all_boarding if (r["owners"]["ed_nurse"] or {}).get("you")]
+    assert rows[0]["csn"] in {r["csn"] for r in mine} and rows[1]["csn"] not in {r["csn"] for r in mine}
+    assert b["kpis"]["mine"] == len(mine) and b["kpis"]["unassigned"] == sum(1 for r in all_boarding if not r["owners"]["ed_nurse"])
+    assert b["shift"]["mine"] == len(mine)
     md = c.get("/api/board", headers=h("ed-md")).json()
-    assert md["kpis"]["mine"] == 0 and md["kpis"]["unassigned"] == len(rows)
+    assert md["kpis"]["mine"] == 0
     for p in ("viewer", "hosp-md"):
         other = c.get("/api/board", headers=h(p)).json()
         assert other["shift"] is None and "mine" not in other["kpis"]
@@ -286,9 +290,10 @@ def test_take_over_lists_a_colleagues_patients_and_takes_some_or_all_in_one_go(c
         own(c, csn, "ed-rn", "claim")
     other = rows[3]["csn"] if len(rows) > 3 else None
     view = c.get("/api/takeover", params={"colleague": "ed-rn"}, headers=h("ed-rn-2")).json()
-    assert view["colleagues"] == [{"id": "ed-rn", "name": "Jordan Reyes, RN", "patients": len(mine)}]
-    assert sorted(r["csn"] for r in view["rows"]) == sorted(mine)
-    first = view["rows"][0]
+    seeded = [r["csn"] for r in view["rows"] if r["csn"] not in mine]           # the demo seed's patients
+    assert view["colleagues"] == [{"id": "ed-rn", "name": "Jordan Reyes, RN", "patients": len(mine) + len(seeded)}]
+    assert set(mine) <= {r["csn"] for r in view["rows"]}
+    first = next(r for r in view["rows"] if r["csn"] in mine)
     assert first["state"] == "draft" and first["owner"]["id"] == "ed-rn" and isinstance(first["to_confirm"], list)
     assert set(first["to_confirm"]) <= {"Code status", "Allergies", "Isolation"} and first["changed"] == []
     # All or none: one patient Jordan does not own refuses the whole request.
@@ -297,11 +302,11 @@ def test_take_over_lists_a_colleagues_patients_and_takes_some_or_all_in_one_go(c
         assert bad.status_code == 409 and "no longer owns" in bad.json()["detail"]
         assert not any(x["kind"] == "handover" for x in main.STORE.assignments(mine[0]))
     took = c.post("/api/takeover", json={"colleague": "ed-rn", "csns": mine[:2]}, headers=h("ed-rn-2")).json()
-    assert took["taken"] == mine[:2] and [r["csn"] for r in took["rows"]] == [x for x in [r["csn"] for r in view["rows"]] if x == mine[2]]
+    assert took["taken"] == mine[:2] and {r["csn"] for r in took["rows"]} == {mine[2], *seeded}
     row = main.STORE.assignments(mine[0])[-1]
     assert row["kind"] == "handover" and row["from_id"] == "ed-rn" and row["assignee_id"] == "ed-rn-2"
     assert c.get("/api/board", headers=h("ed-rn-2")).json()["kpis"]["mine"] == 2
-    assert c.get("/api/board", headers=h("ed-rn")).json()["kpis"]["mine"] == 1
+    assert c.get("/api/board", headers=h("ed-rn")).json()["kpis"]["mine"] == 1 + len(seeded)
     for persona, params in (("ed-rn-2", {"colleague": "ed-rn-2"}), ("ed-md", {"colleague": "ed-rn"})):
         assert c.get("/api/takeover", params=params, headers=h(persona)).status_code == 409
     assert c.get("/api/takeover", headers=h("viewer")).status_code == 409
@@ -323,15 +328,40 @@ def test_take_over_shows_signed_and_changed_handoffs_with_what_changed(client):
                 ({"element": rule["element"], "text": "Written by the nurse"}, "edit")
             assert c.post(f"{url}/sbar_nurse/{kind}", json=body, headers=h("ed-rn")).status_code == 200
     assert c.post(f"{url}/sbar_nurse/sign", json={"callback": "x4471"}, headers=h("ed-rn")).status_code == 200
-    row = c.get("/api/takeover", params={"colleague": "ed-rn"}, headers=h("ed-rn-2")).json()["rows"][0]
+    pick = lambda: next(r for r in c.get("/api/takeover", params={"colleague": "ed-rn"}, headers=h("ed-rn-2")).json()["rows"] if r["csn"] == csn)  # noqa: E731
+    row = pick()
     assert row["state"] == "signed" and row["signed"]["by"] == "Jordan Reyes, RN"
     c.post(f"{url}/sbar_nurse/edit", json={"element": "E25", "text": "Changed after signing"}, headers=h("ed-rn"))
-    row = c.get("/api/takeover", params={"colleague": "ed-rn"}, headers=h("ed-rn-2")).json()["rows"][0]
+    row = pick()
     assert row["state"] == "changed" and row["changed"]
     # The signature stays with the signer after the handover; the new owner signs again.
     c.post("/api/takeover", json={"colleague": "ed-rn", "csns": [csn]}, headers=h("ed-rn-2"))
     wf = c.get(url, headers=h("ed-rn-2")).json()["templates"]["sbar_nurse"]["workflow"]
     assert wf["state"] == "changed" and wf["signed"]["by"] == "Jordan Reyes, RN"
+
+
+def test_the_demo_starts_with_owners_who_board_through_the_shift_change_and_reset_restores_them(client):
+    c, main = client
+    from assignment import next_shift
+    c.post("/api/demo/reset")
+    default = main._current()[1]
+    nxt = next_shift(default, [(7, 0), (19, 0)])
+    seeded = {r["csn"]: r for csn in main.VIEWS.ds.enc for r in main.STORE.assignments(csn)}
+    rows = [r for csn in main.VIEWS.ds.enc for r in main.STORE.assignments(csn)]
+    assert rows and all(r["kind"] == "claim" and r["detail"] == {"seed": True} for r in rows)
+    assert {r["assignee_id"] for r in rows if r["role"] == "ed_nurse"} == {"ed-rn"}
+    assert {r["assignee_id"] for r in rows if r["role"] == "ed_physician"} <= {"ed-md-2"}
+    for r in rows:
+        e = main.VIEWS.ds.enc[r["csn"]]
+        assert r["at"] <= nxt - timedelta(minutes=30) and r["at"] >= default - timedelta(hours=3)
+        assert e["ed_departure_ts"] is None or e["ed_departure_ts"] > nxt          # boarding through the shift change
+    # In the half hour before the shift change, Jordan's patients are on the board and none is stale.
+    b = c.get("/api/board", params={"at": (nxt - timedelta(minutes=29)).isoformat()}, headers=h("ed-rn")).json()
+    assert b["shift"]["warning"] and b["kpis"]["mine"] == len([r for r in rows if r["role"] == "ed_nurse"])
+    own(c, next(iter(seeded)), "ed-rn-2", "claim", at=(nxt - timedelta(minutes=20)).isoformat())
+    c.post("/api/demo/reset")
+    again = [r for csn in main.VIEWS.ds.enc for r in main.STORE.assignments(csn)]
+    assert [(r["csn"], r["role"], r["at"]) for r in again] == [(r["csn"], r["role"], r["at"]) for r in rows]
 
 
 def test_colleagues_come_from_the_demo_personas_and_live_from_the_role_map(client):

@@ -91,7 +91,7 @@ describe('Board owners', () => {
     vi.mocked(api.board).mockResolvedValue(data);
     wrap(<Board />);
     await screen.findByRole('table');
-    expect(screen.getByText(/^Shift change at \d\d:\d\d: 1 of your patients has a handoff not yet signed\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Shift change at \d\d:\d\d: 1 of your patients has a handoff that needs your signature\.$/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Take over from a colleague' }).getAttribute('href')).toMatch(/^\/takeover\?at=/);
     expect(screen.getByRole('button', { name: /About shift change/ })).toBeInTheDocument();
   });

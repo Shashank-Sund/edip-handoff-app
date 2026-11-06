@@ -163,7 +163,7 @@ function ShiftBanner({ shift }: { shift: ShiftInfo }) {
     ? `Shift change at ${when}. You have no patients on the board.`
     : n === 0
       ? `Shift change at ${when}: every one of your patients has a signed handoff.`
-      : `Shift change at ${when}: ${n} of your patients ${n === 1 ? 'has a handoff' : 'have handoffs'} not yet signed.`;
+      : `Shift change at ${when}: ${n} of your patients ${n === 1 ? 'has a handoff that needs' : 'have handoffs that need'} your signature.`;
   return (
     <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-sev-watcher/30 bg-sev-watcher/10 px-4 py-2.5 text-sm">
       <BellRing className="size-4 shrink-0 text-sev-watcher" aria-hidden />

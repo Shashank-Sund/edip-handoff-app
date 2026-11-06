@@ -87,6 +87,15 @@ def _current():
     return _derived["personas"], _derived["default_at"]
 
 
+def _seed() -> None:
+    """Mock mode: the demo's starting owners, Jordan Reyes for the nurse role and Kai Moreno for the physician role,
+    before the default clock (logic.Views.seed_owners). Written at start up and again after Reset."""
+    personas, default_at = _current()
+    who = {p["id"]: {"id": p["id"], "name": p["name"]} for p in personas}
+    for row in VIEWS.seed_owners(default_at, who["ed-rn"], who["ed-md-2"]):
+        STORE.assign(row)
+
+
 def _person(request: Request) -> dict:
     email = request.headers.get("x-forwarded-email")
     personas, _ = _current()
@@ -361,6 +370,7 @@ def post_reset() -> dict[str, str]:
     if config.MODE != "mock":
         raise HTTPException(403, "reset is only available in mock mode")
     STORE.reset()
+    _seed()
     return {"status": "reset"}
 
 
@@ -373,6 +383,8 @@ def health() -> dict[str, Any]:
 
 
 app.include_router(api)
+if config.MODE == "mock":
+    _seed()
 
 if (config.STATIC / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=config.STATIC / "assets"), name="assets")

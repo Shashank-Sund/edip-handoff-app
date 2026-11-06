@@ -721,6 +721,39 @@ class Views:
                 "from_name": owner["name"] if owner else None, "at": at, "by_name": person["name"], "by_role": role,
                 "user_email": person.get("user_email"), "by_id": person_key(person), "detail": {}}
 
+    def seed_owners(self, at: datetime, nurse: dict, physician: dict) -> list[dict]:
+        """The demo's starting owners (mock mode, and again after Reset), so My patients is not empty and a shift change
+        takes a few clicks: `nurse` owns up to three patients on the board half an hour before the next shift change
+        after `at` who board through it, and `physician` the first two of them. Each is taken five minutes
+        after its first draft, but no earlier than three hours before `at` (so no owner is stale at `at`): a patient
+        admitted after `at` is already owned when it reaches the board. nurse and physician: {"id", "name"}."""
+        ds, nxt = self.ds, next_shift(at, self.shifts)
+        warn = nxt - timedelta(minutes=30)
+        taken = {}
+        for e in sorted(ds.enc.values(), key=lambda e: (e["admit_decision_ts"] or nxt, e["csn"])):
+            first = self.first_shown(e["csn"], warn) if e["admit_decision_ts"] else None
+            if first is None or (e["ed_departure_ts"] is not None and e["ed_departure_ts"] <= nxt) or ds.canceled_at(e, nxt):
+                continue
+            t = max(first + timedelta(minutes=5), at - timedelta(hours=3))
+            if t <= warn:
+                taken[e["csn"]] = t
+            if len(taken) == 3:
+                break
+        rows = []
+        for i, (csn, t) in enumerate(taken.items()):
+            for role, who in (("ed_nurse", nurse), ("ed_physician", physician)):
+                if role == "ed_nurse" or i < 2:
+                    rows.append({"csn": csn, "role": role, "kind": "claim", "assignee_id": who["id"],
+                                 "assignee_name": who["name"], "from_id": None, "from_name": None, "at": t,
+                                 "by_name": who["name"], "by_role": role, "user_email": None, "by_id": who["id"],
+                                 "detail": {"seed": True}})
+        return rows
+
+    def first_shown(self, csn: str, at: datetime) -> datetime | None:
+        """When the patient's first draft shows, if it shows by `at`."""
+        rows = self.ds.rows_at(csn, at)
+        return rows[0]["shown"] if rows else None
+
     def own(self, kind: str, csn: str, at: datetime, person: dict, to: str | None, colleagues: list[dict]) -> dict:
         """Take (claim), Assign to a colleague or Release, for the caller's ED role. colleagues: the people of that
         role (main.py: demo personas, or the role map live)."""

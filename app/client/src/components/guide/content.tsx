@@ -131,7 +131,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Take your patients',
         body: (
           <SeeDo
-            see={<>The board opens on <Key>My patients</Key>. At the top, <b>Unassigned</b> lists the patients still in the ED that no nurse owns yet. Under each name: <span className="text-xs">RN: Unassigned · MD: Unassigned</span>, the nurse and the physician who own the patient.</>}
+            see={<>The board opens on <Key>My patients</Key>. At the top, <b>Unassigned</b> lists the patients still in the ED that no nurse owns yet; below it, <b>Your patients</b> (in the demo Jordan Reyes already owns one or two). Under each name: <span className="text-xs">RN: Unassigned · MD: Unassigned</span>, the nurse and the physician who own the patient.</>}
             act={<>Press <Key><UserPlus />Take</Key> next to the patients you are caring for, for example the sickest one. They move down to <b>Your patients</b> and read <span className="text-xs">RN: Jordan Reyes (you)</span>. <Key>Everyone</Key> shows every patient, whoever owns them.</>}
           />
         ),
@@ -211,8 +211,8 @@ export const GUIDE: GuideSection[] = [
         title: 'Hand over to the next nurse',
         body: (
           <SeeDo
-            see={<>Move the clock to 18:30 and, as Jordan Reyes, take two patients from Unassigned. An amber bar at the top of the board says <span className="text-xs font-medium">Shift change at 19:00</span> and how many of your patients still need a signed handoff.</>}
-            act={<>Open the role menu and pick the second ED nurse, <b>Robin Asante, RN</b>, who comes on at 19:00. In the sidebar, open <Key><Handshake />Take over</Key>, pick Jordan Reyes, check the list, and press <Primary><Handshake />Take</Primary>. Robin's board now shows those patients under Your patients; Jordan's signatures stay as they were.</>}
+            see={<>Move the clock to 18:30. As Jordan Reyes, an amber bar at the top of the board says <span className="text-xs font-medium">Shift change at 19:00</span> and how many of your patients have handoffs that need your signature.</>}
+            act={<>Open the role menu and pick the second ED nurse, <b>Robin Asante, RN</b>, who comes on at 19:00. In the sidebar, open <Key><Handshake />Take over</Key>, pick Jordan Reyes, check the list, and press the button that counts them, such as <Primary><Handshake />Take 2 patients</Primary>. Robin's board now shows those patients under Your patients; Jordan's signatures stay as they were.</>}
           />
         ),
       },
@@ -245,7 +245,7 @@ export const GUIDE: GuideSection[] = [
             <p className="font-medium">Owning patients</p>
             <p>Each patient has one nurse owner. The board opens on <b>My patients</b>: the patients you own, with the <b>Unassigned</b> ones at the top. Take the patients you care for; give one to a colleague with <b>Assign to a colleague</b>, or press <b>Release</b> if it is no longer yours. You can still help with any patient: if a colleague owns it, the app says so and notes that you acted outside your assignment.</p>
             <p className="font-medium">Start and end of shift</p>
-            <p className="text-muted-foreground">At the start, take your patients from Unassigned, or open <b>Take over</b> and take the patients of the nurse you are relieving. In the half hour before the shift change (07:00 and 19:00), a bar on the board says how many of your patients still need a signed handoff: sign what you can, then the nurse coming on takes them over.</p>
+            <p className="text-muted-foreground">At the start, take your patients from Unassigned, or open <b>Take over</b> and take the patients of the nurse you are relieving. In the half hour before the shift change (07:00 and 19:00), a bar on the board says how many of your patients have handoffs that need your signature: sign what you can, then the nurse coming on takes them over.</p>
           </>
         ),
       },
@@ -440,7 +440,7 @@ export const GUIDE: GuideSection[] = [
         title: 'What happens at shift change?',
         body: (
           <>
-            <p>ED shifts change at 07:00 and 19:00, or the times your hospital set. In the half hour before, a bar on the board reminds the nurses and physicians going off, for example "Shift change at 19:00: 2 of your patients have handoffs not yet signed."</p>
+            <p>ED shifts change at 07:00 and 19:00, or the times your hospital set. In the half hour before, a bar on the board reminds the nurses and physicians going off, for example "Shift change at 19:00: 2 of your patients have handoffs that need your signature."</p>
             <Checks
               items={[
                 'Going off: sign the handoffs you can, so the unit is not left waiting.',
@@ -527,7 +527,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <>
             <p>
-              In the half hour before each shift change (07:00 and 19:00, or the times your hospital set), ED nurses and physicians see an amber bar <BellRing className="inline size-3.5 align-middle text-sev-watcher" aria-hidden /> at the top of the board, for example "Shift change at 19:00: 2 of your patients have handoffs not yet signed." It counts your own patients whose handoff for your role is a draft or changed after signing.
+              In the half hour before each shift change (07:00 and 19:00, or the times your hospital set), ED nurses and physicians see an amber bar <BellRing className="inline size-3.5 align-middle text-sev-watcher" aria-hidden /> at the top of the board, for example "Shift change at 19:00: 2 of your patients have handoffs that need your signature." It counts your own patients whose handoff for your role is a draft or changed after signing.
             </p>
             <p className="text-muted-foreground">Its link opens Take over, for the colleague coming on. The bar goes away at the shift change.</p>
           </>
@@ -784,7 +784,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Taking over',
         body: (
           <>
-            <p>Every patient is ticked at first. Untick any you are not taking, then press <Primary><Handshake />Take</Primary>. They become yours from that moment, and a green line lists them. Patients you leave stay with your colleague.</p>
+            <p>Every patient is ticked at first. Untick any you are not taking, then press the button, which counts them, for example <Primary><Handshake />Take 3 patients</Primary>. They become yours from that moment, and a green line lists them. Patients you leave stay with your colleague.</p>
             <p className="text-muted-foreground">Signatures stay with whoever signed. A handoff that changed after signing still needs signing again, now by you. If a patient changed hands while you were looking, the app says so and takes none of them: reload the list and try again.</p>
           </>
         ),
@@ -952,12 +952,11 @@ export const GUIDE: GuideSection[] = [
         title: 'Try a shift change in the demo',
         body: (
           <>
-            <p>The demo has two ED nurses, Jordan Reyes and Robin Asante, and two ED physicians, Alex Chen and Kai Moreno. Everyone starts with no patients.</p>
+            <p>The demo has two ED nurses, Jordan Reyes and Robin Asante, and two ED physicians, Alex Chen and Kai Moreno. It starts with Jordan Reyes owning the patients who will still be in the ED at 19:00, and Kai Moreno owning some of them for the physician role. Clear all demo actions brings that start back.</p>
             <Checks
               items={[
-                'Move the clock to 18:30, half an hour before the 19:00 shift change.',
-                'As Jordan Reyes, take two or three patients from Unassigned on the board. The shift change bar counts them.',
-                <>Switch to Robin Asante in the role menu, open <Key><Handshake />Take over</Key>, pick Jordan Reyes and take the patients.</>,
+                'Move the clock to 18:30, half an hour before the 19:00 shift change. As Jordan Reyes, the shift change bar counts your patients.',
+                <>Switch to Robin Asante in the role menu, open <Key><Handshake />Take over</Key>, pick Jordan Reyes and press the button that counts the patients, such as <Primary><Handshake />Take 2 patients</Primary>.</>,
                 'Switch back to Jordan: My patients is empty, and the owner line of each patient says "Assigned to Robin Asante, RN".',
               ]}
             />

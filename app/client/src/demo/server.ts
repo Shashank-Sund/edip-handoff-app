@@ -80,6 +80,12 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   const views = new Views(ds, store, fixtures.templates, null, STALE_OWNER_HOURS * HOUR, SHIFT_CHANGES, SHIFT_WARNING_MINUTES * 60000);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
+  /** main._seed: the demo's starting owners, at start and after Reset. */
+  const seed = () => {
+    const who = (id: string) => { const p = personas.find((x) => x.id === id); return { id: p.id, name: p.name }; };
+    for (const row of views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'))) store.assign(row);
+  };
+  seed();
 
   function person(id: string | null | undefined): any {
     const pid = id || 'ed-rn';
@@ -206,6 +212,7 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
     if (key === 'demo/reset') {
       if (!post) throw new HttpError(405, 'Method Not Allowed');
       store.reset();
+      seed();
       return { status: 'reset' };
     }
     if (p[0] === 'handoffs' && p.length === 2 && p[1]) {

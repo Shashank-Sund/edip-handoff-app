@@ -761,6 +761,36 @@ export class Views {
     };
   }
 
+  /**
+   * The demo's starting owners (logic.py seed_owners): `nurse` owns up to three patients on the board half an hour
+   * before the next shift change who board through it, `physician` the first two, each taken five minutes after its
+   * first draft but no earlier than three hours before `at`.
+   */
+  seedOwners(at: number, nurse: any, physician: any): any[] {
+    const ds = this.ds;
+    const next = nextShift(at, this.shifts);
+    const warn = next - 30 * MINUTE;
+    const encs = [...ds.enc.values()].sort((a, b) => (a.admit_decision_ts ?? next) - (b.admit_decision_ts ?? next) || cmpStr(a.csn, b.csn));
+    const taken: [string, number][] = [];
+    for (const e of encs) {
+      const rows = e.admit_decision_ts !== null ? ds.rowsAt(e.csn, warn) : [];
+      if (!rows.length || (e.ed_departure_ts !== null && e.ed_departure_ts <= next) || ds.canceledAt(e, next)) continue;
+      const t = Math.max(rows[0].at + 5 * MINUTE, at - 3 * HOUR);
+      if (t <= warn) taken.push([e.csn, t]);
+      if (taken.length === 3) break;
+    }
+    const out: any[] = [];
+    taken.forEach(([csn, t], i) => {
+      for (const [role, who] of [['ed_nurse', nurse], ['ed_physician', physician]] as [string, any][]) {
+        if (role === 'ed_nurse' || i < 2) {
+          out.push({ csn, role, kind: 'claim', assignee_id: who.id, assignee_name: who.name, from_id: null, from_name: null, at: t,
+            by_name: who.name, by_role: role, user_email: null, by_id: who.id, detail: { seed: true } });
+        }
+      }
+    });
+    return out;
+  }
+
   /** Take (claim), Assign to a colleague or Release, for the caller's ED role. */
   own(kind: string, csn: string, at: number, person: any, to: string | null, colleagues: any[]): any {
     if (!ROLES.includes(person.role)) throw new ActionError(NOT_ED);

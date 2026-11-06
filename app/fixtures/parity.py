@@ -603,6 +603,12 @@ def assignment_scenarios(rec, ds, default, boarding, units):
 
     iso = lambda t: t.isoformat()  # noqa: E731
     rec("owner reset", "POST", "/api/demo/reset")
+    # The demo's starting owners, written at start up and again by Reset.
+    warn = next_shift(default, [(7, 0), (19, 0)]) - timedelta(minutes=29)
+    for p in ("ed-rn", "ed-md-2", "ed-rn-2"):
+        rec(f"seed board {p}", "GET", "/api/board", persona=p)
+        rec(f"seed board {p} before the shift change", "GET", "/api/board", at=iso(warn), persona=p)
+    rec("seed takeover from Jordan", "GET", "/api/takeover", at=iso(warn), persona="ed-rn-2", params={"colleague": "ed-rn"})
     for p in ("ed-rn", "ed-rn-2", "ed-md", "ed-md-2", "hosp-md", "viewer", units[0]["id"]):
         rec(f"colleagues {p}", "GET", "/api/colleagues", persona=p)
     rec("colleagues unknown persona (400)", "GET", "/api/colleagues", persona="nobody")
