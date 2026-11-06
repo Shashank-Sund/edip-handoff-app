@@ -7,7 +7,7 @@ import Board from './Board';
 
 vi.mock('@/lib/api', () => ({
   setPersona: vi.fn(),
-  api: { board: vi.fn(), reset: vi.fn() },
+  api: { board: vi.fn(), own: vi.fn(), reset: vi.fn() },
 }));
 const { api } = await import('@/lib/api');
 
@@ -32,7 +32,8 @@ const rows = [
   }),
 ];
 
-async function renderBoard(data = board(rows)) {
+/** The board as the ED nurse sees it; everyone: on the Everyone tab (it opens on My patients). */
+async function renderBoard(data = board(rows), { everyone = true } = {}) {
   vi.mocked(api.board).mockResolvedValue(data);
   render(
     <AppProvider config={config}>
@@ -41,7 +42,9 @@ async function renderBoard(data = board(rows)) {
       </TooltipProvider>
     </AppProvider>,
   );
-  return screen.findByRole('table');
+  await screen.findByRole('table');
+  if (everyone) await userEvent.click(within(screen.getByRole('tablist', { name: 'Whose patients' })).getByRole('tab', { name: /Everyone/ }));
+  return screen.getByRole('table');
 }
 
 const names = (table: HTMLElement) =>

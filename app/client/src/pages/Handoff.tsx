@@ -14,9 +14,10 @@ import { EvidenceProvider } from '@/components/handoff/Evidence';
 import { HelpButton } from '@/components/guide/HelpButton';
 import { ElementView } from '@/components/handoff/ElementView';
 import { AckPanel, ChangesCard, HistoryCard, LabsCard, SignPanel, VitalsCard } from '@/components/handoff/Panels';
+import { OwnerLine } from '@/components/handoff/OwnerLine';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, type OwnerBody } from '@/lib/api';
 import { LEVEL_LABEL, bed, dateTime, duration, triggerLabel } from '@/lib/format';
 import { linkProps } from '@/lib/router';
 import { READ_ONLY, canChange, signOffStatus } from '@/lib/checks';
@@ -193,6 +194,21 @@ export default function Handoff({ csn }: { csn: string }) {
     }
   };
 
+  // Take, Assign to a colleague, Release: who owns the patient for the caller's ED role.
+  const runOwner = async (body: OwnerBody, ok: string) => {
+    if (past) return; // read only; the server refuses it too
+    setBusy(true);
+    try {
+      setData(await api.own(csn, body, apiAt));
+      setNotice({ tone: 'ok', text: ok });
+      bump();
+    } catch (e) {
+      setNotice({ tone: 'error', text: e instanceof ApiError ? e.message : 'Something went wrong.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const back = (
     <a {...linkProps('/')} className="inline-flex items-center gap-1 hover:text-foreground">
       <ArrowLeft className="size-3" aria-hidden />
@@ -230,6 +246,7 @@ export default function Handoff({ csn }: { csn: string }) {
       <EvidenceProvider evidence={tpl.draft.evidence ?? {}}>
         <div className="space-y-5">
           <Banner s={s} sender={persona.can_sign.length > 0} />
+          <OwnerLine s={s} persona={persona} at={at} locked={past !== null} busy={busy} onOwn={runOwner} />
           {locked && (persona.can_sign.length > 0 || persona.can_ack.length > 0) && (
             <p id="read-only-why" className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-2.5 text-sm">
               <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
