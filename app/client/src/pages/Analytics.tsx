@@ -28,19 +28,30 @@ function OwnerPanels({ data }: { data: AnalyticsData }) {
   const o = data.owners;
   if (!o) return null;
   const maxHand = Math.max(1, ...o.handovers.map((h) => h.n));
+  // From the hour of the first recorded owner: before it every patient is unassigned, which says nothing.
+  const from = o.since ? Math.floor(new Date(o.since).getTime() / 3600000) * 3600000 : null;
+  const owned = from === null ? [] : data.series.filter((p) => new Date(p.t).getTime() >= from);
   const handed = o.handovers.reduce((n, h) => n + h.n, 0);
   return (
     <>
-      <Panel help="analytics.unassigned" title="Unassigned boarding patients" description="Patients boarding with no nurse owner, and with no physician owner, hourly. A stale owner counts as no owner.">
-        <TimeChart
-          ariaLabel="Unassigned boarding patients by hour"
-          height={240}
-          lines={[
-            { key: 'boarding', label: 'Boarding', color: 'var(--series-2)', data: data.series.map((p) => ({ t: p.t, v: p.boarding })), points: false, dashed: true, format: (v) => String(Math.round(v)) },
-            { key: 'rn', label: 'No nurse owner', color: 'var(--series-3)', data: data.series.map((p) => ({ t: p.t, v: p.unassigned_rn ?? null })), points: false, format: (v) => String(Math.round(v)) },
-            { key: 'md', label: 'No physician owner', color: 'var(--series-4)', data: data.series.map((p) => ({ t: p.t, v: p.unassigned_md ?? null })), points: false, format: (v) => String(Math.round(v)) },
-          ]}
-        />
+      <Panel help="analytics.unassigned" title="Unassigned boarding patients" description="Patients boarding with no nurse owner, and with no physician owner, hourly, against everyone boarding. A stale owner counts as no owner.">
+        {o.since && owned.length ? (
+          <>
+            <TimeChart
+              ariaLabel="Unassigned boarding patients by hour"
+              height={240}
+              lines={[
+                // Drawn first and shaded, so the owner lines stay readable on top of it where they are equal.
+                { key: 'boarding', label: 'Boarding', color: 'var(--muted-foreground)', area: true, data: owned.map((p) => ({ t: p.t, v: p.boarding })), points: false, format: (v) => String(Math.round(v)) },
+                { key: 'rn', label: 'No nurse owner', color: 'var(--series-3)', data: owned.map((p) => ({ t: p.t, v: p.unassigned_rn ?? null })), points: false, format: (v) => String(Math.round(v)) },
+                { key: 'md', label: 'No physician owner', color: 'var(--series-4)', dashed: true, data: owned.map((p) => ({ t: p.t, v: p.unassigned_md ?? null })), points: false, format: (v) => String(Math.round(v)) },
+              ]}
+            />
+            <p className="mt-3 text-xs text-muted-foreground">Owners recorded since {dateTime(o.since)}.</p>
+          </>
+        ) : (
+          <p className="py-10 text-center text-sm text-muted-foreground">No owners recorded yet.</p>
+        )}
       </Panel>
       <div className="grid gap-5 lg:grid-cols-3">
         <Panel help="analytics.outside" title="Actions outside an assignment" description="Edits, attestations and signatures on a patient a colleague in the same role owned.">

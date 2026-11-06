@@ -820,7 +820,12 @@ export const GUIDE: GuideSection[] = [
       {
         id: 'unassigned',
         title: 'Unassigned boarding patients',
-        body: <p>For each hour, how many boarding patients had no nurse owner, and how many had no physician owner, against the dashed line of everyone boarding. A patient whose owner had not acted on them for 14 hours counts as having no owner. A line that stays close to the dashed one means patients wait without anyone taking them.</p>,
+        body: (
+          <>
+            <p>For each hour, how many boarding patients had no nurse owner (the solid line), and how many had no physician owner (the dashed line), in front of a shaded area for everyone boarding. A patient whose owner had not acted on them for 14 hours counts as having no owner. A line that stays at the top of the shaded area means patients wait without anyone taking them.</p>
+            <p className="text-muted-foreground">The chart starts at the hour the first owner was recorded, named under it, for example "Owners recorded since Wed Oct 28, 13:00": before that no one used Take, so every patient would count. Until then the panel says "No owners recorded yet."</p>
+          </>
+        ),
       },
       {
         id: 'outside',

@@ -348,6 +348,8 @@ export interface Analytics {
   /** Owners: ED actions outside an assignment (of all ED edits, attestations and signatures), handovers by distance
    *  from the nearest shift change, and minutes from admit decision to the first signature by who owned the patient. */
   owners?: {
+    /** When the first owner was recorded, or null: before it every patient is unassigned, which says nothing. */
+    since: string | null;
     outside: { role: EdRole; n: number; of: number }[];
     handovers: { bucket: string; n: number }[];
     to_sign: { role: EdRole; owner: string | null; n: number; median_min: number }[];

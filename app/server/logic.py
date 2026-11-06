@@ -610,9 +610,11 @@ class Views:
         }
 
     def _owner_analytics(self, at: datetime, acts: list[dict]) -> dict:
-        """Owners in Analytics: ED actions taken outside an assignment, handovers by their distance from the nearest
-        shift change, and minutes from the admit decision to the first signature of each role's template, by who
-        owned the patient for that role when it was signed (owner null: no one)."""
+        """Owners in Analytics: when the first owner was recorded (since; null when none yet: before it, every patient
+        is unassigned, which says nothing), ED actions taken outside an assignment, handovers by their distance from
+        the nearest shift change, and minutes from the admit decision to the first signature of each role's template,
+        by who owned the patient for that role when it was signed (owner null: no one)."""
+        recorded = [r["at"] for csn in self.ds.enc for r in self.store.assignments(csn, at)]
         ed = [a for a in acts if a["role"] in ROLES and a["kind"] in ("edit", "attest", "sign")]
         outside = [{"role": role, "n": sum(1 for a in ed if a["role"] == role and a.get("off_assignment")),
                     "of": sum(1 for a in ed if a["role"] == role)} for role in ROLES]
@@ -637,8 +639,8 @@ class Views:
         to_sign = [{"role": role, "owner": name, "n": len(v), "median_min": round(statistics.median(v))}
                    for (role, name), v in sorted(waits.items(), key=lambda kv: (ROLES.index(kv[0][0]), kv[0][1] is None,
                                                                                  kv[0][1] or ""))]
-        return {"outside": outside, "handovers": [{"bucket": b, "n": handovers.get(b, 0)} for b in HANDOVER_BUCKETS],
-                "to_sign": to_sign}
+        return {"since": iso(min(recorded)) if recorded else None, "outside": outside,
+                "handovers": [{"bucket": b, "n": handovers.get(b, 0)} for b in HANDOVER_BUCKETS], "to_sign": to_sign}
 
     # -------------------------------------------------------------------------------------------- actions
     def act(self, kind: str, csn: str, template: str, at: datetime, person: dict, body: dict) -> dict:

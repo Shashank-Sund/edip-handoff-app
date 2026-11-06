@@ -470,7 +470,7 @@ export function LabsCard({ draft }: { draft: Draft }) {
                 {pts.length > 1 && (
                   <div className="h-7 w-16" aria-hidden>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={pts}>
+                      <LineChart data={pts} accessibilityLayer={false}>
                         <YAxis hide domain={['dataMin', 'dataMax']} />
                         <RLine type="monotone" dataKey="value" stroke={color} strokeWidth={1.75} dot={false} isAnimationActive={false} />
                       </LineChart>

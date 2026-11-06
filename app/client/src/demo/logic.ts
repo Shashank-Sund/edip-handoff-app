@@ -661,6 +661,8 @@ export class Views {
 
   /** logic.py _owner_analytics: outside an assignment, handovers around the shift change, admit decision to signature. */
   private ownerAnalytics(at: number, acts: Action[]): any {
+    let since: number | null = null;
+    for (const csn of this.ds.enc.keys()) for (const r of this.store.assignments(csn, at)) if (since === null || r.at < since) since = r.at;
     const ed = acts.filter((a) => ROLES.includes(a.role) && ['edit', 'attest', 'sign'].includes(a.kind));
     const outside = ROLES.map((role) => ({
       role, n: ed.filter((a) => a.role === role && truthy(get(a, 'off_assignment'))).length, of: ed.filter((a) => a.role === role).length,
@@ -697,7 +699,7 @@ export class Views {
     const toSign = [...waits.values()]
       .sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || Number(a.owner === null) - Number(b.owner === null) || cmpStr(a.owner ?? '', b.owner ?? ''))
       .map((w) => ({ role: w.role, owner: w.owner, n: w.v.length, median_min: pyRound(median(w.v)) }));
-    return { outside, handovers: HANDOVER_BUCKETS.map((b) => ({ bucket: b, n: handovers.get(b) ?? 0 })), to_sign: toSign };
+    return { since: iso(since), outside, handovers: HANDOVER_BUCKETS.map((b) => ({ bucket: b, n: handovers.get(b) ?? 0 })), to_sign: toSign };
   }
 
   // ---------------------------------------------------------------------------------------------- actions

@@ -371,6 +371,11 @@ def test_analytics_counts_unassigned_patients_outside_actions_handovers_and_time
     c.post("/api/demo/reset")
     default = main._current()[1]
     before = c.get("/api/analytics").json()
+    from data import iso
+    seeded = [r["at"] for csn in main.VIEWS.ds.enc for r in main.STORE.assignments(csn, default)]
+    assert before["owners"]["since"] == (iso(min(seeded)) if seeded else None)          # the first owner recorded
+    start = c.get("/api/analytics", params={"at": main.VIEWS.ds.start.isoformat()}).json()
+    assert start["owners"]["since"] is None                                             # none yet at the week's start
     point = before["series"][-1]
     assert point["unassigned_rn"] <= point["boarding"] and point["unassigned_md"] <= point["boarding"]
     rows = boarding(c)

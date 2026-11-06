@@ -227,12 +227,39 @@ describe('Take over', () => {
 });
 
 describe('Analytics owners', () => {
+  const series = ['2026-03-10T12:00:00Z', '2026-03-10T13:00:00Z', '2026-03-10T14:00:00Z', '2026-03-10T15:00:00Z']
+    .map((t, i) => ({ t, ed: 20, boarding: 5, unassigned_rn: i < 2 ? 5 : 3, unassigned_md: i < 2 ? 5 : 4 }));
+  const analytics = (since: string | null) => ({
+    at: config.default_at, series, units: [], admitted: 0,
+    drafts_per_patient: { median: null, max: null }, completeness_at_transfer: { median: null, histogram: [] }, blocking_at_transfer: [],
+    severity_at_transfer: {}, signed_before_transfer: 0, transferred_without_sign_off: 0, drafts: 0, model_calls: 0, addenda: 0,
+    owners: { since, outside: [], handovers: [], to_sign: [] },
+  });
+
+  it('draws unassigned patients from the hour of the first owner, with everyone boarding shaded behind', async () => {
+    const { calls } = await import('@/test/lightweight-charts-mock');
+    vi.mocked(api.analytics).mockResolvedValue(analytics('2026-03-10T13:05:00Z'));
+    wrap(<Analytics />);
+    expect(await screen.findByText(/^Owners recorded since \w{3} Mar 10, 09:05\.$/)).toBeInTheDocument();
+    const drawn = calls.series.slice(-3);
+    expect(drawn.map((s) => s.type)).toEqual(['Area', 'Line', 'Line']);            // Boarding first, behind the lines
+    for (const s of drawn) expect(s.data).toHaveLength(3);                           // from 13:00, the hour of 13:05
+  });
+
+  it('says so when no owner was recorded yet', async () => {
+    vi.mocked(api.analytics).mockResolvedValue(analytics(null));
+    wrap(<Analytics />);
+    expect(await screen.findByText('No owners recorded yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/^Owners recorded since/)).toBeNull();
+  });
+
   it('shows outside actions, handovers around the shift change and time to sign by owner, each with its ?', async () => {
     vi.mocked(api.analytics).mockResolvedValue({
       at: config.default_at, series: [{ t: config.default_at, ed: 20, boarding: 5, unassigned_rn: 3, unassigned_md: 4 }], units: [], admitted: 0,
       drafts_per_patient: { median: null, max: null }, completeness_at_transfer: { median: null, histogram: [] }, blocking_at_transfer: [],
       severity_at_transfer: {}, signed_before_transfer: 0, transferred_without_sign_off: 0, drafts: 0, model_calls: 0, addenda: 0,
       owners: {
+        since: config.default_at,
         outside: [{ role: 'ed_nurse', n: 2, of: 8 }, { role: 'ed_physician', n: 0, of: 0 }],
         handovers: [{ bucket: 'More than 30 min before', n: 0 }, { bucket: 'Up to 30 min before', n: 3 }, { bucket: 'Up to 30 min after', n: 1 }, { bucket: 'More than 30 min after', n: 0 }],
         to_sign: [{ role: 'ed_nurse', owner: 'Jordan Reyes, RN', n: 2, median_min: 125 }, { role: 'ed_nurse', owner: null, n: 1, median_min: 300 }],
