@@ -458,7 +458,7 @@ export const GUIDE: GuideSection[] = [
           <Checks
             items={[
               'Someone released the patient, or you did. The owner line on the handoff page shows who owns it now.',
-              <>No one acted on the patient for 14 hours. An owner who has not edited, attested, signed, taken or been given the patient for that long no longer counts; the owner line names them. Press <Key><UserPlus />Take</Key> to make it yours again.</>,
+              <>No one acted on the patient for 14 hours (or the limit your hospital set). An owner who has not edited, attested, signed, taken or been given the patient for that long no longer counts; the owner line names them. Press <Key><UserPlus />Take</Key> to make it yours again.</>,
               <>The clock is earlier than when you took it. Owners follow the time on the clock, like everything else. See <GuideLink to="clock-owners">owners and the clock</GuideLink>.</>,
             ]}
           />
@@ -584,6 +584,7 @@ export const GUIDE: GuideSection[] = [
           <Terms
             items={[
               ['Name and severity', 'Check you have the right patient, and how sick they are.'],
+              ['Owners', <>Under the box, the nurse and physician who own the patient. See <GuideLink to="handoff-owner">the owner line</GuideLink>.</>],
               ['Safety flags', <>Code status, allergies and isolation from the chart, for example <Key>Full Code</Key> <Pill tone="danger">Shellfish</Pill>. Red changes how you care for the patient. "No allergies documented" means the chart has none on file, which is not the same as no known allergies.</>],
               ['Now in, Going to', 'The ED bed now, and the unit, bed and level of care they are going to.'],
               ['Boarding', 'How long since the admit decision.'],
@@ -923,7 +924,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Your actions and the clock',
         body: (
           <p>
-            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions.
+            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners come back too.
           </p>
         ),
       },
@@ -945,7 +946,7 @@ export const GUIDE: GuideSection[] = [
               In the hospital the clock reads <Key>Live</Key>. To see the board or a handoff as it was earlier, for example what the night shift saw at 03:00, press <Key><History />View an earlier time</Key> next to it, then pick a day and an hour. You can look back up to 3 days, or the limit your hospital set.
             </p>
             <p>
-              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary> and <Primary><CheckCheck />Accept handoff</Primary> are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
+              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary>, <Primary><CheckCheck />Accept handoff</Primary>, Take, Assign, Release and Take over are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
             </p>
             <p>The app records that you looked at an earlier time: who, which page or patient, and which time.</p>
             <Note>
@@ -961,7 +962,7 @@ export const GUIDE: GuideSection[] = [
         body: __STATIC_DEMO__ ? (
           <>
             <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
-            <Note>In this public web demo everything runs in your browser. What you sign or accept is kept only in this tab and is cleared when you reload the page.</Note>
+            <Note>In this public web demo everything runs in your browser. What you sign, accept or take is kept only in this tab and is cleared when you reload the page; the demo's starting owners come back.</Note>
           </>
         ) : (
           <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
@@ -1066,7 +1067,7 @@ export const GUIDE: GuideSection[] = [
       { id: 'shift-change', title: 'Shift change', body: 'When one ED shift hands over to the next: 07:00 and 19:00, or the times your hospital set. The board warns in the half hour before.' },
       { id: 'source', title: 'Source', body: 'The chart record a statement came from: a note, a lab, a medication, a set of vital signs.' },
       { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after a limit that depends on the severity and the template: SBAR 60, 30 or 15 minutes for a stable, watcher or unstable patient; I-PASS 120, 60 or 30. A bedside recheck counts for the same limit.' },
-      { id: 'stale-owner', title: 'Stale owner', body: 'An owner who has not acted on the patient, taken it or been given it for 14 hours. They no longer count, so the patient shows as Unassigned.' },
+      { id: 'stale-owner', title: 'Stale owner', body: 'An owner who has not acted on the patient, taken it or been given it for 14 hours, or the limit your hospital set. They no longer count, so the patient shows as Unassigned.' },
       { id: 'take-over', title: 'Take over', body: 'At a shift change, taking the patients of the colleague you relieve in one go, on the Take over page.' },
       { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it; the board counts these under To sign as "left without sign off".' },
       { id: 'unassigned', title: 'Unassigned', body: 'No one owns the patient for your role: never taken, released, or its owner went stale.' },

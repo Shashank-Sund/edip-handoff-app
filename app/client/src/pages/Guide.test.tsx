@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AppProvider } from '@/hooks/useApp';
-import { GUIDE, anchorFor } from '@/components/guide/content';
+import { GUIDE, anchorFor, findTopic } from '@/components/guide/content';
+import { NAV } from '@/components/layout/nav';
 import { config } from '@/test/fixtures';
 import Guide from './Guide';
 
@@ -55,6 +56,7 @@ describe('Guide page', () => {
     expect(ids('questions')).toEqual(expect.arrayContaining(['assigned', 'shift', 'unassigned']));
     expect(ids('board')).toEqual(expect.arrayContaining(['tabs', 'owners', 'shift']));
     expect(ids('handoff')).toContain('owner');
+    expect(ids('analytics')).toEqual(expect.arrayContaining(['unassigned', 'outside', 'handovers', 'to-sign']));
     expect(ids('takeover')).toEqual(['what', 'pick', 'list', 'confirm']);
     expect(ids('clock')).toEqual(expect.arrayContaining(['owners', 'shift-demo']));
     expect(ids('glossary')).toEqual(expect.arrayContaining(['owner', 'unassigned', 'take-over', 'outside', 'stale-owner', 'shift-change']));
@@ -68,6 +70,20 @@ describe('Guide page', () => {
     const h3 = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(h3.indexOf('The handoff page')).toBeLessThan(h3.indexOf('Take over'));
     expect(h3.indexOf('Take over')).toBeLessThan(h3.indexOf('Analytics'));
+  });
+
+  it('has a section for every page in the sidebar, and lists each page under Pages', () => {
+    const pages = findTopic('sidebar.pages')!.topics[0];
+    const { container } = render(<>{pages.body}</>);
+    for (const n of NAV) {
+      // The guide itself is the How to use page; every other page has its own Page by page section.
+      if (n.to === '/guide') continue;
+      const id = n.to === '/' ? 'board' : n.to.slice(1);
+      const section = GUIDE.find((s) => s.id === id);
+      expect(section, `${n.label}: a guide section with id ${id}`).toBeDefined();
+      expect(section!.kind, n.label).toBe('reference');
+      expect(container.textContent, `${n.label} under Pages`).toContain(n.label);
+    }
   });
 
   it('keeps the license attribution', () => {
