@@ -1,7 +1,8 @@
 /**
  * Time series on TradingView Lightweight Charts (Apache 2.0; attribution in the footer of How it works).
  * Thin lines, hairline grid, muted axis text, a crosshair, and a legend that shows the values under the
- * crosshair (or the latest values). Times are real UTC; labels are formatted in facility time.
+ * crosshair (or the latest values). The library puts day ticks at UTC midnight, so each chart time is the real
+ * time moved by the facility's UTC offset (see chartShift); labels move it back and format in facility time.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -54,7 +55,27 @@ const DN = fmt({ day: 'numeric' });
 const DAY = { format: (d: Date) => `${WD.format(d)} ${DN.format(d)}` };
 const FULL = fmt({ weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
-const sec = (iso: string) => Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
+const sec = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
+
+/** The UTC offset of `zone` at `t` (seconds since the epoch), in seconds: -14400 for New York in summer. */
+export function zoneOffset(t: number, zone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(new Date(t * 1000));
+  const g = (k: string) => Number(parts.find((p) => p.type === k)?.value);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) / 1000 - t;
+}
+
+/**
+ * The seconds added to every real time so that facility midnight lands on a UTC midnight, where the library draws
+ * its day ticks. One shift for the whole chart keeps times in order and distinct across a daylight saving change.
+ * It is the smaller offset of the two ends, so on the other side of a change a day tick falls an hour after
+ * midnight (still the right day) rather than an hour before it (the day before).
+ */
+export function chartShift(times: number[], zone: string): number {
+  if (!times.length) return 0;
+  return Math.min(zoneOffset(Math.min(...times), zone), zoneOffset(Math.max(...times), zone));
+}
 
 export function TimeChart({ lines, height = 260, stretch, ariaLabel, className, markerTime }: {
   lines: Line[];
@@ -72,16 +93,24 @@ export function TimeChart({ lines, height = 260, stretch, ariaLabel, className, 
   const [hover, setHover] = useState<{ t: number; values: Record<string, number> } | null>(null);
   const isDark = useIsDark();
   const reduced = useReducedMotion();
-  const clean = useMemo(
-    () =>
-      lines.map((l) => {
-        const seen = new Map<number, number>();
-        for (const p of l.data) if (p.v != null && Number.isFinite(p.v)) seen.set(sec(p.t), p.v);
-        return { ...l, points: l.points, rows: [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time: time as UTCTimestamp, value })) };
-      }),
-    [lines],
-  );
-  const signature = clean.map((l) => `${l.key}:${l.rows.length}:${l.rows.at(-1)?.time ?? ''}`).join('|');
+  const zone = timeZone();
+  const { clean, shift } = useMemo(() => {
+    const kept = lines.map((l) => {
+      const seen = new Map<number, number>();
+      for (const p of l.data) if (p.v != null && Number.isFinite(p.v)) seen.set(sec(p.t), p.v);
+      return { l, seen };
+    });
+    const shift = chartShift(kept.flatMap(({ seen }) => [...seen.keys()]), zone);
+    const clean = kept.map(({ l, seen }) => ({
+      ...l,
+      points: l.points,
+      rows: [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time: (time + shift) as UTCTimestamp, value })),
+    }));
+    return { clean, shift };
+  }, [lines, zone]);
+  /** A chart time back to the real moment it stands for. */
+  const real = (t: number) => new Date((t - shift) * 1000);
+  const signature = `${zone}|` + clean.map((l) => `${l.key}:${l.rows.length}:${l.rows.at(-1)?.time ?? ''}`).join('|');
 
   useEffect(() => {
     const node = el.current;
@@ -99,11 +128,11 @@ export function TimeChart({ lines, height = 260, stretch, ariaLabel, className, 
         fixRightEdge: true,
         rightOffset: 2,
         tickMarkFormatter: (t: number, type: TickMarkType) => {
-          const d = new Date(t * 1000);
+          const d = real(t);
           return type <= TickMarkType.DayOfMonth ? DAY.format(d) : HM.format(d);
         },
       },
-      localization: { timeFormatter: (t: number) => FULL.format(new Date(t * 1000)).replace(',', '') },
+      localization: { timeFormatter: (t: number) => FULL.format(real(t)).replace(',', '') },
       handleScroll: { vertTouchDrag: false },
       kineticScroll: { mouse: !reduced, touch: !reduced },
     });
@@ -215,7 +244,7 @@ export function TimeChart({ lines, height = 260, stretch, ariaLabel, className, 
             </button>
           );
         })}
-        <span className="ml-auto text-muted-foreground tabular-nums">{hover ? FULL.format(new Date(hover.t * 1000)).replace(',', '') : markerTime ? 'Latest' : ''}</span>
+        <span className="ml-auto text-muted-foreground tabular-nums">{hover ? FULL.format(real(hover.t)).replace(',', '') : markerTime ? 'Latest' : ''}</span>
       </figcaption>
       <div className="relative" style={{ height }}>
         <div ref={el} className="absolute inset-0" aria-hidden />

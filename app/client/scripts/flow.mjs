@@ -102,6 +102,10 @@ if (demoPersonas) {
 
 // ---------------------------------------------------------------------------------------------- handoff
 // The first patient whose nurse handoff is still a draft: on a deployed app, actions from earlier runs persist.
+// The ED nurse's board opens on My patients; on a deployed app the drafts left may belong to a colleague, so look
+// at Everyone.
+const everyone = page.getByRole('tab', { name: /Everyone/ });
+if (await everyone.count()) await everyone.click();
 const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
 // Every earlier run signs one patient: when none is left unsigned at this hour, move the replay clock on.
 for (let i = 0; i < 12 && !STATIC_DEMO && !(await first.count()) && (await page.getByRole('button', { name: 'Forward 1 hour' }).count()); i++) {
