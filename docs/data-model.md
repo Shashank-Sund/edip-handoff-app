@@ -191,18 +191,39 @@ The app's action log. The app creates it on first start (`DDL` in `app/server/la
 | `by_name` | text | Display name of the persona or user who acted |
 | `role` | text | `ed_nurse`, `ed_physician`, `admitting_physician`, `unit_nurse` (see `app/server/personas.py`) |
 | `user_email` | text, nullable | The signed in Databricks user, from the forwarded headers |
-| `detail` | jsonb | What the action carried. Keys by kind: `edit`: `element`, `text` or `items`, `model_before`, `restore`; `attest`: `rule`, `option`, and `entry` and `entry_note` for options that ask for a typed value (for example the allergen and its reaction); `sign`: `callback`; `ack`: `readback`, `questions`. The allowed keys are `DETAIL` in `app/server/lakebase.py` |
+| `detail` | jsonb | What the action carried. Keys by kind: `edit`: `element`, `text` or `items`, `model_before`, `restore`; `attest`: `rule`, `option`, and `entry` and `entry_note` for options that ask for a typed value (for example the allergen and its reaction); `sign`: `callback`; `ack`: `readback`, `questions`. On every action: `by_id`, who acted (the persona id with demo personas, else the lowercased email); `off_assignment` (`true`) and `assigned_to` (the owner's name) when an ED nurse or physician acted on a patient a colleague in the same role owned (`app.assignment`). The allowed keys are `DETAIL` in `app/server/lakebase.py` |
 
 Index: `ix_action_csn (csn, at)`.
 
+### App schema `app`: `app.assignment`
+
+Who owns each patient in the ED: one nurse owner and one physician owner per patient (`app/server/assignment.py`). The app creates it on start (`CREATE TABLE IF NOT EXISTS` in `DDL`, `app/server/lakebase.py`), so a deployment from before it gets it on its next start, and writes it in `LakebaseStore.assign()`. Append only, like `app.handoff_action`. The owner for a role at time T is the latest row for `(csn, role)` with `at <= T`; an owner who has not acted on the patient, taken it or been given it for `EDIP_STALE_OWNER_HOURS` (default 14) no longer counts, and the patient shows as Unassigned.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `assignment_id` | bigint, identity, primary key | Order of insertion; breaks ties between rows with the same `at` |
+| `csn` | text | Encounter |
+| `role` | text, check | `ed_nurse` or `ed_physician` |
+| `kind` | text, check | `claim` (Take: for yourself), `assign` (to a colleague in the same role), `release` (back to Unassigned), `handover` (Take over at a shift change) |
+| `assignee_id` | text, nullable | Who owns the patient after the row: the lowercased sign in email (the persona id with demo personas); null for `release` |
+| `assignee_name` | text, nullable | Their display name |
+| `from_id`, `from_name` | text, nullable | Who owned it before (a stale owner included), or null |
+| `at` | timestamptz | The time the change applies to, as in `app.handoff_action` |
+| `recorded_ts` | timestamptz, default `now()` | When the row was saved |
+| `by_name`, `by_role` | text | Who made the change, and their role |
+| `user_email` | text, nullable | The signed in Databricks user |
+| `detail` | jsonb | `by_id`, who made the change (for the stale rule) |
+
+Index: `ix_assignment_csn (csn, role, at)`.
+
 ### App schema `app`: `app.view_log`
 
-Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff or analytics at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
+Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff, analytics or Take over at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
 
 | Column | Type | Meaning |
 | --- | --- | --- |
 | `view_id` | bigint, identity, primary key | Order of insertion |
-| `page` | text, check | `board`, `handoff` or `analytics` |
+| `page` | text, check `view_log_page_check` | `board`, `handoff`, `analytics` or `takeover`. A table created before Take over is widened in place on the app's next start (a `DO` block in `DDL` that checks `pg_constraint` first, so it runs once) |
 | `csn` | text, nullable | The patient, for `handoff` |
 | `at` | timestamptz | The earlier time viewed |
 | `recorded_ts` | timestamptz, default `now()` | When it was viewed |
@@ -214,7 +235,7 @@ Index: `ix_view_recorded (recorded_ts)`.
 
 ### Who can read and write what
 
-| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.view_log` |
+| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.assignment`, `app.view_log` |
 | --- | --- | --- |
 | The identity that ran setup (a user or a service principal) | Owns the synced tables and schema `gold` | No grant from the repo |
 | The app's service principal | `USAGE` on schema `gold` and `SELECT` on all its tables, granted by `jobs/setup_lakebase.py` | Owns schema `app` and its tables: it creates them on first start, through the app's `postgres` resource with `CAN_CONNECT_AND_CREATE` (`databricks.yml`) |
@@ -366,7 +387,7 @@ In the order the setup runs:
    - `handoffs`: runs the `handoff_generator` job (`jobs/handoff_job.py`, [ai/README.md](../ai/README.md)) with `drafts=reference` by default.
    - `lakebase` (`jobs/setup_lakebase.py`): synced tables and the app's read grant. The job `edip_lakebase_setup` runs this task alone (the same script and parameters), for a catalog fed by real data where `edip_setup`, which loads the synthetic week, must not run.
 4. **Reference drafts** ([ai/reference/README.md](../ai/reference/README.md)): `ai/reference/drafts.jsonl.gz` holds the 1,320 drafts `databricks-gpt-oss-120b` wrote for the reference week. The job loads them only when every generation point and the templates fingerprint (`meta.json`) match; otherwise it calls the model for everything (`--var drafts=model` always does).
-5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
+5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`, `app.assignment` and `app.view_log`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
 
 ## 6. Where to look: questions and queries
 
@@ -389,6 +410,7 @@ Every query below was run against the reference deployment and returned rows. Qu
 | 13 | Every clinician action on a handoff | Lakebase `app.handoff_action` |
 | 14 | Who signed what and when | Lakebase `app.handoff_action`, `gold.handoff_draft_pg` |
 | 15 | Which patients transferred without sign off | Lakebase `gold.encounter_state_pg`, `gold.handoff_draft_pg`, `app.handoff_action` |
+| 16 | Who owns each boarding patient now | Lakebase `app.assignment` |
 
 **1. Every event for one encounter, in time order.** ADT events appear once per feed (`source`), because the same event arrives on HL7 and FHIR.
 
@@ -576,6 +598,14 @@ ORDER BY e.ed_departure_ts, e.csn, t.template
 LIMIT 20
 ```
 
+**16. Who owns each patient now, per role** (Postgres). The latest row per patient and role; a `release` means no one. The app also treats an owner idle for `EDIP_STALE_OWNER_HOURS` as no one, which this query does not. Checked on the local live run (`app/fixtures/live_local.py`); `app.assignment` is newer than the reference deployment.
+
+```sql
+SELECT DISTINCT ON (csn, role) csn, role, kind, assignee_name, from_name, at, by_name
+FROM app.assignment
+ORDER BY csn, role, at DESC, assignment_id DESC
+```
+
 Two more places worth knowing: `silver.quarantine` (every message the parsers could not apply, with a reason) and `gold.handoff_draft.draft` for any one row, which is the exact document the app shows.
 
 ## 7. Notes
@@ -610,4 +640,4 @@ Land real data in the same bronze tables with the same columns and everything do
 | silver.flag_events | 464 | Lakebase gold.handoff_draft_pg | 1,320 |
 | silver.encounter_state | 702 | Lakebase app.handoff_action | grows with use |
 | silver.adt_history | 2,315 | synthetic_truth.* | see section 2 |
-| silver.handoff_events | 2,531 | | |
+| silver.handoff_events | 2,531 | Lakebase app.assignment | grows with use |

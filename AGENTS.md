@@ -27,7 +27,9 @@ Without a terminal (workspace UI): open the repo as a Git folder, open `databric
 ## Change the app
 
 - Local first: `app/README.md` (mock mode, no Databricks needed). Tests: `pytest -q` at the repo root; client checks: `npm run typecheck && npm run lint` in `app/client`.
-- Server: `app/server` (FastAPI). Client: `app/client` (React, Vite, Tailwind). Guide text for clinicians: `app/client/src/components/guide/content.tsx`; keep it in step with any UI change.
+- Server: `app/server` (FastAPI). Client: `app/client` (React, Vite, Tailwind). Guide text for clinicians: `app/client/src/components/guide/content.tsx`.
+- **Hard rule: every user visible change ships with its How to use update in the same PR.** A new or changed page, button, label, message, measure or setting that a clinician can see gets plain language text in `content.tsx` (written for nurses and physicians, in the existing style and structure), and every new control gets a `?` (`HelpButton` or `Explain` with a topic id). Quote labels exactly as the app shows them. A new sidebar page needs its own Page by page section (`Guide.test.tsx` checks it). Do not merge a user visible change without it; the PR template has the checklist line.
+- The static demo (`app/client/src/demo`) ports the server's mock mode: change both, and run `app/fixtures/parity.py` then `EDIP_PARITY_REQUIRED=1 npx vitest run src/demo` in `app/client`.
 - Templates: `ai/templates/*.yaml`. Generation logic: `ai/edip_ai/`. Pipeline: `pipelines/`. Synthetic data: `synthetic/`.
 - After changing code, `databricks bundle deploy -t <target>`; for app changes also `databricks bundle run edip_app -t <target>`.
 

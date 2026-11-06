@@ -187,16 +187,21 @@ Run it once the pipeline has filled silver and the handoff job has run once (ste
 | `EDIP_STALE_BOARDING_HOURS` | Check the default, 24 | With the live clock, a patient with an admit decision and no ED departure for longer than this is left off the board and the boarding counts, so a departure your feeds missed does not keep them boarding forever. |
 | `EDIP_ACTIONS_TTL` | Check the default, 2 | Seconds the app reuses the clinician actions it read from Lakebase before reading them again, so every app process sees what the others saved. |
 | `EDIP_PAST_VIEW_HOURS` | Check the default, 72 | How far back the past view goes, in hours (step 4); at most 8760. `0` turns it off. |
+| `EDIP_SHIFT_CHANGES` | Your ED's shift change times, local, for example `07:00,19:00` (the default) | ED nurses and physicians see a shift change bar on the board before each one, and Analytics measures handovers against them. A value the app cannot read falls back to the default, with a warning in the app log. |
+| `EDIP_SHIFT_WARNING_MINUTES` | Check the default, 30 | How long before a shift change the bar shows. |
+| `EDIP_STALE_OWNER_HOURS` | Check the default, 14 | An owner who has not acted on a patient, taken it or been given it for longer than this no longer counts: the patient shows as Unassigned. Set it a little over one shift. |
 
 Persona ids for `EDIP_ROLE_MAP` (details in [app/README.md](../app/README.md#live-mode-deployed)):
 
 | Persona id | Role |
 | --- | --- |
-| `ed-rn` | ED nurse: edits, attests and signs SBAR and the custom template |
-| `ed-md` | ED physician: edits, attests and signs I-PASS and the custom template |
+| `ed-rn` | ED nurse: edits, attests and signs SBAR and the custom template; owns patients for the nurse role |
+| `ed-md` | ED physician: edits, attests and signs I-PASS and the custom template; owns patients for the physician role |
 | `hosp-md` | Admitting physician: accepts I-PASS and the custom template |
 | `unit-<facility>-<unit code>`, lowercased | Receiving nurse of one unit: sees only patients bound for it, accepts SBAR and the custom template. Use the facility and unit codes as they appear in your data; in the synthetic week, `unit-sgh-micu` or `unit-lks-3s` |
 | `viewer` | Read only. You do not need to list viewers: anyone not in the map gets this role |
+
+Map every ED nurse to `ed-rn` and every ED physician to `ed-md`, one line per email. Each person is their sign in email, so many people share one persona id. The role map is also the list behind **Assign to a colleague** and **Take over**: a colleague shows there once they are in the map, by email until they sign in once and by name afterwards (the app keeps the names in memory, so after a restart a colleague shows by email until they sign in again). `ed-rn-2` and `ed-md-2` are the second demo nurse and physician; a deployment for real use does not need them.
 
 A worked example, with the rest of the app's `config.env` unchanged (the `EDIP_ROLE_MAP` line stays as it is: it reads the variable):
 
@@ -243,7 +248,7 @@ Emails match without regard to case. The app checks the map when it starts and w
 - Confirm every feature with your Databricks account team and work through [Before using real patient data](feature-status.md#before-using-real-patient-data) in feature-status.md.
 - The app reads data as its own identity (the app's service principal), not as the signed in user, so Unity Catalog row filters and column masks do not apply per user; per unit access is enforced in app code. If your policy requires per user data access, user authorization is the option ([feature-status.md](feature-status.md#feature-table), row "Apps forwarded user headers and user authorization").
 - Grant access to the catalog (every bronze table holds PHI) and the Lakebase project only to the groups that need it; grant `CAN USE` on the app only to the clinical groups who use it. [data-model.md](data-model.md#who-can-read-and-write-what) lists what the app's identity can read and write in Lakebase.
-- Two Lakebase tables record who did what: `app.handoff_action` (every edit, attestation, sign off and read back, append only) and `app.view_log` (every look at an earlier time: who, the page and patient, the time viewed, and when; the app refuses the view if it cannot write the row). Include both in your audit and retention plan.
+- Three Lakebase tables record who did what: `app.handoff_action` (every edit, attestation, sign off and read back, append only), `app.assignment` (who owns each ED patient: every Take, Assign, Release and Take over, append only) and `app.view_log` (every look at an earlier time: who, the page and patient, the time viewed, and when; the app refuses the view if it cannot write the row). Include both in your audit and retention plan.
 
 **6. Check it worked.**
 
