@@ -15,8 +15,10 @@ export function GuideSheet({ topic, open, onOpenChange }: { topic: string; open:
     <Sheet open={open} onOpenChange={onOpenChange}>
       {open && (
         <SheetContent title={topics.length === 1 ? topics[0].title : section.title} description={topics.length === 1 ? section.title : section.summary}>
-          {/* Any link inside (to the guide, or within it) leaves the page, so the panel closes. */}
-          <div className="space-y-6 px-5 py-5 text-sm leading-relaxed" onClickCapture={(e) => (e.target as HTMLElement).closest('a') && onOpenChange(false)}>
+          {/* Any link inside (to the guide, or within it) leaves the page, so the panel closes. On the way up (onClick,
+              not the capture phase): closing first would unmount the link before its in app navigation runs, and the
+              browser would load the page again, which in the static demo clears every action. */}
+          <div className="space-y-6 px-5 py-5 text-sm leading-relaxed" onClick={(e) => (e.target as HTMLElement).closest('a') && onOpenChange(false)}>
             {topics.map((t) => (
               <section key={t.id} className="space-y-3">
                 {topics.length > 1 && <h3 className="font-semibold">{t.title}</h3>}
