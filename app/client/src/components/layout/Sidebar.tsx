@@ -2,6 +2,7 @@ import { Activity, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react
 import { WithTooltip } from '@/components/ui/tooltip';
 import { PersonaMenu } from './PersonaMenu';
 import { NAV } from './nav';
+import { useApp } from '@/hooks/useApp';
 import { linkProps, usePath } from '@/lib/router';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +32,7 @@ export function Logo({ collapsed }: { collapsed?: boolean }) {
 
 export function SidebarBody({ collapsed, onToggle, theme, onTheme, onNavigate }: Props) {
   const path = usePath();
+  const { persona } = useApp();
   const item = 'flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50';
   return (
     <div className="flex h-full flex-col">
@@ -38,7 +40,7 @@ export function SidebarBody({ collapsed, onToggle, theme, onTheme, onNavigate }:
         <Logo collapsed={collapsed} />
       </div>
       <nav aria-label="Main" className="flex-1 space-y-1 px-3 pt-2">
-        {NAV.map(({ to, label, Icon, match }) => {
+        {NAV.filter((n) => !n.roles || n.roles.includes(persona.role)).map(({ to, label, Icon, match }) => {
           const active = match(path);
           const link = (
             <a

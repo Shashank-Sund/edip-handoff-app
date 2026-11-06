@@ -470,7 +470,7 @@ export function LabsCard({ draft }: { draft: Draft }) {
                 {pts.length > 1 && (
                   <div className="h-7 w-16" aria-hidden>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={pts}>
+                      <LineChart data={pts} accessibilityLayer={false}>
                         <YAxis hide domain={['dataMin', 'dataMax']} />
                         <RLine type="monotone" dataKey="value" stroke={color} strokeWidth={1.75} dot={false} isAnimationActive={false} />
                       </LineChart>
@@ -509,7 +509,8 @@ export function HistoryCard({ tpl, activity, template }: { tpl: CaseTemplate; ac
     ...acts.map((a) => ({
       at: a.at,
       title: `${a.restore ? 'Model text restored' : ACTION[a.kind] ?? a.kind} by ${a.by}`,
-      detail: a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : `${itemName(tpl.draft, a.detail) ?? `version ${a.version}`}${a.removed ? `: removed ${a.removed}` : a.entered ? `: ${a.entered}${a.note ? `, ${a.note}` : ''}` : ''}`,
+      detail: (a.kind === 'sign' || a.kind === 'ack' ? `version ${a.version}` : `${itemName(tpl.draft, a.detail) ?? `version ${a.version}`}${a.removed ? `: removed ${a.removed}` : a.entered ? `: ${a.entered}${a.note ? `, ${a.note}` : ''}` : ''}`) +
+        (a.off_assignment ? ` · outside the assignment (assigned to ${a.assigned_to})` : ''),
       kind: a.kind,
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));

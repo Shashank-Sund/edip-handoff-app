@@ -157,8 +157,8 @@ export function ColorRow({ swatch, title, children }: { swatch: string; title: s
 }
 
 const ROLE_ROWS: { side: 'ED' | 'Unit'; role: string; does: ReactNode }[] = [
-  { side: 'ED', role: 'ED nurse', does: <>Checks and <b>signs</b> the nurse handoff (SBAR).</> },
-  { side: 'ED', role: 'ED physician', does: <>Checks and <b>signs</b> the physician handoff (I-PASS).</> },
+  { side: 'ED', role: 'ED nurse', does: <>Takes their patients, checks and <b>signs</b> the nurse handoff (SBAR).</> },
+  { side: 'ED', role: 'ED physician', does: <>Takes their patients, checks and <b>signs</b> the physician handoff (I-PASS).</> },
   { side: 'Unit', role: 'Receiving nurse', does: <>Reads the nurse handoff and <b>accepts</b> it with a read back.</> },
   { side: 'Unit', role: 'Admitting physician', does: <>Reads the physician handoff and <b>accepts</b> it with a read back.</> },
 ];

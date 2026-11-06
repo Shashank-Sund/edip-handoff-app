@@ -14,7 +14,7 @@ const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/
 
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' });
 const csn = await firstCsn(browser, base);
-const pages = ['/', csn && `/handoff/${csn}`, '/analytics', '/templates', '/guide'].filter(Boolean).map((path) => ({ path }));
+const pages = ['/', csn && `/handoff/${csn}`, '/takeover', '/analytics', '/templates', '/guide'].filter(Boolean).map((path) => ({ path }));
 // A few extra states: other roles, a phone width and open dialogs. The open persona menu is left out: Radix
 // hides the page behind a modal menu with aria-hidden, which axe reports although focus stays in the menu.
 const extra = [
@@ -23,11 +23,15 @@ const extra = [
   { path: '/', width: 390, label: 'phone' },
   { path: '/', label: 'clock popover', open: /Replay time/ },
   { path: '/', label: 'help panel', open: /How to read the board/ },
+  // Take over as the second ED nurse, relieving the first (whose demo patients are listed), and its ? panel.
+  { path: '/takeover', persona: 'ed-rn-2', label: 'colleague picked', pick: /Jordan Reyes/ },
+  { path: '/takeover', label: 'help panel', open: /About choosing a colleague/ },
+  { path: '/', label: 'Everyone tab', tab: /Everyone/ },
 ].filter(Boolean);
 
 const report = [];
 for (const dark of [false, true]) {
-  for (const { path, persona = 'ed-rn', width = 1440, label, open } of [...pages, ...extra]) {
+  for (const { path, persona = 'ed-rn', width = 1440, label, open, pick, tab } of [...pages, ...extra]) {
     // bypassCSP: a strict Content-Security-Policy (the static demo's) would block the injected axe script.
     const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', bypassCSP: true });
     await ctx.addInitScript(([p, d]) => {
@@ -37,6 +41,8 @@ for (const dark of [false, true]) {
     const page = await ctx.newPage();
     await page.goto(base + path, { waitUntil: 'networkidle' });
     if (open) await page.getByRole('button', { name: open }).first().click();
+    if (pick) await page.getByRole('radio', { name: pick }).first().click();
+    if (tab) await page.getByRole('tab', { name: tab }).first().click();
     // Let entrance transitions finish so contrast is measured on final colors.
     await page.waitForTimeout(900);
     await page.addScriptTag({ content: axeSource });

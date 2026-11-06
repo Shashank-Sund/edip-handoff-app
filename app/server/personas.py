@@ -4,7 +4,8 @@ Mock mode offers demo personas (invented people). Live mode maps the signed in D
 EDIP_ROLE_MAP (see config.py); without a mapping a user gets the read only viewer role.
 
 Roles:
-  ed_nurse, ed_physician     see every patient; edit, attest and sign the handoffs for their audience
+  ed_nurse, ed_physician     see every patient; edit, attest and sign the handoffs for their audience; own
+                             patients (one nurse and one physician owner per patient: assignment.py)
   unit_nurse                 sees patients bound for their unit; acknowledges nurse handoffs with a read back
   admitting_physician        sees every admitted patient; acknowledges physician handoffs with a read back
   viewer                     sees every patient, changes nothing (signed in users without a role)
@@ -22,7 +23,9 @@ ROLE_LABEL = {"ed_nurse": "ED nurse", "ed_physician": "ED physician", "unit_nurs
 def demo_personas(units: list[dict]) -> list[dict]:
     people = [
         {"id": "ed-rn", "name": "Jordan Reyes, RN", "role": "ed_nurse", "unit": None, "facility": None},
+        {"id": "ed-rn-2", "name": "Robin Asante, RN", "role": "ed_nurse", "unit": None, "facility": None},
         {"id": "ed-md", "name": "Alex Chen, MD", "role": "ed_physician", "unit": None, "facility": None},
+        {"id": "ed-md-2", "name": "Kai Moreno, MD", "role": "ed_physician", "unit": None, "facility": None},
         {"id": "hosp-md", "name": "Morgan Patel, MD", "role": "admitting_physician", "unit": None, "facility": None},
     ]
     names = ["Sam Okafor, RN", "Riley Novak, RN", "Casey Lindqvist, RN", "Taylor Brooks, RN", "Jamie Alvarez, RN",
@@ -46,7 +49,7 @@ def sees(person: dict, facility: str | None, dest_unit: str | None) -> bool:
 
 
 # ------------------------------------------------------------------------------------------------ role map
-FIXED_IDS = ("ed-rn", "ed-md", "hosp-md", "viewer")
+FIXED_IDS = ("ed-rn", "ed-rn-2", "ed-md", "ed-md-2", "hosp-md", "viewer")
 
 
 def unit_id(facility: str, code: str) -> str:

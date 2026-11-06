@@ -10,6 +10,7 @@ const Handoff = lazy(() => import('@/pages/Handoff'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Templates = lazy(() => import('@/pages/Templates'));
 const Guide = lazy(() => import('@/pages/Guide'));
+const Takeover = lazy(() => import('@/pages/Takeover'));
 
 function Routes() {
   const path = usePath();
@@ -17,6 +18,7 @@ function Routes() {
   if (h) return <Handoff key={h.csn} csn={h.csn} />;
   if (match(path, '/analytics')) return <Analytics />;
   if (match(path, '/templates')) return <Templates />;
+  if (match(path, '/takeover')) return <Takeover />;
   if (match(path, '/guide') || match(path, '/about')) return <Guide />;
   if (path === '/' || path === '' || path === '/index.html') return <Board />;
   return <NotFound />;

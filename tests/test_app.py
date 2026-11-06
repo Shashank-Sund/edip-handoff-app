@@ -30,7 +30,7 @@ def client(tmp_path_factory):
     os.environ["EDIP_FIXTURES"] = str(data)
     os.environ["EDIP_STATIC"] = str(data / "no-static")
     sys.path.insert(0, str(ROOT / "app/server"))
-    for m in ("config", "data", "logic", "personas", "workflow", "main"):
+    for m in ("config", "data", "assignment", "logic", "personas", "workflow", "main"):
         sys.modules.pop(m, None)
     main = importlib.import_module("main")
     from fastapi.testclient import TestClient
@@ -416,7 +416,7 @@ def _fresh_main(monkeypatch, **env):
     monkeypatch.setenv("EDIP_STATIC", "/nonexistent")
     if str(ROOT / "app/server") not in sys.path:
         sys.path.insert(0, str(ROOT / "app/server"))
-    for m in ("config", "data", "logic", "personas", "workflow", "main", "lakebase"):
+    for m in ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase"):
         sys.modules.pop(m, None)
     main = importlib.import_module("main")
     from fastapi.testclient import TestClient
@@ -426,7 +426,7 @@ def _fresh_main(monkeypatch, **env):
 @pytest.fixture
 def fresh(monkeypatch):
     yield lambda **env: _fresh_main(monkeypatch, **env)
-    for m in ("config", "data", "logic", "personas", "workflow", "main", "lakebase"):
+    for m in ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase"):
         sys.modules.pop(m, None)
 
 

@@ -22,7 +22,7 @@ pytest.importorskip("httpx")
 import live_local  # noqa: E402
 import parity  # noqa: E402
 
-MODS = ("config", "data", "logic", "personas", "workflow", "main", "lakebase")
+MODS = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
 RN, MD, HOSP = "rn@example.org", "md@example.org", "hosp@example.org"
 ROLES = {RN: "ed-rn", MD: "ed-md", HOSP: "hosp-md"}
 
@@ -39,12 +39,21 @@ class Result:
         return [dict(r) for r in self.rows]
 
 
+class One:
+    def __init__(self, row):
+        self.row = row
+
+    def fetchone(self):
+        return self.row
+
+
 class FakeDB:
-    """The synced tables (read), app.handoff_action and app.view_log (append), as the app's SQL uses them."""
+    """The synced tables (read), app.handoff_action, app.assignment and app.view_log (append), as the app's SQL uses
+    them. tests/test_live_postgres.py runs the same SQL on a real Postgres."""
 
     def __init__(self, encounters, drafts):
         self.encounters, self.drafts = encounters, drafts
-        self.actions, self.views, self.fail_views = [], [], False
+        self.actions, self.views, self.fail_views, self.assigned = [], [], False, []
         self.old_sync = False             # a synced table from before retracted_ts and prior_status
 
     def connect(self):
@@ -74,6 +83,14 @@ class FakeConn:
                 raise UndefinedColumn('column "retracted_ts" does not exist')
             new = ("retracted_ts", "prior_status") if db.old_sync else ()
             return Result([{k: v for k, v in d.items() if k not in new} for d in db.drafts])
+        if sql.startswith("SELECT * FROM app.assignment"):
+            return Result(sorted(db.assigned, key=lambda r: (r["at"], r["assignment_id"])))
+        if sql.startswith("INSERT INTO app.assignment"):
+            from lakebase import ASSIGNMENT
+            row = dict(zip(ASSIGNMENT + ("detail",), params))
+            db.assigned.append(row | {"assignment_id": len(db.assigned) + 1, "recorded_ts": datetime.now(timezone.utc),
+                                      "detail": row["detail"].obj})
+            return One((len(db.assigned), db.assigned[-1]["recorded_ts"]))
         if sql.startswith("SELECT * FROM app.handoff_action"):
             return Result(sorted(db.actions, key=lambda r: (r["at"], r["action_id"])))
         if sql.startswith("INSERT INTO app.handoff_action"):
@@ -87,7 +104,7 @@ class FakeConn:
             page, csn, at, by, role, email = params
             db.views.append({"page": page, "csn": csn, "at": at, "recorded_ts": datetime.now(timezone.utc), "by_name": by,
                              "role": role, "user_email": email})
-        elif not sql.startswith(("CREATE", "ALTER")):
+        elif not sql.startswith(("CREATE", "ALTER", "DO $$")):
             raise AssertionError(f"unexpected SQL {sql[:60]}")
         return Result([])
 

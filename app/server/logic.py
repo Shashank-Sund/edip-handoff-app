@@ -5,6 +5,11 @@
                            attestations applied), its rules after resolution, workflow state, versions, changes
   analytics(at)            census, boarding times, handoff timing and completeness across the week so far
   act(...)                 validates and records an edit, attestation, sign off or acknowledgement
+  own(...)                 Take, Assign to a colleague, Release: who owns the patient for the ED role
+  takeover(...), take_over(...)   a colleague's patients at a shift change, and taking some or all of them
+
+Every patient has an owner per ED role (assignment.py), shown on the board and the handoff. Acting on a patient
+someone else owns is allowed and recorded as outside the assignment (off_assignment).
 
 Sign off follows the content: any edit or attestation after a signature, or a newer version whose clinical content
 differs from the signed one, puts the template in state "changed" (sign again); the receiver cannot accept it until
@@ -18,6 +23,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+from assignment import HANDOVER_BUCKETS, ROLES, counts, handover_bucket, next_shift, owner_at, person_key
 from data import Dataset, iso, status_at
 from personas import ACKS, SIGNS, sees
 
@@ -49,6 +55,11 @@ PATIENT = ("E08", "E09", "E10")
 ALLERGY = "Add an allergy"
 PATIENT_LABEL = {"E08": "Code status", "E09": "An allergy", "E10": "Isolation"}
 TEMPLATE_NAME = {"sbar_nurse": "SBAR", "ipass_physician": "I-PASS", "custom_sea58": "Joint Commission minimum"}
+# The template each ED role signs and owns the patient for, in Analytics.
+OWN_TEMPLATE = {"ed_nurse": "sbar_nurse", "ed_physician": "ipass_physician"}
+# The patient level items Take over lists when their attestation is not confirmed yet.
+CONFIRM_LABEL = {"E08": "Code status", "E09": "Allergies", "E10": "Isolation"}
+NOT_ED = "Only ED nurses and physicians take patients."
 
 
 class ActionError(ValueError):
@@ -339,13 +350,18 @@ def diff(old: dict | None, new: dict) -> list[dict]:
 
 # ---------------------------------------------------------------------------------------------------- views
 class Views:
-    def __init__(self, ds, store, templates: list[dict] | None = None, stale_boarding: timedelta | None = None):
+    def __init__(self, ds, store, templates: list[dict] | None = None, stale_boarding: timedelta | None = None,
+                 stale_owner: timedelta = timedelta(hours=14), shifts: list[tuple[int, int]] | None = None,
+                 shift_warning: timedelta = timedelta(minutes=30)):
         """ds: a Dataset, or a callable returning the current one (live mode reloads it from Lakebase).
         templates: the template definitions (rule limits and branches). stale_boarding: with the live clock, leave
-        off a patient with an admit decision and no ED departure for longer than this."""
+        off a patient with an admit decision and no ED departure for longer than this. stale_owner: an owner who has
+        not acted on the patient for longer than this no longer counts. shifts: the local times of day the ED shift
+        changes, (hour, minute); shift_warning: how long before one the board warns."""
         self._ds, self.store = ds, store
         self.rules = rule_index(templates or [])
         self.stale_boarding = stale_boarding
+        self.stale_owner, self.shifts, self.shift_warning = stale_owner, shifts or [(7, 0), (19, 0)], shift_warning
 
     @property
     def ds(self) -> Dataset:
@@ -395,6 +411,7 @@ class Views:
 
         def shown(x):                             # an entered value, for the patient box and the board flags
             return {k: x[k] for k in ("value", "note", "by", "template")}
+        assigned, me = self.store.assignments(csn, at), person_key(person)
         return {
             "csn": csn, "facility": e["facility"], "phase": phase,
             "patient": {"name": e["patient_name"], "mrn": e["mrn"], "sex": e["sex"], "age": _age(e["birth_date"], at)},
@@ -414,6 +431,7 @@ class Views:
                         "allergies": [shown(x) for x in pat["E09"]] if not allergies else []},
             "last_update": {"as_of": iso(any_row["at"]), "trigger": any_row["trigger"]},
             "templates": templates,
+            "owners": {role: owner_at(assigned, role, acts, at, self.stale_owner, me) for role in ROLES},
         }
 
     def board(self, at: datetime, person: dict) -> dict:
@@ -439,7 +457,18 @@ class Views:
             "left_unsigned": sum(1 for r in rows if r["phase"] == "arrived" and state(r) == "transferred_unsigned")
             if person["can_sign"] else None,
         }
-        return {"at": iso(at), "template": tpl, "kpis": kpis, "rows": rows, "scoped": bool(mine)}
+        shift = None
+        if person["role"] in ROLES:
+            role = person["role"]
+            owned = [r for r in boarding if counts(r["owners"][role]) and r["owners"][role]["you"]]
+            kpis["mine"] = len(owned)
+            kpis["unassigned"] = sum(1 for r in boarding if not counts(r["owners"][role]))
+            nxt = next_shift(at, self.shifts)
+            # Shift change: the board warns the owner of the patients whose handoff is not signed (or changed since).
+            shift = {"at": iso(nxt), "minutes": round((nxt - at).total_seconds() / 60),
+                     "warning": nxt - at <= self.shift_warning, "mine": len(owned),
+                     "unsigned": sum(1 for r in owned if state(r) in ("draft", "changed"))}
+        return {"at": iso(at), "template": tpl, "kpis": kpis, "rows": rows, "scoped": bool(mine), "shift": shift}
 
     def case(self, csn: str, at: datetime, person: dict) -> dict | None:
         summary = self._summary(csn, at, person)
@@ -482,6 +511,7 @@ class Views:
         log = sorted(({"kind": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
                        "version": a["version"], "detail": a.get("element") or a.get("rule") or a.get("option")}
                       | ({"restore": True} if a.get("restore") else {})
+                      | ({"off_assignment": True, "assigned_to": a.get("assigned_to")} if a.get("off_assignment") else {})
                       | (self._entry(a) if a["kind"] == "attest" else {})
                       for a in acts), key=lambda a: a["at"], reverse=True)
         return {"summary": summary, "templates": templates, "activity": log}
@@ -522,11 +552,19 @@ class Views:
         while t <= min(at, ds.end):
             ed = sum(1 for e in encs if e["arrival_ts"] and e["arrival_ts"] <= t and (e["left_ts"] is None or e["left_ts"] > t)
                      and not ds.canceled_at(e, t))
-            board = sum(1 for e in encs if e["admit_decision_ts"] and e["admit_decision_ts"] <= t
-                        and (e["ed_departure_ts"] is None or e["ed_departure_ts"] > t) and ds.versions.get(e["csn"])
-                        and not ds.canceled_at(e, t)
-                        and (e["ed_departure_ts"] or self.stale_boarding is None or t - e["admit_decision_ts"] <= self.stale_boarding))
-            series.append({"t": iso(t), "ed": ed, "boarding": board})
+            board = [e for e in encs if e["admit_decision_ts"] and e["admit_decision_ts"] <= t
+                     and (e["ed_departure_ts"] is None or e["ed_departure_ts"] > t) and ds.versions.get(e["csn"])
+                     and not ds.canceled_at(e, t)
+                     and (e["ed_departure_ts"] or self.stale_boarding is None or t - e["admit_decision_ts"] <= self.stale_boarding)]
+            # Boarding patients no one owns (or whose owner went stale) for each ED role, at this hour.
+            free = dict.fromkeys(ROLES, 0)
+            for e in board:
+                assigned = self.store.assignments(e["csn"], t)
+                acts_e = self.store.actions(e["csn"], t) if assigned else []
+                for role in ROLES:
+                    free[role] += not (assigned and counts(owner_at(assigned, role, acts_e, t, self.stale_owner, None)))
+            series.append({"t": iso(t), "ed": ed, "boarding": len(board), "unassigned_rn": free["ed_nurse"],
+                           "unassigned_md": free["ed_physician"]})
             t += timedelta(hours=1)
         done = [e for e in encs if e["ed_departure_ts"] and e["ed_departure_ts"] <= at and e["admit_decision_ts"]
                 and ds.versions.get(e["csn"])]
@@ -568,7 +606,41 @@ class Views:
             "transferred_without_sign_off": len(done) - signed_before,
             "drafts": len(drafts), "model_calls": len({(r["csn"], r["at"]) for r in drafts}),
             "addenda": len({(r["csn"], r["at"]) for r in drafts if status_at(r, at) == "addendum"}),
+            "owners": self._owner_analytics(at, acts),
         }
+
+    def _owner_analytics(self, at: datetime, acts: list[dict]) -> dict:
+        """Owners in Analytics: when the first owner was recorded (since; null when none yet: before it, every patient
+        is unassigned, which says nothing), ED actions taken outside an assignment, handovers by their distance from
+        the nearest shift change, and minutes from the admit decision to the first signature of each role's template,
+        by who owned the patient for that role when it was signed (owner null: no one)."""
+        recorded = [r["at"] for csn in self.ds.enc for r in self.store.assignments(csn, at)]
+        ed = [a for a in acts if a["role"] in ROLES and a["kind"] in ("edit", "attest", "sign")]
+        outside = [{"role": role, "n": sum(1 for a in ed if a["role"] == role and a.get("off_assignment")),
+                    "of": sum(1 for a in ed if a["role"] == role)} for role in ROLES]
+        handovers = Counter(handover_bucket(r["at"], self.shifts) for csn in self.ds.enc
+                            for r in self.store.assignments(csn, at) if r["kind"] == "handover")
+        by_csn = defaultdict(list)
+        for a in acts:
+            by_csn[a["csn"]].append(a)
+        waits = defaultdict(list)
+        for csn, mine in by_csn.items():
+            e = self.ds.enc.get(csn)
+            if not e or not e["admit_decision_ts"]:
+                continue
+            for role, tpl in OWN_TEMPLATE.items():
+                signs = _ordered([a for a in mine if a["kind"] == "sign" and a["template"] == tpl])
+                if not signs:
+                    continue
+                s = signs[0]
+                o = owner_at(self.store.assignments(csn, s["at"]), role, [a for a in mine if a["at"] <= s["at"]], s["at"],
+                             self.stale_owner, None)
+                waits[(role, o["name"] if counts(o) else None)].append((s["at"] - e["admit_decision_ts"]).total_seconds() / 60)
+        to_sign = [{"role": role, "owner": name, "n": len(v), "median_min": round(statistics.median(v))}
+                   for (role, name), v in sorted(waits.items(), key=lambda kv: (ROLES.index(kv[0][0]), kv[0][1] is None,
+                                                                                 kv[0][1] or ""))]
+        return {"since": iso(min(recorded)) if recorded else None, "outside": outside,
+                "handovers": [{"bucket": b, "n": handovers.get(b, 0)} for b in HANDOVER_BUCKETS], "to_sign": to_sign}
 
     # -------------------------------------------------------------------------------------------- actions
     def act(self, kind: str, csn: str, template: str, at: datetime, person: dict, body: dict) -> dict:
@@ -584,7 +656,7 @@ class Views:
         wf = workflow(latest, acts, [r for r in self.ds.rows_at(csn, at) if r["template"] == template], arrived, rules,
                       self.rules)
         row = {"csn": csn, "template": template, "version": latest["version"], "at": at, "by": person["name"],
-               "role": person["role"], "user_email": person.get("user_email")}
+               "role": person["role"], "user_email": person.get("user_email"), "by_id": person_key(person)}
         if kind in ("edit", "attest", "sign"):
             if template not in SIGNS.get(person["role"], ()):
                 raise ActionError("Only the sending ED clinician for this template can change or sign it.")
@@ -675,8 +747,148 @@ class Views:
             if len(readback) > MAX_TEXT or len(questions) > MAX_TEXT:
                 raise ActionError(TOO_LONG)
             row |= {"readback": readback, "questions": questions or None}
+        # Allowed, never blocked: an ED clinician acting on a patient a colleague owns, recorded for Analytics.
+        owner = summary["owners"].get(person["role"])
+        if counts(owner) and not owner["you"]:
+            row |= {"off_assignment": True, "assigned_to": owner["name"]}
         self.store.add(kind, row)
         return self.case(csn, at, person)
+
+    # ------------------------------------------------------------------------------------------ ownership
+    def _assignment(self, csn: str, at: datetime, person: dict, kind: str, to: dict | None, owner: dict | None) -> dict:
+        """An assignment row for the caller's role; like actions, it cannot go before one already recorded."""
+        role = person["role"]
+        if any(r["role"] == role and r["at"] > at for r in self.store.assignments(csn, fresh=True)):
+            raise ActionError(EARLIER)
+        return {"csn": csn, "role": role, "kind": kind, "assignee_id": to["id"] if to else None,
+                "assignee_name": to["name"] if to else None, "from_id": owner["id"] if owner else None,
+                "from_name": owner["name"] if owner else None, "at": at, "by_name": person["name"], "by_role": role,
+                "user_email": person.get("user_email"), "by_id": person_key(person), "detail": {}}
+
+    def seed_owners(self, at: datetime, nurse: dict, physician: dict) -> list[dict]:
+        """The demo's starting owners (mock mode, and again after Reset), so My patients is not empty and a shift change
+        takes a few clicks: `nurse` owns up to three patients on the board half an hour before the next shift change
+        after `at` who board through it, and `physician` the first two of them. Each is taken five minutes
+        after its first draft, but no earlier than three hours before `at` (so no owner is stale at `at`): a patient
+        admitted after `at` is already owned when it reaches the board. nurse and physician: {"id", "name"}."""
+        ds, nxt = self.ds, next_shift(at, self.shifts)
+        warn = nxt - timedelta(minutes=30)
+        taken = {}
+        for e in sorted(ds.enc.values(), key=lambda e: (e["admit_decision_ts"] or nxt, e["csn"])):
+            first = self.first_shown(e["csn"], warn) if e["admit_decision_ts"] else None
+            if first is None or (e["ed_departure_ts"] is not None and e["ed_departure_ts"] <= nxt) or ds.canceled_at(e, nxt):
+                continue
+            t = max(first + timedelta(minutes=5), at - timedelta(hours=3))
+            if t <= warn:
+                taken[e["csn"]] = t
+            if len(taken) == 3:
+                break
+        rows = []
+        for i, (csn, t) in enumerate(taken.items()):
+            for role, who in (("ed_nurse", nurse), ("ed_physician", physician)):
+                if role == "ed_nurse" or i < 2:
+                    rows.append({"csn": csn, "role": role, "kind": "claim", "assignee_id": who["id"],
+                                 "assignee_name": who["name"], "from_id": None, "from_name": None, "at": t,
+                                 "by_name": who["name"], "by_role": role, "user_email": None, "by_id": who["id"],
+                                 "detail": {"seed": True}})
+        return rows
+
+    def first_shown(self, csn: str, at: datetime) -> datetime | None:
+        """When the patient's first draft shows, if it shows by `at`."""
+        rows = self.ds.rows_at(csn, at)
+        return rows[0]["shown"] if rows else None
+
+    def own(self, kind: str, csn: str, at: datetime, person: dict, to: str | None, colleagues: list[dict]) -> dict:
+        """Take (claim), Assign to a colleague or Release, for the caller's ED role. colleagues: the people of that
+        role (main.py: demo personas, or the role map live)."""
+        if person["role"] not in ROLES:
+            raise ActionError(NOT_ED)
+        summary = self._summary(csn, at, person)
+        if summary is None:
+            raise ActionError("This patient is not on your board at this time.")
+        if summary["phase"] != "boarding":
+            raise ActionError("The patient has left the ED, so they no longer need an ED owner.")
+        owner, me = summary["owners"][person["role"]], person_key(person)
+        current = owner if counts(owner) else None
+        if kind == "claim":
+            if current and current["you"]:
+                raise ActionError("This patient is already yours.")
+            row = self._assignment(csn, at, person, kind, {"id": me, "name": person["name"]}, owner)
+        elif kind == "assign":
+            target = next((c for c in colleagues if c["id"] == to), None)
+            if target is None:
+                raise ActionError("Choose a colleague from the list.")
+            if target["id"] == me:
+                raise ActionError("To take this patient yourself, press Take.")
+            if current and current["id"] == target["id"]:
+                raise ActionError(f"{target['name']} already owns this patient.")
+            row = self._assignment(csn, at, person, kind, target, owner)
+        elif kind == "release":
+            if owner is None:
+                raise ActionError("No one owns this patient, so there is nothing to release.")
+            if owner["id"] != me:
+                raise ActionError(f"Only {owner['name']} can release this patient. Use Take or Assign instead.")
+            row = self._assignment(csn, at, person, kind, None, owner)
+        else:
+            raise ActionError("Choose Take, Assign or Release.")
+        self.store.assign(row)
+        return self.case(csn, at, person)
+
+    def takeover(self, at: datetime, person: dict, colleague: str | None, colleagues: list[dict]) -> dict:
+        """Take over at a shift change: the caller's colleagues with how many patients each owns now, and, for the
+        chosen colleague, each of their boarding patients with where the handoff for the caller's role stands, the
+        code status, allergies and isolation not yet confirmed, and what changed since it was signed."""
+        role = person["role"]
+        if role not in ROLES:
+            raise ActionError(NOT_ED)
+        owned = defaultdict(list)
+        for s in (self._summary(c, at, person) for c in self.ds.enc):
+            if s and s["phase"] == "boarding" and counts(s["owners"][role]):
+                owned[s["owners"][role]["id"]].append(s)
+        me = person_key(person)
+        others = [c for c in colleagues if c["id"] != me]
+        chosen = next((c for c in others if c["id"] == colleague), None)
+        if colleague and chosen is None:
+            raise ActionError("Choose a colleague from the list.")
+        tpl, rows = person["default_template"], []
+        theirs = sorted(owned.get(colleague, []) if chosen else [],
+                        key=lambda r: (-SEVERITY_RANK.get(r["severity"] or "", -1), -r["minutes_boarding"], r["csn"]))
+        for s in theirs:
+            t = self.case(s["csn"], at, person)["templates"].get(tpl)
+            wf = t["workflow"] if t else {"state": "drafting"}
+            confirm = {r["element"] for r in (t["draft"]["rules"] if t else [])
+                       if r["element"] in CONFIRM_LABEL and r["status"] == "attest" and not r.get("resolution")}
+            rows.append({"csn": s["csn"], "patient": s["patient"], "severity": s["severity"],
+                         "chief_complaint": s["chief_complaint"], "facility": s["facility"], "destination": s["destination"],
+                         "minutes_boarding": s["minutes_boarding"], "owner": s["owners"][role], "state": wf["state"],
+                         "signed": wf.get("signed"), "acknowledged": wf.get("acknowledged"),
+                         "blocking": len(t["draft"]["completeness"]["blocking"]) if t else 0,
+                         "to_confirm": [CONFIRM_LABEL[e] for e in CONFIRM_LABEL if e in confirm],
+                         "changed": [c["label"] for c in t["changes"]["elements"]] if t and wf["state"] == "changed" else []})
+        return {"at": iso(at), "role": role, "template": tpl,
+                "colleagues": [c | {"patients": len(owned.get(c["id"], []))} for c in others],
+                "colleague": chosen, "rows": rows}
+
+    def take_over(self, at: datetime, person: dict, colleague: str, csns: list[str], colleagues: list[dict]) -> dict:
+        """Take some or all of a colleague's patients in one go: one handover row per patient, all or none."""
+        view = self.takeover(at, person, colleague, colleagues)
+        if view["colleague"] is None:
+            raise ActionError("Choose a colleague from the list.")
+        if not csns:
+            raise ActionError("Choose at least one patient to take over.")
+        theirs = {r["csn"]: r for r in view["rows"]}
+        rows = []
+        for csn in dict.fromkeys(csns):
+            r = theirs.get(csn)
+            if r is None:
+                e = self.ds.enc.get(csn)
+                who = e["patient_name"] if e else "that patient"
+                raise ActionError(f"{view['colleague']['name']} no longer owns {who}. Reload the list and try again.")
+            rows.append(self._assignment(csn, at, person, "handover", {"id": person_key(person), "name": person["name"]},
+                                         r["owner"]))
+        for row in rows:
+            self.store.assign(row)
+        return self.takeover(at, person, colleague, colleagues) | {"taken": [r["csn"] for r in rows]}
 
 
 def _histogram(values: list[float]) -> list[dict]:

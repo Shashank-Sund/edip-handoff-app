@@ -8,14 +8,17 @@
  */
 import type { ReactNode } from 'react';
 import {
+  BellRing,
   CalendarClock,
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
   Circle,
   CircleHelp,
+  Handshake,
   History,
   Lock,
   Menu,
@@ -26,6 +29,8 @@ import {
   Play,
   RotateCcw,
   Sun,
+  UserMinus,
+  UserPlus,
 } from 'lucide-react';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { TAB_HELP } from '@/lib/labels';
@@ -107,7 +112,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <SeeDo
             see={<>At the bottom of the sidebar, your name and role, for example <Key>Jordan Reyes, RN · ED nurse<ChevronsUpDown /></Key>.</>}
-            act={<>Click it to choose who you are. For this walkthrough, start as the <b>ED nurse</b>. On a phone, open the menu <Key label="menu"><Menu /></Key> at the top left first.</>}
+            act={<>Click it to choose who you are. For this walkthrough, start as the <b>ED nurse</b>, Jordan Reyes. The demo has two ED nurses and two ED physicians, so you can try a shift change at the end. On a phone, open the menu <Key label="menu"><Menu /></Key> at the top left first.</>}
           />
         ),
       },
@@ -116,8 +121,18 @@ export const GUIDE: GuideSection[] = [
         title: 'Read the board',
         body: (
           <SeeDo
-            see={<>Four boxes at the top (Boarding now, Unstable, To sign, Arrived on unit), then one row per patient. Patients still in the ED come first, the sickest at the top.</>}
+            see={<>Four boxes at the top (Boarding now, Unstable, To sign, Arrived on unit), then the list of patients. Patients still in the ED come first, the sickest at the top.</>}
             act={<>Glance at the boxes to see how busy it is. Then look down the <b>Severity</b> and <b>Boarding</b> columns.</>}
+          />
+        ),
+      },
+      {
+        id: 'take',
+        title: 'Take your patients',
+        body: (
+          <SeeDo
+            see={<>The board opens on <Key>My patients</Key>. At the top, <b>Unassigned</b> lists the patients still in the ED that no nurse owns yet; below it, <b>Your patients</b> (in the demo Jordan Reyes already owns one or two). Under each name: <span className="text-xs">RN: Unassigned · MD: Unassigned</span>, the nurse and the physician who own the patient.</>}
+            act={<>Press <Key><UserPlus />Take</Key> next to the patients you are caring for, for example the sickest one. They move down to <b>Your patients</b> and read <span className="text-xs">RN: Jordan Reyes (you)</span>. <Key>Everyone</Key> shows every patient, whoever owns them.</>}
           />
         ),
       },
@@ -126,8 +141,8 @@ export const GUIDE: GuideSection[] = [
         title: 'Open the sickest boarding patient',
         body: (
           <SeeDo
-            see={<>The top row, marked <SeverityBadge value="unstable" />, with both handoffs at <StateBadge state="draft" />.</>}
-            act={<>Click anywhere on the row. The patient's handoff opens on the SBAR tab, because you are a nurse.</>}
+            see={<>Under <b>Your patients</b>, the patient you took. If you took the sickest, it is marked <SeverityBadge value="unstable" />, with both handoffs at <StateBadge state="draft" />.</>}
+            act={<>Click anywhere on the row. The patient's handoff opens on the SBAR tab, because you are a nurse. Under the patient box, the owner line says <b>Nurse owner: Jordan Reyes (you)</b>.</>}
           />
         ),
       },
@@ -167,7 +182,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <SeeDo
             see={<>The patient box shows where the patient is going, for example "Going to SGH 7E".</>}
-            act={<>Open the role menu at the bottom of the sidebar. Under <b>Receiving units</b>, pick that unit. The board now reads "Incoming to SGH 7E" and shows only that unit's patients.</>}
+            act={<>Open the role menu at the bottom of the sidebar. Under <b>Receiving units</b>, pick that unit. The board now reads "Incoming to SGH 7E" and shows only that unit's patients. Receiving staff see who owns each patient in the ED, but do not take patients themselves.</>}
           />
         ),
       },
@@ -188,6 +203,16 @@ export const GUIDE: GuideSection[] = [
           <SeeDo
             see={<>The date and time at the top right, for example <Key><CalendarClock />Wed, Oct 28 16:00</Key>. Every page shows the hospital at that moment.</>}
             act={<>Press <Key label="forward"><ChevronRight /></Key> to go forward one hour, or <Key label="play"><Play /></Key> to play. Boarding times grow, new drafts may arrive and show <StateBadge state="changed" /> on a signed handoff, and patients leave for their unit.</>}
+          />
+        ),
+      },
+      {
+        id: 'handover',
+        title: 'Hand over to the next nurse',
+        body: (
+          <SeeDo
+            see={<>Move the clock to 18:30. As Jordan Reyes, an amber bar at the top of the board says <span className="text-xs font-medium">Shift change at 19:00</span> and how many of your patients have handoffs that need your signature.</>}
+            act={<>Open the role menu and pick the second ED nurse, <b>Robin Asante, RN</b>, who comes on at 19:00. In the sidebar, open <Key><Handshake />Take over</Key>, pick Jordan Reyes, check the list, and press the button that counts them, such as <Primary><Handshake />Take 2 patients</Primary>. Robin's board now shows those patients under Your patients; Jordan's signatures stay as they were.</>}
           />
         ),
       },
@@ -217,6 +242,10 @@ export const GUIDE: GuideSection[] = [
               ]}
             />
             <p className="text-muted-foreground">If a signed handoff later shows <StateBadge state="changed" />, something changed after your signature: your own edit or attestation, or a newer draft with different content. Read what changed and press Sign again; the receiver cannot accept until you do.</p>
+            <p className="font-medium">Owning patients</p>
+            <p>Each patient has one nurse owner. The board opens on <b>My patients</b>: the patients you own, with the <b>Unassigned</b> ones at the top. Take the patients you care for; give one to a colleague with <b>Assign to a colleague</b>, or press <b>Release</b> if it is no longer yours. You can still help with any patient: if a colleague owns it, the app says so and notes that you acted outside your assignment.</p>
+            <p className="font-medium">Start and end of shift</p>
+            <p className="text-muted-foreground">At the start, take your patients from Unassigned, or open <b>Take over</b> and take the patients of the nurse you are relieving. In the half hour before the shift change (07:00 and 19:00), a bar on the board says how many of your patients have handoffs that need your signature: sign what you can, then the nurse coming on takes them over.</p>
           </>
         ),
       },
@@ -236,6 +265,8 @@ export const GUIDE: GuideSection[] = [
               ]}
             />
             <p className="text-muted-foreground">The admitting team will act on these, so make them right before you sign.</p>
+            <p className="font-medium">Owning patients, start and end of shift</p>
+            <p className="text-muted-foreground">Each patient also has one physician owner, separate from the nurse. It works the same as for nurses: take your patients from Unassigned on the board or with <b>Take over</b> from the physician you relieve, Assign or Release on the handoff page, and watch the shift change bar before 07:00 and 19:00.</p>
           </>
         ),
       },
@@ -394,6 +425,46 @@ export const GUIDE: GuideSection[] = [
         ),
       },
       {
+        id: 'assigned',
+        title: 'Why does it say Assigned to someone else?',
+        body: (
+          <>
+            <p>A colleague in your role owns this patient: they took it, were given it, or took it over at a shift change. The owner line under the patient box says "Assigned to" their name.</p>
+            <p>You can still edit, attest and sign. Nothing is blocked, because helping a colleague is normal. The app records that you acted outside your assignment: History shows it on that action, and the team can count it later.</p>
+            <p className="text-muted-foreground">If the patient should be yours, press <Key><UserPlus />Take</Key> on the owner line, or ask your colleague to assign it to you.</p>
+          </>
+        ),
+      },
+      {
+        id: 'shift',
+        title: 'What happens at shift change?',
+        body: (
+          <>
+            <p>ED shifts change at 07:00 and 19:00, or the times your hospital set. In the half hour before, a bar on the board reminds the nurses and physicians going off, for example "Shift change at 19:00: 2 of your patients have handoffs that need your signature."</p>
+            <Checks
+              items={[
+                'Going off: sign the handoffs you can, so the unit is not left waiting.',
+                <>Coming on: open <Key><Handshake />Take over</Key> in the sidebar, pick the colleague you relieve, check each patient, and take them in one go.</>,
+                'Signatures stay with whoever signed. A handoff that changed after signing still needs signing again, now by you.',
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: 'unassigned',
+        title: 'Why is my patient back in Unassigned?',
+        body: (
+          <Checks
+            items={[
+              'Someone released the patient, or you did. The owner line on the handoff page shows who owns it now.',
+              <>No one acted on the patient for 14 hours (or the limit your hospital set). An owner who has not edited, attested, signed, taken or been given the patient for that long no longer counts; the owner line names them. Press <Key><UserPlus />Take</Key> to make it yours again.</>,
+              <>The clock is earlier than when you took it. Owners follow the time on the clock, like everything else. See <GuideLink to="clock-owners">owners and the clock</GuideLink>.</>,
+            ]}
+          />
+        ),
+      },
+      {
         id: 'gone',
         title: 'Where did my signature go?',
         body: (
@@ -428,6 +499,41 @@ export const GUIDE: GuideSection[] = [
         ),
       },
       {
+        id: 'tabs',
+        title: 'My patients and Everyone (ED staff)',
+        body: (
+          <Terms
+            items={[
+              [<Key key="k">My patients</Key>, 'Where the board opens for ED nurses and physicians. First Unassigned: patients still in the ED that no one owns for your role. Then Your patients: the ones you own. The number on the tab is how many you own.'],
+              [<Key key="k">Everyone</Key>, 'Every patient, whoever owns them, as the board looks for other roles.'],
+              ['Other roles', 'Receiving staff, the admitting physician and the viewer see who owns each patient, but have no My patients tab.'],
+            ]}
+          />
+        ),
+      },
+      {
+        id: 'owners',
+        title: 'Owners and the Unassigned group',
+        body: (
+          <>
+            <p>Under each patient's name: <span className="text-xs">RN: Jordan Reyes · MD: Unassigned</span>. RN is the ED nurse who owns the patient, MD the ED physician. Each role has at most one owner; "(you)" marks yours.</p>
+            <p>In the Unassigned group, <Key><UserPlus />Take</Key> makes a patient yours without opening it. A patient is Unassigned when no one took it, when its owner released it, or when its owner has not acted on it for 14 hours.</p>
+          </>
+        ),
+      },
+      {
+        id: 'shift',
+        title: 'The shift change bar',
+        body: (
+          <>
+            <p>
+              In the half hour before each shift change (07:00 and 19:00, or the times your hospital set), ED nurses and physicians see an amber bar <BellRing className="inline size-3.5 align-middle text-sev-watcher" aria-hidden /> at the top of the board, for example "Shift change at 19:00: 2 of your patients have handoffs that need your signature." It counts your own patients whose handoff for your role is a draft or changed after signing.
+            </p>
+            <p className="text-muted-foreground">Its link opens Take over, for the colleague coming on. The bar goes away at the shift change.</p>
+          </>
+        ),
+      },
+      {
         id: 'filters',
         title: 'Filters and search',
         body: (
@@ -449,7 +555,7 @@ export const GUIDE: GuideSection[] = [
             <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information. Point at the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to a column title for a short reminder of what it shows; on a phone, the one above the cards explains a card.</p>
             <Terms
               items={[
-                ['Patient', 'Name, age, sex and medical record number (MRN).'],
+                ['Patient', 'Name, age, sex and medical record number (MRN), and under it the owners: RN for the ED nurse, MD for the ED physician, or Unassigned.'],
                 ['Severity', <><SeverityBadge value="stable" /> <SeverityBadge value="watcher" /> <SeverityBadge value="unstable" /> See <GuideLink to="handoff-severity">illness severity</GuideLink>.</>],
                 ['Reason for visit', <>The chief complaint, with safety flags underneath: <Pill tone="danger">DNR/DNI</Pill> any code status other than full code, <Pill tone="warn">Contact</Pill> isolation, <Pill>2 allergies</Pill> allergies on file.</>],
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
@@ -478,11 +584,31 @@ export const GUIDE: GuideSection[] = [
           <Terms
             items={[
               ['Name and severity', 'Check you have the right patient, and how sick they are.'],
+              ['Owners', <>Under the box, the nurse and physician who own the patient. See <GuideLink to="handoff-owner">the owner line</GuideLink>.</>],
               ['Safety flags', <>Code status, allergies and isolation from the chart, for example <Key>Full Code</Key> <Pill tone="danger">Shellfish</Pill>. Red changes how you care for the patient. "No allergies documented" means the chart has none on file, which is not the same as no known allergies.</>],
               ['Now in, Going to', 'The ED bed now, and the unit, bed and level of care they are going to.'],
               ['Boarding', 'How long since the admit decision.'],
             ]}
           />
+        ),
+      },
+      {
+        id: 'owner',
+        title: 'The owner line: Take, Assign, Release',
+        body: (
+          <>
+            <p>Under the patient box: <b>Nurse owner</b> and <b>Physician owner</b>, each a name or Unassigned. An owner who has not acted on the patient for 14 hours shows as Unassigned, with their name and how long it has been.</p>
+            <Terms
+              items={[
+                [<Key key="k"><UserPlus />Take</Key>, 'Makes the patient yours for your role. If a colleague owned it, it moves to you.'],
+                [<Key key="k">Assign to a colleague<ChevronDown /></Key>, 'Gives the patient to someone else in your role: pick them from the list.'],
+                [<Key key="k"><UserMinus />Release</Key>, 'Shown when the patient is yours. The patient goes back to Unassigned for your role.'],
+              ]}
+            />
+            <p className="text-muted-foreground">
+              When a colleague owns the patient, a quiet note says "Assigned to" them. You can still act on the handoff; the action is recorded as outside your assignment. Owners change only while the patient is in the ED, and not while you look at an earlier time. Receiving staff see the owner line without the buttons.
+            </p>
+          </>
         ),
       },
       {
@@ -613,9 +739,55 @@ export const GUIDE: GuideSection[] = [
               ['What changed', <>Compared with the previous version, or, once a signed handoff changed, with the text that was signed (clinician edits included): items <b>Updated from the chart</b>, and text that changed with the old text crossed out. Click an item to jump to it.</>],
               ['Vital signs', 'Every set taken in the ED. Top: heart rate and blood pressure. Bottom: oxygen saturation and breathing rate. Point at the chart to read the values at that time; click a name above it to hide or show that line.'],
               ['Lab trends', 'Each result that was ever abnormal: the latest value (red if critical, amber if abnormal), a small trend line, and first to latest.'],
-              ['History', 'Every version and why it was written, and every edit, restore, attestation, signature and acceptance with the name of the item, newest first.'],
+              ['History', 'Every version and why it was written, and every edit, restore, attestation, signature and acceptance with the name of the item, newest first. An action by someone the patient was not assigned to says "outside the assignment".'],
             ]}
           />
+        ),
+      },
+    ],
+  },
+  {
+    id: 'takeover',
+    title: 'Take over',
+    summary: 'At a shift change: take the patients of the colleague you are relieving, in one go.',
+    kind: 'reference',
+    topics: [
+      {
+        id: 'what',
+        title: 'When to use it',
+        body: (
+          <p>
+            When you come on shift as an ED nurse or physician, open <Key><Handshake />Take over</Key> in the sidebar. It is only there for the ED roles. It is quicker than taking patients one by one, and it shows what you need to know before they are yours. The page shows owners as they are at the time on the clock.
+          </p>
+        ),
+      },
+      {
+        id: 'pick',
+        title: '1. Who are you relieving?',
+        body: <p>Pick the colleague going off. Only people in your role are listed (nurses for nurses, physicians for physicians), each with how many patients still in the ED they own now.</p>,
+      },
+      {
+        id: 'list',
+        title: "2. Their patients",
+        body: (
+          <Terms
+            items={[
+              ['Patient', 'Name, severity, reason for visit, where they are going and how long they have boarded. Click the name to open the handoff.'],
+              ['Handoff', <>Your role's handoff (SBAR for nurses, I-PASS for physicians): <StateBadge state="draft" /> with the items left to resolve, <StateBadge state="signed" /> with who signed and when, <StateBadge state="changed" />, or <StateBadge state="acknowledged" /> when the unit accepted it.</>],
+              ['Still to confirm', <>Code status, allergies or isolation not confirmed yet, for example <Pill tone="warn">Allergies</Pill>. Check these with the patient first.</>],
+              ['Changed since signing', 'For a handoff changed after signing: the items that changed since the signature. Read them before you sign again.'],
+            ]}
+          />
+        ),
+      },
+      {
+        id: 'confirm',
+        title: 'Taking over',
+        body: (
+          <>
+            <p>Every patient is ticked at first. Untick any you are not taking, then press the button, which counts them, for example <Primary><Handshake />Take 3 patients</Primary>. They become yours from that moment, and a green line lists them. Patients you leave stay with your colleague.</p>
+            <p className="text-muted-foreground">Signatures stay with whoever signed. A handoff that changed after signing still needs signing again, now by you. If a patient changed hands while you were looking, the app says so and takes none of them: reload the list and try again.</p>
+          </>
         ),
       },
     ],
@@ -644,6 +816,31 @@ export const GUIDE: GuideSection[] = [
         id: 'census',
         title: 'ED census and boarding',
         body: <p>The blue area is how many patients were in the ED each hour; the orange line is how many of them were boarding. Point at the chart to read the numbers for an hour, and click a name above it to hide that line. Drag to scroll, or use the mouse wheel to zoom.</p>,
+      },
+      {
+        id: 'unassigned',
+        title: 'Unassigned boarding patients',
+        body: (
+          <>
+            <p>For each hour, how many boarding patients had no nurse owner (the solid line), and how many had no physician owner (the dashed line), in front of a shaded area for everyone boarding. A patient whose owner had not acted on them for 14 hours counts as having no owner. A line that stays at the top of the shaded area means patients wait without anyone taking them.</p>
+            <p className="text-muted-foreground">The chart starts at the hour the first owner was recorded, named under it, for example "Owners recorded since Wed Oct 28, 13:00": before that no one used Take, so every patient would count. Until then the panel says "No owners recorded yet."</p>
+          </>
+        ),
+      },
+      {
+        id: 'outside',
+        title: 'Actions outside an assignment',
+        body: <p>For ED nurses and ED physicians: how many edits, attestations and signatures were on a patient a colleague in the same role owned at the time, out of all of them. Helping a colleague is normal; a high share can mean owners are not kept up to date, for example after a shift change.</p>,
+      },
+      {
+        id: 'handovers',
+        title: 'Handovers around the shift change',
+        body: <p>Every patient taken over on the Take over page, by how far it was from the nearest shift change (07:00 and 19:00, or the times your hospital set): more than 30 minutes before, up to 30 minutes before, up to 30 minutes after, or more than 30 minutes after. Most handovers should sit close to the change.</p>,
+      },
+      {
+        id: 'to-sign',
+        title: 'Admit decision to signature, by owner',
+        body: <p>For each nurse and physician who owned patients: how many handoffs for their role (SBAR for nurses, I-PASS for physicians) were first signed while they owned the patient, and the median time from the admit decision to that signature. <b>Unassigned</b> counts handoffs signed while no one owned the patient for that role. Use it to see whether owned patients get signed sooner.</p>,
       },
       {
         id: 'units',
@@ -732,7 +929,16 @@ export const GUIDE: GuideSection[] = [
         title: 'Your actions and the clock',
         body: (
           <p>
-            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions.
+            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners come back too.
+          </p>
+        ),
+      },
+      {
+        id: 'owners',
+        title: 'Owners and the clock',
+        body: (
+          <p>
+            Who owns a patient follows the time you look at, like everything else. Move the clock back before you took a patient and it shows as Unassigned; move forward and it is yours again. Take, Assign and Release are recorded at the time on the clock, and cannot go before one already recorded for that patient. While you look at an earlier time in the hospital app, the owner buttons and Take over are turned off, like the other actions.
           </p>
         ),
       },
@@ -745,7 +951,7 @@ export const GUIDE: GuideSection[] = [
               In the hospital the clock reads <Key>Live</Key>. To see the board or a handoff as it was earlier, for example what the night shift saw at 03:00, press <Key><History />View an earlier time</Key> next to it, then pick a day and an hour. You can look back up to 3 days, or the limit your hospital set.
             </p>
             <p>
-              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary> and <Primary><CheckCheck />Accept handoff</Primary> are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
+              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary>, <Primary><CheckCheck />Accept handoff</Primary>, Take, Assign, Release and Take over are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
             </p>
             <p>The app records that you looked at an earlier time: who, which page or patient, and which time.</p>
             <Note>
@@ -761,10 +967,26 @@ export const GUIDE: GuideSection[] = [
         body: __STATIC_DEMO__ ? (
           <>
             <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
-            <Note>In this public web demo everything runs in your browser. What you sign or accept is kept only in this tab and is cleared when you reload the page.</Note>
+            <Note>In this public web demo everything runs in your browser. What you sign, accept or take is kept only in this tab and is cleared when you reload the page; the demo's starting owners come back.</Note>
           </>
         ) : (
           <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
+        ),
+      },
+      {
+        id: 'shift-demo',
+        title: 'Try a shift change in the demo',
+        body: (
+          <>
+            <p>The demo has two ED nurses, Jordan Reyes and Robin Asante, and two ED physicians, Alex Chen and Kai Moreno. It starts with Jordan Reyes owning the patients who will still be in the ED at 19:00, and Kai Moreno owning some of them for the physician role. Clear all demo actions brings that start back.</p>
+            <Checks
+              items={[
+                'Move the clock to 18:30, half an hour before the 19:00 shift change. As Jordan Reyes, the shift change bar counts your patients.',
+                <>Switch to Robin Asante in the role menu, open <Key><Handshake />Take over</Key>, pick Jordan Reyes and press the button that counts the patients, such as <Primary><Handshake />Take 2 patients</Primary>.</>,
+                'Switch back to Jordan: My patients is empty, and the owner line of each patient says "Assigned to Robin Asante, RN".',
+              ]}
+            />
+          </>
         ),
       },
     ],
@@ -783,6 +1005,7 @@ export const GUIDE: GuideSection[] = [
           <Terms
             items={[
               ['Board', 'Your work list: every patient with a handoff right now. Start here.'],
+              ['Take over', 'ED nurses and physicians only: at a shift change, take the patients of the colleague you are relieving.'],
               ['Analytics', 'How the week has gone: how busy the ED was, how long patients waited, what handoffs were missing.'],
               ['Templates', 'What each kind of handoff contains, and which items must be filled before signing.'],
               ['How to use', 'This guide.'],
@@ -796,7 +1019,7 @@ export const GUIDE: GuideSection[] = [
         body: (
           <>
             <p>
-              The bottom of the sidebar shows who you are, for example <Key>Jordan Reyes, RN · ED nurse<ChevronsUpDown /></Key>. In the demo, click it to become someone else and see exactly what that person sees and can do. The people are grouped: <b>Emergency department</b>, <b>Admitting team</b> and <b>Receiving units</b>, one nurse per unit.
+              The bottom of the sidebar shows who you are, for example <Key>Jordan Reyes, RN · ED nurse<ChevronsUpDown /></Key>. In the demo, click it to become someone else and see exactly what that person sees and can do. The people are grouped: <b>Emergency department</b> (two nurses and two physicians, so you can hand over between them), <b>Admitting team</b> and <b>Receiving units</b>, one nurse per unit.
             </p>
             <p className="text-muted-foreground">In a hospital you are always yourself, and your role comes from your account. Someone signed in without a role can read everything but change nothing.</p>
           </>
@@ -840,13 +1063,19 @@ export const GUIDE: GuideSection[] = [
       { id: 'level-of-care', title: 'Level of care', body: 'ICU, step down, telemetry, med surg or observation.' },
       { id: 'model', title: 'Model', body: 'The AI language model that writes the narrative parts of each draft from the chart. A person always checks and signs.' },
       { id: 'mrn', title: 'MRN', body: 'Medical record number.' },
+      { id: 'outside', title: 'Outside your assignment', body: 'An action on a patient a colleague in your role owns. It is allowed, and recorded so the team can see it.' },
+      { id: 'owner', title: 'Owner', body: 'The ED nurse or ED physician responsible for a patient in the ED. Each patient has at most one of each, set by Take, Assign, Release or Take over.' },
       { id: 'read-back', title: 'Read back', body: 'The receiver repeats the key points in their own words, to show they understood: at least a sentence. Required to accept.' },
       { id: 'rule-floor', title: 'Rule floor', body: 'The lowest severity the chart allows, set by fixed rules. The model can raise severity above it, never lower.' },
       { id: 'sbar', title: 'SBAR', body: 'Situation, Background, Assessment, Recommendation. The nurse handoff format.' },
       { id: 'severity', title: 'Severity', body: 'How sick the patient is: stable (expected to stay well), watcher (could get worse, keep a close eye) or unstable (needs action now).' },
+      { id: 'shift-change', title: 'Shift change', body: 'When one ED shift hands over to the next: 07:00 and 19:00, or the times your hospital set. The board warns in the half hour before.' },
       { id: 'source', title: 'Source', body: 'The chart record a statement came from: a note, a lab, a medication, a set of vital signs.' },
       { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after a limit that depends on the severity and the template: SBAR 60, 30 or 15 minutes for a stable, watcher or unstable patient; I-PASS 120, 60 or 30. A bedside recheck counts for the same limit.' },
+      { id: 'stale-owner', title: 'Stale owner', body: 'An owner who has not acted on the patient, taken it or been given it for 14 hours, or the limit your hospital set. They no longer count, so the patient shows as Unassigned.' },
+      { id: 'take-over', title: 'Take over', body: 'At a shift change, taking the patients of the colleague you relieve in one go, on the Take over page.' },
       { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it; the board counts these under To sign as "left without sign off".' },
+      { id: 'unassigned', title: 'Unassigned', body: 'No one owns the patient for your role: never taken, released, or its owner went stale.' },
       { id: 'version', title: 'Version', body: 'Each time the chart changes in a way that matters, a new draft is written. The newest is shown, and History lists them all.' },
     ],
   },

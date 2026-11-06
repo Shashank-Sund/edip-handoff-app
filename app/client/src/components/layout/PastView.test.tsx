@@ -12,7 +12,7 @@ import { ClockControl, PastBanner } from './ClockControl';
 vi.mock('@/lib/api', () => ({
   setPersona: vi.fn(),
   ApiError: class extends Error {},
-  api: { case: vi.fn(), act: vi.fn(), reset: vi.fn() },
+  api: { case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(async () => []), reset: vi.fn() },
 }));
 const { api } = await import('@/lib/api');
 

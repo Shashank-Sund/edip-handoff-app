@@ -6,6 +6,8 @@
  *                            workflow state, versions, changes
  *   analytics(at)            census, boarding times, handoff timing and completeness across the week so far
  *   act(...)                 validates and records an edit, attestation, sign off or acknowledgement
+ *   own(...)                 Take, Assign to a colleague, Release: who owns the patient for the ED role
+ *   takeover(...), takeOver(...)   a colleague's patients at a shift change, and taking some or all of them
  *
  * Sign off follows the content: any edit or attestation after a signature, or a newer version whose clinical
  * content differs from the signed one, puts the template in state "changed" (sign again); the receiver cannot
@@ -15,6 +17,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { counts, HANDOVER_BUCKETS, handoverBucket, nextShift, ownerAt, personKey, ROLES } from './assignment';
 import { statusAt, type Dataset, type Row } from './data';
 import { ACKS, SIGNS, sees } from './personas';
 import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy } from './py';
@@ -49,6 +52,11 @@ const PATIENT = new Set(['E08', 'E09', 'E10']);
 const ALLERGY = 'Add an allergy';
 const PATIENT_LABEL: Record<string, string> = { E08: 'Code status', E09: 'An allergy', E10: 'Isolation' };
 const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physician: 'I-PASS', custom_sea58: 'Joint Commission minimum' };
+// The patient level items Take over lists when their attestation is not confirmed yet.
+const CONFIRM_LABEL: Record<string, string> = { E08: 'Code status', E09: 'Allergies', E10: 'Isolation' };
+const NOT_ED = 'Only ED nurses and physicians take patients.';
+// The template each ED role signs and owns the patient for, in Analytics.
+const OWN_TEMPLATE: [string, string][] = [['ed_nurse', 'sbar_nurse'], ['ed_physician', 'ipass_physician']];
 
 type Rules = Record<string, any>;
 
@@ -397,8 +405,12 @@ export class Views {
   /**
    * templates: the template definitions (rule limits and branches). staleBoarding: with the live clock, leave off a
    * patient with an admit decision and no ED departure for longer than this (ms); the static demo replays, so null.
+   * staleOwner (ms), shifts and shiftWarning (ms): as in logic.py, the ownership settings.
    */
-  constructor(readonly ds: Dataset, readonly store: MemoryStore, templates: any[] = [], readonly staleBoarding: number | null = null) {
+  constructor(
+    readonly ds: Dataset, readonly store: MemoryStore, templates: any[] = [], readonly staleBoarding: number | null = null,
+    readonly staleOwner = 14 * HOUR, readonly shifts: [number, number][] = [[7, 0], [19, 0]], readonly shiftWarning = 30 * MINUTE,
+  ) {
     this.rules = ruleIndex(templates);
   }
 
@@ -439,6 +451,10 @@ export class Views {
     const isolation = isDict(flags.E10) ? get(or(flags.E10, {}), 'value') : null;
     const allergies = Array.isArray(flags.E09) ? flags.E09.map((a: any) => get(a, 'allergen')) : [];
     const shown = (x: any) => ({ value: x.value, note: x.note, by: x.by, template: x.template });
+    const assigned = this.store.assignments(csn, at);
+    const me = personKey(person);
+    const owners: any = {};
+    for (const role of ROLES) owners[role] = ownerAt(assigned, role, acts, at, this.staleOwner, me);
     const sinceDecision = (dep ?? at) - (e.admit_decision_ts as number);
     return {
       csn, facility: e.facility, phase,
@@ -461,6 +477,7 @@ export class Views {
       },
       last_update: { as_of: iso(anyRow.at), trigger: anyRow.trigger },
       templates,
+      owners,
     };
   }
 
@@ -489,7 +506,20 @@ export class Views {
       // ED roles: patients who went up before anyone signed their handoff for this role.
       left_unsigned: truthy(person.can_sign) ? rows.filter((r) => r.phase === 'arrived' && state(r) === 'transferred_unsigned').length : null,
     };
-    return { at: iso(at), template: tpl, kpis, rows, scoped: truthy(mine) };
+    let shift: any = null;
+    if (ROLES.includes(person.role)) {
+      const role = person.role;
+      const owned = boarding.filter((r) => counts(r.owners[role]) && r.owners[role].you);
+      (kpis as any).mine = owned.length;
+      (kpis as any).unassigned = boarding.filter((r) => !counts(r.owners[role])).length;
+      const next = nextShift(at, this.shifts);
+      // Shift change: the board warns the owner of the patients whose handoff is not signed (or changed since).
+      shift = {
+        at: iso(next), minutes: pyRound((next - at) / MINUTE), warning: next - at <= this.shiftWarning, mine: owned.length,
+        unsigned: owned.filter((r) => state(r) === 'draft' || state(r) === 'changed').length,
+      };
+    }
+    return { at: iso(at), template: tpl, kpis, rows, scoped: truthy(mine), shift };
   }
 
   case(csn: string, at: number, person: any): any {
@@ -538,6 +568,7 @@ export class Views {
       kind: a.kind, template: a.template, by: a.by, at: iso(a.at) as string, version: a.version,
       detail: or(or(get(a, 'element'), get(a, 'rule')), get(a, 'option')),
       ...(truthy(get(a, 'restore')) ? { restore: true } : {}),
+      ...(truthy(get(a, 'off_assignment')) ? { off_assignment: true, assigned_to: get(a, 'assigned_to') } : {}),
       ...(a.kind === 'attest' ? this.entry(a) : {}),
     }));
     // sorted(key=at string, reverse=True) keeps equal keys in their original order
@@ -561,12 +592,19 @@ export class Views {
     const stop = Math.min(at, ds.end);
     for (let t = ds.start; t <= stop; t += HOUR) {
       let ed = 0, board = 0;
+      // Boarding patients no one owns (or whose owner went stale) for each ED role, at this hour.
+      const free: Record<string, number> = { ed_nurse: 0, ed_physician: 0 };
       for (const e of encs) {
         if (e.arrival_ts !== null && e.arrival_ts <= t && (e.left_ts === null || e.left_ts > t) && !ds.canceledAt(e, t)) ed++;
         if (e.admit_decision_ts !== null && e.admit_decision_ts <= t && (e.ed_departure_ts === null || e.ed_departure_ts > t) && truthy(ds.versions.get(e.csn) ?? null)
-          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) board++;
+          && !ds.canceledAt(e, t) && (e.ed_departure_ts !== null || this.staleBoarding === null || t - e.admit_decision_ts <= this.staleBoarding)) {
+          board++;
+          const assigned = this.store.assignments(e.csn, t);
+          const actsE = assigned.length ? this.store.actions(e.csn, t) : [];
+          for (const role of ROLES) if (!(assigned.length && counts(ownerAt(assigned, role, actsE, t, this.staleOwner, null)))) free[role]++;
+        }
       }
-      series.push({ t: iso(t), ed, boarding: board });
+      series.push({ t: iso(t), ed, boarding: board, unassigned_rn: free.ed_nurse, unassigned_md: free.ed_physician });
     }
     const done = encs.filter((e) => e.ed_departure_ts !== null && e.ed_departure_ts <= at && e.admit_decision_ts !== null && truthy(ds.versions.get(e.csn) ?? null));
     const byUnit = new Map<string, number[]>();
@@ -617,7 +655,51 @@ export class Views {
       drafts: drafts.length,
       model_calls: new Set(drafts.map((r) => `${r.csn}|${r.at}`)).size,
       addenda: new Set(drafts.filter((r) => statusAt(r, at) === 'addendum').map((r) => `${r.csn}|${r.at}`)).size,
+      owners: this.ownerAnalytics(at, acts),
     };
+  }
+
+  /** logic.py _owner_analytics: outside an assignment, handovers around the shift change, admit decision to signature. */
+  private ownerAnalytics(at: number, acts: Action[]): any {
+    let since: number | null = null;
+    for (const csn of this.ds.enc.keys()) for (const r of this.store.assignments(csn, at)) if (since === null || r.at < since) since = r.at;
+    const ed = acts.filter((a) => ROLES.includes(a.role) && ['edit', 'attest', 'sign'].includes(a.kind));
+    const outside = ROLES.map((role) => ({
+      role, n: ed.filter((a) => a.role === role && truthy(get(a, 'off_assignment'))).length, of: ed.filter((a) => a.role === role).length,
+    }));
+    const handovers = new Map<string, number>();
+    for (const csn of this.ds.enc.keys()) {
+      for (const r of this.store.assignments(csn, at)) {
+        if (r.kind === 'handover') {
+          const b = handoverBucket(r.at, this.shifts);
+          handovers.set(b, (handovers.get(b) ?? 0) + 1);
+        }
+      }
+    }
+    const byCsn = new Map<string, Action[]>();
+    for (const a of acts) {
+      if (!byCsn.has(a.csn)) byCsn.set(a.csn, []);
+      byCsn.get(a.csn)!.push(a);
+    }
+    const waits = new Map<string, { role: string; owner: string | null; v: number[] }>();
+    for (const [csn, mine] of byCsn) {
+      const e = this.ds.enc.get(csn);
+      if (!e || e.admit_decision_ts === null) continue;
+      for (const [role, tpl] of OWN_TEMPLATE) {
+        const signs = ordered(mine.filter((a) => a.kind === 'sign' && a.template === tpl));
+        if (!signs.length) continue;
+        const s = signs[0];
+        const o = ownerAt(this.store.assignments(csn, s.at), role, mine.filter((a) => a.at <= s.at), s.at, this.staleOwner, null);
+        const owner = counts(o) ? o.name : null;
+        const k = `${role}|${owner ?? ''}|${owner === null}`;
+        if (!waits.has(k)) waits.set(k, { role, owner, v: [] });
+        waits.get(k)!.v.push((s.at - (e.admit_decision_ts as number)) / 60000);
+      }
+    }
+    const toSign = [...waits.values()]
+      .sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || Number(a.owner === null) - Number(b.owner === null) || cmpStr(a.owner ?? '', b.owner ?? ''))
+      .map((w) => ({ role: w.role, owner: w.owner, n: w.v.length, median_min: pyRound(median(w.v)) }));
+    return { since: iso(since), outside, handovers: HANDOVER_BUCKETS.map((b) => ({ bucket: b, n: handovers.get(b) ?? 0 })), to_sign: toSign };
   }
 
   // ---------------------------------------------------------------------------------------------- actions
@@ -632,6 +714,7 @@ export class Views {
     const wf = workflow(latest, acts, this.ds.rowsAt(csn, at).filter((r) => r.template === template), arrived, rules, this.rules);
     const row: any = {
       csn, template, version: latest.version, at, by: person.name, role: person.role, user_email: get(person, 'user_email'),
+      by_id: personKey(person),
     };
     if (kind === 'edit' || kind === 'attest' || kind === 'sign') {
       if (!(SIGNS[person.role] ?? []).includes(template)) throw new ActionError('Only the sending ED clinician for this template can change or sign it.');
@@ -712,8 +795,145 @@ export class Views {
       if (pyLen(readback) > MAX_TEXT || pyLen(questions) > MAX_TEXT) throw new ActionError(TOO_LONG);
       Object.assign(row, { readback, questions: or(questions, null) });
     }
+    // Allowed, never blocked: an ED clinician acting on a patient a colleague owns, recorded for Analytics.
+    const owner = summary.owners[person.role] ?? null;
+    if (counts(owner) && !owner.you) Object.assign(row, { off_assignment: true, assigned_to: owner.name });
     this.store.add(kind, row);
     return this.case(csn, at, person);
+  }
+
+  // -------------------------------------------------------------------------------------------- ownership
+  /** An assignment row for the caller's role; like actions, it cannot go before one already recorded. */
+  private assignmentRow(csn: string, at: number, person: any, kind: string, to: any, owner: any): any {
+    const role = person.role;
+    if (this.store.assignments(csn).some((r) => r.role === role && r.at > at)) throw new ActionError(EARLIER);
+    return {
+      csn, role, kind, assignee_id: to ? to.id : null, assignee_name: to ? to.name : null, from_id: owner ? owner.id : null,
+      from_name: owner ? owner.name : null, at, by_name: person.name, by_role: role, user_email: get(person, 'user_email'),
+      by_id: personKey(person), detail: {},
+    };
+  }
+
+  /**
+   * The demo's starting owners (logic.py seed_owners): `nurse` owns up to three patients on the board half an hour
+   * before the next shift change who board through it, `physician` the first two, each taken five minutes after its
+   * first draft but no earlier than three hours before `at`.
+   */
+  seedOwners(at: number, nurse: any, physician: any): any[] {
+    const ds = this.ds;
+    const next = nextShift(at, this.shifts);
+    const warn = next - 30 * MINUTE;
+    const encs = [...ds.enc.values()].sort((a, b) => (a.admit_decision_ts ?? next) - (b.admit_decision_ts ?? next) || cmpStr(a.csn, b.csn));
+    const taken: [string, number][] = [];
+    for (const e of encs) {
+      const rows = e.admit_decision_ts !== null ? ds.rowsAt(e.csn, warn) : [];
+      if (!rows.length || (e.ed_departure_ts !== null && e.ed_departure_ts <= next) || ds.canceledAt(e, next)) continue;
+      const t = Math.max(rows[0].at + 5 * MINUTE, at - 3 * HOUR);
+      if (t <= warn) taken.push([e.csn, t]);
+      if (taken.length === 3) break;
+    }
+    const out: any[] = [];
+    taken.forEach(([csn, t], i) => {
+      for (const [role, who] of [['ed_nurse', nurse], ['ed_physician', physician]] as [string, any][]) {
+        if (role === 'ed_nurse' || i < 2) {
+          out.push({ csn, role, kind: 'claim', assignee_id: who.id, assignee_name: who.name, from_id: null, from_name: null, at: t,
+            by_name: who.name, by_role: role, user_email: null, by_id: who.id, detail: { seed: true } });
+        }
+      }
+    });
+    return out;
+  }
+
+  /** Take (claim), Assign to a colleague or Release, for the caller's ED role. */
+  own(kind: string, csn: string, at: number, person: any, to: string | null, colleagues: any[]): any {
+    if (!ROLES.includes(person.role)) throw new ActionError(NOT_ED);
+    const summary = this.summary(csn, at, person);
+    if (summary === null) throw new ActionError('This patient is not on your board at this time.');
+    if (summary.phase !== 'boarding') throw new ActionError('The patient has left the ED, so they no longer need an ED owner.');
+    const owner = summary.owners[person.role];
+    const me = personKey(person);
+    const current = counts(owner) ? owner : null;
+    let row: any;
+    if (kind === 'claim') {
+      if (current && current.you) throw new ActionError('This patient is already yours.');
+      row = this.assignmentRow(csn, at, person, kind, { id: me, name: person.name }, owner);
+    } else if (kind === 'assign') {
+      const target = colleagues.find((c) => c.id === to) ?? null;
+      if (target === null) throw new ActionError('Choose a colleague from the list.');
+      if (target.id === me) throw new ActionError('To take this patient yourself, press Take.');
+      if (current && current.id === target.id) throw new ActionError(`${target.name} already owns this patient.`);
+      row = this.assignmentRow(csn, at, person, kind, target, owner);
+    } else if (kind === 'release') {
+      if (owner === null) throw new ActionError('No one owns this patient, so there is nothing to release.');
+      if (owner.id !== me) throw new ActionError(`Only ${owner.name} can release this patient. Use Take or Assign instead.`);
+      row = this.assignmentRow(csn, at, person, kind, null, owner);
+    } else {
+      throw new ActionError('Choose Take, Assign or Release.');
+    }
+    this.store.assign(row);
+    return this.case(csn, at, person);
+  }
+
+  /** Take over at a shift change: colleagues with their patient counts, and the chosen colleague's patients. */
+  takeover(at: number, person: any, colleague: string | null, colleagues: any[]): any {
+    const role = person.role;
+    if (!ROLES.includes(role)) throw new ActionError(NOT_ED);
+    const owned = new Map<string, any[]>();
+    for (const c of this.ds.enc.keys()) {
+      const s = this.summary(c, at, person);
+      if (s && s.phase === 'boarding' && counts(s.owners[role])) {
+        const id = s.owners[role].id;
+        if (!owned.has(id)) owned.set(id, []);
+        owned.get(id)!.push(s);
+      }
+    }
+    const me = personKey(person);
+    const others = colleagues.filter((c) => c.id !== me);
+    const chosen = others.find((c) => c.id === colleague) ?? null;
+    if (truthy(colleague) && chosen === null) throw new ActionError('Choose a colleague from the list.');
+    const tpl = person.default_template;
+    const rank = (r: any) => SEVERITY_RANK[or(r.severity, '') as string] ?? -1;
+    const theirs = [...(chosen ? owned.get(colleague as string) ?? [] : [])]
+      .sort((a, b) => rank(b) - rank(a) || b.minutes_boarding - a.minutes_boarding || cmpStr(a.csn, b.csn));
+    const rows = theirs.map((s) => {
+      const t = this.case(s.csn, at, person).templates[tpl] ?? null;
+      const wf = t ? t.workflow : { state: 'drafting' };
+      const confirm = new Set<string>((t ? t.draft.rules : [])
+        .filter((r: any) => r.element in CONFIRM_LABEL && r.status === 'attest' && !truthy(get(r, 'resolution')))
+        .map((r: any) => r.element));
+      return {
+        csn: s.csn, patient: s.patient, severity: s.severity, chief_complaint: s.chief_complaint, facility: s.facility,
+        destination: s.destination, minutes_boarding: s.minutes_boarding, owner: s.owners[role], state: wf.state,
+        signed: get(wf, 'signed'), acknowledged: get(wf, 'acknowledged'),
+        blocking: t ? t.draft.completeness.blocking.length : 0,
+        to_confirm: Object.keys(CONFIRM_LABEL).filter((e) => confirm.has(e)).map((e) => CONFIRM_LABEL[e]),
+        changed: t && wf.state === 'changed' ? t.changes.elements.map((c: any) => c.label) : [],
+      };
+    });
+    return {
+      at: iso(at), role, template: tpl, colleagues: others.map((c) => ({ ...c, patients: (owned.get(c.id) ?? []).length })),
+      colleague: chosen, rows,
+    };
+  }
+
+  /** Take some or all of a colleague's patients in one go: one handover row per patient, all or none. */
+  takeOver(at: number, person: any, colleague: string, csns: string[], colleagues: any[]): any {
+    const view = this.takeover(at, person, colleague, colleagues);
+    if (view.colleague === null) throw new ActionError('Choose a colleague from the list.');
+    if (!csns.length) throw new ActionError('Choose at least one patient to take over.');
+    const theirs = new Map<string, any>(view.rows.map((r: any) => [r.csn, r]));
+    const rows: any[] = [];
+    for (const csn of new Set(csns)) {
+      const r = theirs.get(csn);
+      if (!r) {
+        const e = this.ds.enc.get(csn);
+        const who = e ? e.patient_name : 'that patient';
+        throw new ActionError(`${view.colleague.name} no longer owns ${who}. Reload the list and try again.`);
+      }
+      rows.push(this.assignmentRow(csn, at, person, 'handover', { id: personKey(person), name: person.name }, r.owner));
+    }
+    for (const row of rows) this.store.assign(row);
+    return { ...this.takeover(at, person, colleague, colleagues), taken: rows.map((r) => r.csn) };
   }
 }
 

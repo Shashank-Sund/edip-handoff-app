@@ -62,7 +62,7 @@ describe.skipIf(!have)('static demo parity with the FastAPI app', () => {
     expect(spec.scenarios.length).toBeGreaterThan(100);
     const failures: string[] = [];
     for (const s of spec.scenarios) {
-      const r = server.handle({ method: s.method, path: s.path, at: s.at, persona: s.persona, body: s.body });
+      const r = server.handle({ method: s.method, path: s.path, at: s.at, persona: s.persona, body: s.body, params: s.params });
       const body = JSON.parse(JSON.stringify(r.body));
       if (s.path === '/api/health') body.now = '<now>';
       const d = r.status !== s.status ? `status: expected ${s.status}, got ${r.status} (${JSON.stringify(body).slice(0, 200)})` : firstDiff(s.response, body);

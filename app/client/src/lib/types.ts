@@ -13,6 +13,71 @@ export interface Persona {
   default_template: string;
   can_sign: string[];
   can_ack: string[];
+  /** Who the person is for owning patients: the persona id with demo personas, else the sign in email. */
+  key?: string;
+}
+
+/** The two ED roles that own patients: one nurse owner and one physician owner per patient. */
+export type EdRole = 'ed_nurse' | 'ed_physician';
+
+/** Who owns a patient for one ED role. stale: no action, take or assignment within the limit, so it counts as Unassigned. */
+export interface Owner {
+  id: string;
+  name: string;
+  since: string;
+  last_active: string;
+  stale: boolean;
+  you: boolean;
+}
+
+/** A colleague in your ED role, for Assign and Take over. */
+export interface Colleague {
+  id: string;
+  name: string;
+  you?: boolean;
+  /** Take over: how many boarding patients they own now. */
+  patients?: number;
+}
+
+/** The next shift change, for ED roles: warning is true in the half hour (or the set time) before it. */
+export interface ShiftInfo {
+  at: string;
+  minutes: number;
+  warning: boolean;
+  /** Boarding patients you own, and how many of them have a handoff for your role not signed yet. */
+  mine: number;
+  unsigned: number;
+}
+
+export interface TakeoverRow {
+  csn: string;
+  patient: { name: string; mrn: string; sex: string; age: number | null };
+  severity: Severity | null;
+  chief_complaint: string;
+  facility: string;
+  destination: { pending_unit?: string; pending_room?: string; pending_bed?: string; level_of_care?: string };
+  minutes_boarding: number;
+  owner: Owner;
+  state: WorkflowState;
+  signed?: { by: string; role: string; callback?: string; at: string; version: number } | null;
+  acknowledged?: { by: string; at: string; version: number } | null;
+  /** Items that still block signing the handoff for your role. */
+  blocking: number;
+  /** Code status, allergies and isolation not confirmed yet. */
+  to_confirm: string[];
+  /** Changed after signing: the items that changed since the signature. */
+  changed: string[];
+}
+
+export interface Takeover {
+  at: string;
+  role: EdRole;
+  template: string;
+  colleagues: Colleague[];
+  colleague: Colleague | null;
+  rows: TakeoverRow[];
+  /** After a Take over: the patients just taken. */
+  taken?: string[];
 }
 
 export interface TemplateInfo {
@@ -51,6 +116,8 @@ export interface AppConfig {
   timezone?: string;
   /** Live clock only: how many hours back a clinician can look, read only (0: not at all). */
   past_view_hours?: number;
+  /** The ED shift changes (facility local times), how long before one the board warns, and the stale owner limit. */
+  shifts?: { changes: string[]; warning_minutes: number; stale_owner_hours: number };
 }
 
 export interface Workflow {
@@ -99,6 +166,8 @@ export interface CaseSummary {
   entered?: { code_status: EnteredFlag | null; isolation: EnteredFlag | null; allergies: EnteredFlag[] };
   last_update: { as_of: string; trigger: string };
   templates: Record<string, TemplateSummary>;
+  /** The nurse and physician owner, or null when no one owns the patient for that role. */
+  owners?: Record<EdRole, Owner | null>;
 }
 
 export interface Board {
@@ -114,8 +183,13 @@ export interface Board {
     arrived: number;
     /** ED roles: arrived on the unit with no sign off of the role's template; null for other roles. */
     left_unsigned?: number | null;
+    /** ED roles: boarding patients you own, and boarding patients no one owns for your role. */
+    mine?: number;
+    unassigned?: number;
   };
   rows: CaseSummary[];
+  /** ED roles: the next shift change; null for other roles. */
+  shift?: ShiftInfo | null;
 }
 
 export interface Rule {
@@ -249,12 +323,17 @@ export interface CaseTemplate {
 export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
-  activity: { kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string; removed?: string }[];
+  activity: {
+    kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string; removed?: string;
+    /** Done by an ED clinician on a patient a colleague owned. */
+    off_assignment?: boolean; assigned_to?: string;
+  }[];
 }
 
 export interface Analytics {
   at: string;
-  series: { t: string; ed: number; boarding: number }[];
+  /** unassigned_rn, unassigned_md: boarding patients with no nurse owner, and with no physician owner, that hour. */
+  series: { t: string; ed: number; boarding: number; unassigned_rn?: number; unassigned_md?: number }[];
   units: { unit: string; n: number; median_min: number | null; p90_min: number | null }[];
   admitted: number;
   drafts_per_patient: { median: number | null; max: number | null };
@@ -266,6 +345,15 @@ export interface Analytics {
   drafts: number;
   model_calls: number;
   addenda: number;
+  /** Owners: ED actions outside an assignment (of all ED edits, attestations and signatures), handovers by distance
+   *  from the nearest shift change, and minutes from admit decision to the first signature by who owned the patient. */
+  owners?: {
+    /** When the first owner was recorded, or null: before it every patient is unassigned, which says nothing. */
+    since: string | null;
+    outside: { role: EdRole; n: number; of: number }[];
+    handovers: { bucket: string; n: number }[];
+    to_sign: { role: EdRole; owner: string | null; n: number; median_min: number }[];
+  };
 }
 
 export interface TemplateDef {

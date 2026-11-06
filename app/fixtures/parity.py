@@ -84,7 +84,7 @@ def load_app(fixtures: Path):
     for k in ("EDIP_MODE", "EDIP_CLOCK", "EDIP_CLOCK_MODE", "EDIP_DEMO_PERSONAS", "EDIP_SYNTHETIC_DATA"):
         os.environ.pop(k, None)
     sys.path.insert(0, str(ROOT / "app/server"))
-    for m in ("config", "data", "logic", "personas", "workflow", "main"):
+    for m in ("config", "data", "assignment", "logic", "personas", "workflow", "main"):
         sys.modules.pop(m, None)
     main = importlib.import_module("main")
     from fastapi.testclient import TestClient
@@ -95,15 +95,15 @@ class Recorder:
     def __init__(self, client):
         self.c, self.items = client, []
 
-    def __call__(self, name, method, path, at=None, persona=None, body=None):
-        params = {"at": at} if at is not None else None
+    def __call__(self, name, method, path, at=None, persona=None, body=None, params=None):
+        query = ({"at": at} if at is not None else {}) | (params or {})
         headers = {"X-Demo-Persona": persona} if persona is not None else None
-        r = self.c.request(method, path, params=params, headers=headers, json=body)
+        r = self.c.request(method, path, params=query or None, headers=headers, json=body)
         data = r.json()
         if path == "/api/health":
             data["now"] = "<now>"
         self.items.append({"name": name, "method": method, "path": path, "at": at, "persona": persona, "body": body,
-                           "status": r.status_code, "response": data})
+                           "params": params, "status": r.status_code, "response": data})
         return r.status_code, data
 
 
@@ -293,6 +293,7 @@ def scenarios(c, main):
     workflow_scenarios(rec, ds, default, boarding, units, end)
     entered_scenarios(rec, ds, default, boarding, units)
     canceled_scenarios(rec, ds)
+    assignment_scenarios(rec, ds, default, boarding, units)
     return rec.items
 
 
@@ -592,6 +593,153 @@ def canceled_scenarios(rec, ds):
             rec(f"canceled {csn} edit {label}", "POST", f"{u}/sbar_nurse/edit", at=iso(t), persona="ed-rn",
                 body={"element": "E25", "text": "Plan before the cancel"})
     rec("canceled reset end", "POST", "/api/demo/reset")
+
+
+def assignment_scenarios(rec, ds, default, boarding, units):
+    """Who owns each patient: Take, Assign and Release with every refusal, the colleague list per role, owners on the
+    board and the handoff at earlier and later times, an action outside the assignment, a stale owner, the shift
+    change banner around a shift change, and Take over (the list, taking some, then the rest, and its refusals)."""
+    from assignment import next_shift
+
+    iso = lambda t: t.isoformat()  # noqa: E731
+    rec("owner reset", "POST", "/api/demo/reset")
+    # The demo's starting owners, written at start up and again by Reset.
+    warn = next_shift(default, [(7, 0), (19, 0)]) - timedelta(minutes=29)
+    for p in ("ed-rn", "ed-md-2", "ed-rn-2"):
+        rec(f"seed board {p}", "GET", "/api/board", persona=p)
+        rec(f"seed board {p} before the shift change", "GET", "/api/board", at=iso(warn), persona=p)
+    rec("seed takeover from Jordan", "GET", "/api/takeover", at=iso(warn), persona="ed-rn-2", params={"colleague": "ed-rn"})
+    for p in ("ed-rn", "ed-rn-2", "ed-md", "ed-md-2", "hosp-md", "viewer", units[0]["id"]):
+        rec(f"colleagues {p}", "GET", "/api/colleagues", persona=p)
+    rec("colleagues unknown persona (400)", "GET", "/api/colleagues", persona="nobody")
+    if len(boarding) < 3:
+        return
+    a, b, c = boarding[0], boarding[1], boarding[2]
+    own = lambda r: f"/api/handoffs/{r['csn']}/owner"  # noqa: E731
+    O = lambda name, r, persona, body, at=None: rec(f"owner {name}", "POST", own(r), at=at, persona=persona, body=body)  # noqa: E731
+    O("take", a, "ed-rn", {"kind": "claim"})
+    O("take again (409)", a, "ed-rn", {"kind": "claim"})
+    O("release by a colleague (409)", a, "ed-rn-2", {"kind": "release"})
+    O("assign to someone unknown (409)", a, "ed-rn", {"kind": "assign", "to": "nobody"})
+    O("assign with no colleague (409)", a, "ed-rn", {"kind": "assign"})
+    O("assign to yourself (409)", a, "ed-rn", {"kind": "assign", "to": "ed-rn"})
+    O("assign to another role (409)", a, "ed-rn", {"kind": "assign", "to": "ed-md"})
+    O("assign", a, "ed-rn", {"kind": "assign", "to": "ed-rn-2"})
+    O("assign to the owner (409)", a, "ed-rn", {"kind": "assign", "to": "ed-rn-2"})
+    O("take from a colleague", a, "ed-rn", {"kind": "claim"})
+    O("physician takes", a, "ed-md", {"kind": "claim"})
+    O("release", a, "ed-rn", {"kind": "release"})
+    O("release when no one owns it (409)", a, "ed-rn", {"kind": "release"})
+    for p in ("viewer", "hosp-md", units[0]["id"]):
+        O(f"take as {p} (409)", a, p, {"kind": "claim"})
+    rec("owner take unknown patient (409)", "POST", "/api/handoffs/0000000/owner", persona="ed-rn", body={"kind": "claim"})
+    for name, body in (("unknown kind (409)", {"kind": "steal"}), ("kind missing (422)", {}), ("kind not text (422)", {"kind": 1}),
+                       ("to not text (422)", {"kind": "assign", "to": 5}), ("body a list (422)", [1])):
+        O(name, a, "ed-rn", body)
+    rec("owner GET (405)", "GET", own(a), persona="ed-rn")
+    O("invalid at (400)", a, "ed-rn", {"kind": "claim"}, at="nope")
+    O("unknown persona (400)", a, "nobody", {"kind": "claim"})
+    # Owners on the board and the handoff, for each role.
+    O("nurse takes b", b, "ed-rn", {"kind": "claim"})
+    O("second nurse takes c", c, "ed-rn-2", {"kind": "claim"})
+    O("second physician takes b", b, "ed-md-2", {"kind": "claim"})
+    recv = next((u for u in units if u["unit"] == b["destination"]["pending_unit"] and u["facility"] == b["facility"]), units[0])
+    for p in ("ed-rn", "ed-rn-2", "ed-md", "ed-md-2", "hosp-md", "viewer", recv["id"]):
+        rec(f"owners board {p}", "GET", "/api/board", persona=p)
+    rec("owners case b", "GET", f"/api/handoffs/{b['csn']}", persona="ed-rn")
+    rec("owners case b (receiver)", "GET", f"/api/handoffs/{b['csn']}", persona=recv["id"])
+    # Acting on a colleague's patient is allowed and recorded as outside the assignment.
+    url = f"/api/handoffs/{b['csn']}"
+    rec("off assignment: edit by the second nurse", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn-2",
+        body={"element": "E25", "text": "Checked by a colleague"})
+    rec("on assignment: edit by the owner", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn",
+        body={"element": "E25", "text": "Checked by the owner"})
+    rec("off assignment: physician on an unowned template", "POST", f"{url}/custom_sea58/edit", persona="ed-md",
+        body={"element": "E25", "text": "Physician note"})
+    rec("off assignment: case", "GET", url, persona="ed-rn")
+    rec("owners analytics after acting outside the assignment", "GET", "/api/analytics")
+    # The clock: an hour earlier no one owns anything yet, and an assignment cannot go before one recorded.
+    rec("owners board an hour earlier", "GET", "/api/board", at=iso(default - timedelta(hours=1)), persona="ed-rn")
+    rec("owners case an hour earlier", "GET", url, at=iso(default - timedelta(hours=1)), persona="ed-rn")
+    O("take earlier than one recorded (409)", b, "ed-rn-2", {"kind": "claim"}, at=iso(default - timedelta(minutes=5)))
+    # A stale owner: the patient who boards longest, taken at their first draft. An edit by the owner two hours later
+    # keeps them the owner past the limit from the take; with no action for the limit the patient counts as
+    # Unassigned, and taking it again makes it theirs again.
+    rec("owner reset 2", "POST", "/api/demo/reset")
+    long = max((e for e in ds.enc.values() if e["admit_decision_ts"] and ds.versions.get(e["csn"])
+                and not any(r["status"] == "retracted" for r in ds.versions[e["csn"]])),
+               key=lambda e: ((e["ed_departure_ts"] or ds.end) - ds.versions[e["csn"]][0]["at"], e["csn"]))
+    t1, lu = ds.versions[long["csn"]][0]["at"] + timedelta(minutes=1), f"/api/handoffs/{long['csn']}"
+    rec("stale owner: take", "POST", f"{lu}/owner", at=iso(t1), persona="ed-rn", body={"kind": "claim"})
+    rec("stale owner: edit by the owner", "POST", f"{lu}/sbar_nurse/edit", at=iso(t1 + timedelta(hours=2)), persona="ed-rn",
+        body={"element": "E25", "text": "Rechecked by the owner"})
+    for label, t in (("13h", t1 + timedelta(hours=13)), ("14h after the take", t1 + timedelta(hours=14, minutes=1)),
+                     ("14h after the edit", t1 + timedelta(hours=16, minutes=1))):
+        rec(f"stale owner board {label}", "GET", "/api/board", at=iso(t), persona="ed-rn")
+        rec(f"stale owner case {label}", "GET", lu, at=iso(t), persona="ed-rn")
+    t16 = iso(t1 + timedelta(hours=16, minutes=1))
+    rec("stale owner: release when stale", "POST", f"{lu}/owner", at=t16, persona="ed-rn-2", body={"kind": "release"})
+    rec("stale owner: take again", "POST", f"{lu}/owner", at=t16, persona="ed-rn", body={"kind": "claim"})
+    rec("stale owner board after taking again", "GET", "/api/board", at=t16, persona="ed-rn")
+    # The shift change banner: before, inside and after the warning window, for patients boarding through it.
+    rec("owner reset 3", "POST", "/api/demo/reset")
+    nxt = next_shift(default, [(7, 0), (19, 0)])
+    t0 = nxt - timedelta(minutes=45)
+    _, sb = rec("shift: board", "GET", "/api/board", at=iso(t0), persona="ed-rn")
+    through = [r for r in sb["rows"] if r["phase"] == "boarding" and (ds.enc[r["csn"]]["ed_departure_ts"] or ds.end) > nxt]
+    for r in through[:3]:
+        O(f"shift: take {r['csn']}", r, "ed-rn", {"kind": "claim"}, at=iso(t0))
+    # One handoff signed and then changed (sign again), one signed, the rest drafts.
+    for i, r in enumerate(through[:2]):
+        u = f"/api/handoffs/{r['csn']}"
+        resolve(rec, u, "sbar_nurse", "ed-rn", iso(t0), f"shift {i}")
+        rec(f"shift {i}: sign", "POST", f"{u}/sbar_nurse/sign", at=iso(t0), persona="ed-rn", body={"callback": "x4471"})
+        if i == 0:
+            rec(f"shift {i}: edit after signing", "POST", f"{u}/sbar_nurse/edit", at=iso(t0), persona="ed-rn",
+                body={"element": "E25", "text": "Changed after signing"})
+    c = through[3] if len(through) > 3 else c
+    for m in (45, 31, 30, 10, 0, -1):
+        for p in ("ed-rn", "ed-md", "viewer"):
+            rec(f"shift banner {m} min before {p}", "GET", "/api/board", at=iso(nxt - timedelta(minutes=m)), persona=p)
+    # Take over at the shift change.
+    tt = iso(nxt - timedelta(minutes=10))
+    T = lambda name, persona, params=None, at=tt: rec(f"takeover {name}", "GET", "/api/takeover", at=at, persona=persona, params=params)  # noqa: E731
+    P = lambda name, persona, body, at=tt: rec(f"take over {name}", "POST", "/api/takeover", at=at, persona=persona, body=body)  # noqa: E731
+    T("list", "ed-rn-2")
+    _, view = T("from Jordan", "ed-rn-2", {"colleague": "ed-rn"})
+    T("from yourself (409)", "ed-rn-2", {"colleague": "ed-rn-2"})
+    T("from someone unknown (409)", "ed-rn-2", {"colleague": "nobody"})
+    T("from another role (409)", "ed-md", {"colleague": "ed-rn"})
+    T("physician list", "ed-md")
+    for p in ("hosp-md", "viewer", units[0]["id"]):
+        T(f"as {p} (409)", p)
+    T("unknown persona (400)", "nobody")
+    T("an hour earlier", "ed-rn-2", {"colleague": "ed-rn"}, iso(nxt - timedelta(minutes=70)))
+    csns = [r["csn"] for r in view.get("rows", [])]
+    for name, body in (("no patients (409)", {"colleague": "ed-rn", "csns": []}),
+                       ("patients not a list (422)", {"colleague": "ed-rn", "csns": "x"}),
+                       ("patient not text (422)", {"colleague": "ed-rn", "csns": [1]}),
+                       ("colleague missing (422)", {"csns": csns}), ("body a list (422)", [1]),
+                       ("unknown patient (409)", {"colleague": "ed-rn", "csns": ["0000000"]}),
+                       ("a patient they do not own (409)", {"colleague": "ed-rn", "csns": [c["csn"]]}),
+                       ("from yourself (409)", {"colleague": "ed-rn-2", "csns": csns})):
+        P(name, "ed-rn-2", body)
+    P("as the viewer (409)", "viewer", {"colleague": "ed-rn", "csns": csns})
+    P("some", "ed-rn-2", {"colleague": "ed-rn", "csns": csns[:1] * 2})
+    P("the same again (409)", "ed-rn-2", {"colleague": "ed-rn", "csns": csns[:1]})
+    P("earlier than one recorded (409)", "ed-rn-2", {"colleague": "ed-rn", "csns": csns[:1]}, iso(nxt - timedelta(minutes=20)))
+    P("the rest", "ed-rn-2", {"colleague": "ed-rn", "csns": csns[1:]})
+    for p in ("ed-rn", "ed-rn-2"):
+        rec(f"take over after: board {p}", "GET", "/api/board", at=tt, persona=p)
+    if csns:
+        rec("take over after: case", "GET", f"/api/handoffs/{csns[0]}", at=tt, persona="ed-rn")
+    T("after: list", "ed-rn-2", {"colleague": "ed-rn"})
+    # Analytics with handovers on both sides of the shift change, a signature by an owner, and after the week.
+    if csns:
+        P("after the change", "ed-rn", {"colleague": "ed-rn-2", "csns": csns[:1]}, iso(nxt + timedelta(minutes=40)))
+    for label, t in (("before the change", tt), ("after the change", iso(nxt + timedelta(hours=1))), ("end", iso(ds.end))):
+        rec(f"owners analytics {label}", "GET", "/api/analytics", at=t)
+    rec("owner reset end", "POST", "/api/demo/reset")
 
 
 def main():
