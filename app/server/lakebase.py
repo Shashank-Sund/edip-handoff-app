@@ -6,8 +6,9 @@ endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
 refreshed by the handoff job; retracted_ts and prior_status once the sync has them). Writes: app.handoff_action, app.assignment
-(who owns each patient: claim, assign, release, handover) and app.view_log (with the live clock, every view of an
-earlier time), created here on first start, append only. Every statement is safe to run again on a deployed database.
+(who owns each patient: claim, assign, release, handover), app.task_event (tasks: create, done, not_needed, reopen,
+reassign, due) and app.view_log (with the live clock, every view of an earlier time), created here on first start,
+append only. Every statement is safe to run again on a deployed database.
 """
 from __future__ import annotations
 
@@ -39,8 +40,8 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS ix_action_csn ON app.handoff_action (csn, at)",
     """CREATE TABLE IF NOT EXISTS app.view_log (
         view_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        page          TEXT        NOT NULL CONSTRAINT view_log_page_check CHECK (page IN ('board', 'handoff', 'analytics', 'takeover')),
-        csn           TEXT,
+        page          TEXT        NOT NULL CONSTRAINT view_log_page_check CHECK (page IN ('board', 'handoff', 'analytics', 'takeover', 'tasks')),
+        csn          TEXT,
         at            TIMESTAMPTZ NOT NULL,
         recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
         by_name       TEXT        NOT NULL,
@@ -48,15 +49,16 @@ DDL = [
         user_email    TEXT
     )""",
     "CREATE INDEX IF NOT EXISTS ix_view_recorded ON app.view_log (recorded_ts)",
-    # A view_log created before the Take over page has the page check without 'takeover' (Postgres named the inline
-    # check view_log_page_check). Widen it once; the check of pg_constraint makes this a no op afterwards, and the DO
-    # block is one transaction, so a second app process starting at the same time redoes it harmlessly.
+    # A view_log created before the Take over page, or before the Tasks page, has the page check without 'takeover' or
+    # 'tasks' (Postgres named the inline check view_log_page_check). Widen it once; the check of pg_constraint makes
+    # this a no op afterwards, and the DO block is one transaction, so a second app process starting at the same time
+    # redoes it harmlessly.
     """DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'app.view_log'::regclass
-                       AND conname = 'view_log_page_check' AND pg_get_constraintdef(oid) LIKE '%takeover%') THEN
+                       AND conname = 'view_log_page_check' AND pg_get_constraintdef(oid) LIKE '%''tasks''%') THEN
             ALTER TABLE app.view_log DROP CONSTRAINT IF EXISTS view_log_page_check;
             ALTER TABLE app.view_log ADD CONSTRAINT view_log_page_check
-                CHECK (page IN ('board', 'handoff', 'analytics', 'takeover'));
+                CHECK (page IN ('board', 'handoff', 'analytics', 'takeover', 'tasks'));
         END IF;
     END $$""",
     """CREATE TABLE IF NOT EXISTS app.assignment (
@@ -76,7 +78,38 @@ DDL = [
         detail        JSONB       NOT NULL DEFAULT '{}'::jsonb
     )""",
     "CREATE INDEX IF NOT EXISTS ix_assignment_csn ON app.assignment (csn, role, at)",
+    # Tasks (tasks.py): one row per event; a create takes its task_id from the sequence, every later event names it.
+    "CREATE SEQUENCE IF NOT EXISTS app.task_id_seq",
+    """CREATE TABLE IF NOT EXISTS app.task_event (
+        event_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        task_id       BIGINT      NOT NULL,
+        csn           TEXT        NOT NULL,
+        kind          TEXT        NOT NULL CHECK (kind IN ('create', 'done', 'not_needed', 'reopen', 'reassign', 'due')),
+        template      TEXT,
+        item_key      TEXT,
+        text          TEXT,
+        role          TEXT        CHECK (role IN ('nurse', 'physician')),
+        assignee_id   TEXT,
+        assignee_name TEXT,
+        due           TIMESTAMPTZ,
+        reason        TEXT,
+        at            TIMESTAMPTZ NOT NULL,
+        recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        by_name       TEXT        NOT NULL,
+        by_role       TEXT        NOT NULL,
+        user_email    TEXT,
+        detail        JSONB       NOT NULL DEFAULT '{}'::jsonb
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_task_event_csn ON app.task_event (csn, at)",
+    # An action list item becomes a task once per template, also when two app processes save the same sign off.
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_task_event_item ON app.task_event (csn, template, item_key) "
+    "WHERE kind = 'create' AND template IS NOT NULL",
 ]
+# app.task_event columns written from a task event; who acted (by_id) and what a change replaced go in detail.
+TASK = ("csn", "kind", "template", "item_key", "text", "role", "assignee_id", "assignee_name", "due", "reason", "at",
+        "by_name", "by_role", "user_email")
+TASK_DETAIL = ("by_id", "version", "due_text", "owner_text", "from_role", "from_assignee_id", "from_assignee_name",
+               "from_due", "undo", "outside_role")
 # app.assignment columns written from an assignment row; by_id (who acted, for the stale rule) goes in detail.
 ASSIGNMENT = ("csn", "role", "kind", "assignee_id", "assignee_name", "from_id", "from_name", "at", "by_name", "by_role",
               "user_email")
@@ -172,6 +205,8 @@ class LakebaseStore:
         self._read = 0.0
         self._assigned: dict[str, list[dict]] | None = None
         self._assigned_read = 0.0
+        self._tasks: dict[str, list[dict]] | None = None
+        self._tasks_read = 0.0
         self.ttl = config.ACTIONS_TTL if ttl is None else ttl
         self._ready = False
         try:
@@ -260,7 +295,8 @@ class LakebaseStore:
 
     def names(self) -> dict[str, str]:
         """The display name each signed in email last used, from the rows already read (and reread with them)."""
-        return last_names(self._all(), [r for rows in self._all_assigned().values() for r in rows])
+        return last_names(self._all(), [r for rows in self._all_assigned().values() for r in rows],
+                          [r for rows in self._all_tasks().values() for r in rows])
 
     def assign(self, row: dict) -> dict:
         """One ownership change, a row in app.assignment."""
@@ -277,6 +313,60 @@ class LakebaseStore:
         with self._lock:
             self._assigned = None
         return {**row, "assignment_id": aid, "recorded_ts": recorded}
+
+    def _all_tasks(self, fresh: bool = False) -> dict[str, list[dict]]:
+        """Every row of app.task_event by csn, reread like the actions (ttl, or fresh)."""
+        with self._lock:
+            if fresh or self._tasks is None or time.time() - self._tasks_read > self.ttl:
+                try:
+                    self._ensure()
+                    from psycopg.rows import dict_row
+                    with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                        rows = cur.execute("SELECT * FROM app.task_event ORDER BY at, event_id").fetchall()
+                except Exception as exc:
+                    raise StoreUnavailable(UNREACHABLE) from exc
+                out: dict[str, list[dict]] = {}
+                for r in rows:
+                    d = r["detail"] if isinstance(r["detail"], dict) else json.loads(r["detail"] or "{}")
+                    if d.get("from_due"):
+                        d["from_due"] = datetime.fromisoformat(d["from_due"])
+                    out.setdefault(r["csn"], []).append({**{k: v for k, v in r.items() if k != "detail"}, **d})
+                self._tasks, self._tasks_read = out, time.time()
+            return self._tasks
+
+    def task_events(self, csn: str, at: datetime | None = None, fresh: bool = False) -> list[dict]:
+        return [r for r in self._all_tasks(fresh).get(csn, []) if at is None or r["at"] <= at]
+
+    def all_task_events(self, at: datetime | None = None, fresh: bool = False) -> list[dict]:
+        return [r for rows in self._all_tasks(fresh).values() for r in rows if at is None or r["at"] <= at]
+
+    def add_tasks(self, rows: list[dict]) -> list[dict]:
+        """Task events, rows in app.task_event saved in one transaction. A create takes the next task_id from
+        app.task_id_seq; a create from a handoff whose item is a task of that template already is skipped (the unique
+        index ux_task_event_item), also when another app process saved it a moment ago. Returns the rows saved."""
+        from psycopg.types.json import Jsonb
+        out = []
+        try:
+            self._ensure()
+            with PG.connect() as conn, conn.transaction():
+                for row in rows:
+                    detail = {k: row[k] for k in TASK_DETAIL if row.get(k) is not None}
+                    if isinstance(detail.get("from_due"), datetime):
+                        detail["from_due"] = detail["from_due"].isoformat()
+                    task_id = "nextval('app.task_id_seq')" if row["kind"] == "create" else "%s"
+                    got = conn.execute(
+                        f"INSERT INTO app.task_event (task_id, {', '.join(TASK)}, detail) VALUES ({task_id}, "
+                        f"{', '.join(['%s'] * (len(TASK) + 1))}) ON CONFLICT (csn, template, item_key) "
+                        "WHERE kind = 'create' AND template IS NOT NULL DO NOTHING RETURNING event_id, task_id, recorded_ts",
+                        ([] if row["kind"] == "create" else [row["task_id"]]) + [row.get(k) for k in TASK] + [Jsonb(detail)]
+                    ).fetchone()
+                    if got:
+                        out.append({**row, "event_id": got[0], "task_id": got[1], "recorded_ts": got[2]})
+        except Exception as exc:
+            raise StoreUnavailable(UNREACHABLE) from exc
+        with self._lock:
+            self._tasks = None
+        return out
 
     def reset(self):
         raise PermissionError("actions are a permanent record in live mode")

@@ -22,7 +22,7 @@ pytest.importorskip("httpx")
 import live_local  # noqa: E402
 import parity  # noqa: E402
 
-MODS = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
+MODS = ("config", "data", "assignment", "tasks", "logic", "personas", "workflow", "main", "lakebase")
 RN, MD, HOSP = "rn@example.org", "md@example.org", "hosp@example.org"
 ROLES = {RN: "ed-rn", MD: "ed-md", HOSP: "hosp-md"}
 
@@ -48,12 +48,13 @@ class One:
 
 
 class FakeDB:
-    """The synced tables (read), app.handoff_action, app.assignment and app.view_log (append), as the app's SQL uses
-    them. tests/test_live_postgres.py runs the same SQL on a real Postgres."""
+    """The synced tables (read), app.handoff_action, app.assignment, app.task_event and app.view_log (append), as the
+    app's SQL uses them. tests/test_live_postgres.py runs the same SQL on a real Postgres."""
 
     def __init__(self, encounters, drafts):
         self.encounters, self.drafts = encounters, drafts
         self.actions, self.views, self.fail_views, self.assigned = [], [], False, []
+        self.tasks, self.task_ids = [], 0
         self.old_sync = False             # a synced table from before retracted_ts and prior_status
 
     def connect(self):
@@ -71,6 +72,9 @@ class FakeConn:
         return False
 
     def cursor(self, row_factory=None):
+        return self
+
+    def transaction(self):
         return self
 
     def execute(self, sql, params=None):
@@ -91,6 +95,22 @@ class FakeConn:
             db.assigned.append(row | {"assignment_id": len(db.assigned) + 1, "recorded_ts": datetime.now(timezone.utc),
                                       "detail": row["detail"].obj})
             return One((len(db.assigned), db.assigned[-1]["recorded_ts"]))
+        if sql.startswith("SELECT * FROM app.task_event"):
+            return Result(sorted(db.tasks, key=lambda r: (r["at"], r["event_id"])))
+        if sql.startswith("INSERT INTO app.task_event"):
+            from lakebase import TASK
+            params = list(params)
+            if "nextval" in sql:
+                db.task_ids += 1
+                params.insert(0, db.task_ids)
+            row = dict(zip(("task_id",) + TASK + ("detail",), params))
+            if row["kind"] == "create" and row["template"] and any(
+                    (r["kind"], r["csn"], r["template"], r["item_key"]) == ("create", row["csn"], row["template"], row["item_key"])
+                    for r in db.tasks):
+                return One(None)                  # ON CONFLICT DO NOTHING
+            db.tasks.append(row | {"event_id": len(db.tasks) + 1, "recorded_ts": datetime.now(timezone.utc),
+                                   "detail": row["detail"].obj})
+            return One((len(db.tasks), row["task_id"], db.tasks[-1]["recorded_ts"]))
         if sql.startswith("SELECT * FROM app.handoff_action"):
             return Result(sorted(db.actions, key=lambda r: (r["at"], r["action_id"])))
         if sql.startswith("INSERT INTO app.handoff_action"):

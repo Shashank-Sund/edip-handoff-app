@@ -7,9 +7,13 @@
   act(...)                 validates and records an edit, attestation, sign off or acknowledgement
   own(...)                 Take, Assign to a colleague, Release: who owns the patient for the ED role
   takeover(...), take_over(...)   a colleague's patients at a shift change, and taking some or all of them
+  patient_tasks(...), add_task(...), task_act(...), my_tasks(...)   tasks (tasks.py): one patient's, a new one, a
+                           change to one, and the caller's across patients for the Tasks page
 
 Every patient has an owner per ED role (assignment.py), shown on the board and the handoff. Acting on a patient
-someone else owns is allowed and recorded as outside the assignment (off_assignment).
+someone else owns is allowed and recorded as outside the assignment (off_assignment). Signing a handoff turns its
+action list into tasks; acting on a task while someone else has the patient is allowed and recorded as outside
+the role (outside_role).
 
 Sign off follows the content: any edit or attestation after a signature, or a newer version whose clinical content
 differs from the signed one, puts the template in state "changed" (sign again); the receiver cannot accept it until
@@ -24,7 +28,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from assignment import HANDOVER_BUCKETS, ROLES, counts, handover_bucket, next_shift, owner_at, person_key
-from data import Dataset, iso, status_at
+import tasks
+from data import Dataset, iso, status_at, ts
 from personas import ACKS, SIGNS, sees
 
 ARRIVED_WINDOW = timedelta(hours=12)
@@ -60,6 +65,28 @@ OWN_TEMPLATE = {"ed_nurse": "sbar_nurse", "ed_physician": "ipass_physician"}
 # The patient level items Take over lists when their attestation is not confirmed yet.
 CONFIRM_LABEL = {"E08": "Code status", "E09": "Allergies", "E10": "Isolation"}
 NOT_ED = "Only ED nurses and physicians take patients."
+# Tasks: what the panel and the Tasks page say, and the refusals.
+MAX_REASON = 200
+TASK_READ_ONLY = "The viewer role can read tasks but not change them."
+NO_TASK = "There is no such task."
+TASK_TEXT = "Write what needs to be done."
+TASK_ROLE = "Choose nurse or physician."
+TASK_COLLEAGUE = "Choose a colleague from the list."
+TASK_ROLE_MISMATCH = "Choose a colleague in that role, or only the role."
+TASK_REASON = "Write a short reason the task is not needed."
+TASK_REASON_LONG = "Keep the reason under 200 characters."
+TASK_DUE = "The due time must be a date and time."
+TASK_CLOSED = "This task is closed. Press Undo to open it again first."
+TASK_UNDO = "There is nothing to undo on this task."
+TASK_KIND = "Choose Done, Not needed, Reassign, Change due time or Undo."
+OUTSIDE_ROLE = {
+    "boarding": "The ED nurse and physician have this patient while they board. You can still act on a task; it is "
+                "recorded as outside your role.",
+    "canceled": "The ED nurse and physician have this patient. You can still act on a task; it is recorded as outside "
+                "your role.",
+    "arrived": "The receiving nurse and the admitting physician have this patient now. You can still act on a task; it "
+               "is recorded as outside your role.",
+}
 
 
 class ActionError(ValueError):
@@ -432,6 +459,8 @@ class Views:
             "last_update": {"as_of": iso(any_row["at"]), "trigger": any_row["trigger"]},
             "templates": templates,
             "owners": {role: owner_at(assigned, role, acts, at, self.stale_owner, me) for role in ROLES},
+            # Open and overdue tasks, for the board row.
+            "tasks": tasks.counts(list(tasks.replay(self.store.task_events(csn, at), at).values()), at),
         }
 
     def board(self, at: datetime, person: dict) -> dict:
@@ -508,12 +537,19 @@ class Views:
                 "versions": [{"version": v["version"], "as_of": iso(v["at"]), "trigger": v["trigger"], "status": status_at(v, at),
                               "severity": v["severity"], "score": v["score"]} for v in versions],
             }
-        log = sorted(({"kind": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
+        # Task events are in the activity too (kind "task", the event in "task", the task's text in detail).
+        events = self.store.task_events(csn, at)
+        text = {t["id"]: t["text"] for t in tasks.replay(events, at).values()}
+        log = sorted([{"kind": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
                        "version": a["version"], "detail": a.get("element") or a.get("rule") or a.get("option")}
                       | ({"restore": True} if a.get("restore") else {})
                       | ({"off_assignment": True, "assigned_to": a.get("assigned_to")} if a.get("off_assignment") else {})
                       | (self._entry(a) if a["kind"] == "attest" else {})
-                      for a in acts), key=lambda a: a["at"], reverse=True)
+                      for a in acts]
+                     + [{"kind": "task", "template": None, "by": e["by_name"], "at": iso(e["at"]), "version": None,
+                         "detail": text.get(e["task_id"]), "task": e["kind"], "task_id": e["task_id"]}
+                        | ({"outside_role": True} if e.get("outside_role") else {})
+                        for e in tasks.ordered(events)], key=lambda a: a["at"], reverse=True)
         return {"summary": summary, "templates": templates, "activity": log}
 
     def _entry(self, a: dict) -> dict:
@@ -752,6 +788,9 @@ class Views:
         if counts(owner) and not owner["you"]:
             row |= {"off_assignment": True, "assigned_to": owner["name"]}
         self.store.add(kind, row)
+        if kind == "sign":
+            # The action list becomes tasks; a sign again or an addendum adds only the new items.
+            self._handoff_tasks(csn, template, latest["version"], at, row, eff)
         return self.case(csn, at, person)
 
     # ------------------------------------------------------------------------------------------ ownership
@@ -889,6 +928,232 @@ class Views:
         for row in rows:
             self.store.assign(row)
         return self.takeover(at, person, colleague, colleagues) | {"taken": [r["csn"] for r in rows]}
+
+    # ---------------------------------------------------------------------------------------------- tasks
+    def _handoff_tasks(self, csn: str, template: str, version: int, at: datetime, who: dict, draft: dict) -> list[dict]:
+        """The action list (E24) of a handoff signed at `at` as tasks: one create per item whose text is not a task
+        of this template yet, by the clinician who signed (who: the sign off row). Returns the rows saved."""
+        el = _elements(draft).get("E24") or {}
+        items = (el.get("narrative") or {}).get("items") or []
+        have = {e["item_key"] for e in self.store.task_events(csn, fresh=True)
+                if e["kind"] == "create" and e.get("template") == template}
+        rows = []
+        for i in items:
+            text = (i.get("text") or "").strip()
+            k = tasks.key(text)
+            if not k or k in have:
+                continue
+            have.add(k)
+            rows.append({"csn": csn, "kind": "create", "template": template, "version": version, "item_key": k,
+                         "text": text, "role": tasks.role_of(i.get("owner")), "assignee_id": None, "assignee_name": None,
+                         "due": tasks.due_of(i.get("due"), at), "due_text": (i.get("due") or "").strip() or None,
+                         "owner_text": (i.get("owner") or "").strip() or None, "at": at, "by_name": who["by"],
+                         "by_role": who["role"], "user_email": who.get("user_email"), "by_id": who.get("by_id")})
+        return self.store.add_tasks(rows) if rows else []
+
+    def backfill_tasks(self) -> int:
+        """Every handoff signed before tasks existed (a deployment from before them) gets its action list as tasks, as
+        signing does now: at the time of each signature, by its signer. Safe to run again and from several app
+        processes at once (the duplicate check, and the unique index in Lakebase). Returns how many tasks it added."""
+        added = 0
+        for a in _ordered([a for a in self.store.all_actions() if a["kind"] == "sign"]):
+            row = next((v for v in self.ds.versions.get(a["csn"], []) if v["template"] == a["template"]
+                        and v["version"] == a["version"]), None)
+            if row is None:
+                continue
+            before = _until(self.store.actions(a["csn"]), a)
+            draft = effective(row, before, a["at"], self.rules.get(a["template"]), patient_entries(before, self.rules))
+            added += len(self._handoff_tasks(a["csn"], a["template"], a["version"], a["at"], a, draft))
+        return added
+
+    @staticmethod
+    def _in_role(person: dict, summary: dict) -> bool:
+        """Whether the person has the patient: ED roles while boarding, the receiving unit's nurse and the admitting
+        physician after arrival."""
+        return person["role"] in tasks.HAS_PATIENT.get(summary["phase"], ())
+
+    @staticmethod
+    def task_people(summary: dict, people: list[dict]) -> list[dict]:
+        """Who a task of this patient can go to: the nurses (ED nurses and the destination unit's) and the physicians
+        (ED and admitting). people: everyone with a clinical role (main.py: demo personas, or the role map live)."""
+        unit = summary["destination"]["pending_unit"]
+        return [{"id": p["id"], "name": p["name"], "role": tasks.DISCIPLINE[p["role"]], "role_label": p.get("role_label")}
+                for p in people if p["role"] in tasks.DISCIPLINE and sees(p, summary["facility"], unit)]
+
+    def _mine(self, t: dict, summary: dict, person: dict) -> bool:
+        """A task is the caller's when it was given to them, or when it is for their role (and no one in particular)
+        on a patient they have: for ED roles, a patient they own."""
+        if t["assignee"]:
+            return t["assignee"]["id"] == person_key(person)
+        role = person["role"]
+        if t["role"] != tasks.DISCIPLINE.get(role) or not self._in_role(person, summary):
+            return False
+        if role in ROLES:
+            owner = summary["owners"][role]
+            return counts(owner) and owner["you"]
+        return True
+
+    def patient_tasks(self, csn: str, at: datetime, person: dict, people: list[dict]) -> dict | None:
+        """One patient's tasks at `at` (open and closed, in the order they were created), their open and overdue
+        counts, whether the caller can act (and the note when it would be outside their role), and who a task can go
+        to. None when the patient is not on the caller's board."""
+        summary = self._summary(csn, at, person)
+        if summary is None:
+            return None
+        found = list(tasks.replay(self.store.task_events(csn, at), at).values())
+        viewer, in_role = person["role"] == "viewer", self._in_role(person, summary)
+        return {"at": iso(at), "csn": csn, "phase": summary["phase"], "tasks": [tasks.shown(t, at) for t in found],
+                "counts": tasks.counts(found, at),
+                "access": {"can_act": not viewer, "in_role": in_role,
+                           "note": TASK_READ_ONLY if viewer else None if in_role else OUTSIDE_ROLE[summary["phase"]]},
+                "people": self.task_people(summary, people)}
+
+    def _task_check(self, csn: str, at: datetime, person: dict) -> dict:
+        """The patient's summary for a task change: on the caller's board, not the viewer, and not before a task event
+        already recorded for the patient (the replay clock)."""
+        summary = self._summary(csn, at, person)
+        if summary is None:
+            raise ActionError("This patient is not on your board at this time.")
+        if person["role"] == "viewer":
+            raise ActionError(TASK_READ_ONLY)
+        if any(e["at"] > at for e in self.store.task_events(csn, fresh=True)):
+            raise ActionError(EARLIER)
+        return summary
+
+    def _event(self, csn: str, kind: str, at: datetime, person: dict, summary: dict, **fields) -> dict:
+        row = {"csn": csn, "kind": kind, "at": at, "by_name": person["name"], "by_role": person["role"],
+               "user_email": person.get("user_email"), "by_id": person_key(person)} | fields
+        if not self._in_role(person, summary):
+            row["outside_role"] = True          # allowed, never blocked; recorded
+        return row
+
+    @staticmethod
+    def _due(raw) -> datetime | None:
+        if raw is None:
+            return None
+        try:
+            return ts(raw)
+        except (ValueError, OverflowError):
+            raise ActionError(TASK_DUE)
+
+    def _target(self, body: dict, summary: dict, people: list[dict]) -> tuple[str, dict | None]:
+        """(role, colleague or None) from a body with role and to (a colleague's id)."""
+        role, to = body.get("role"), body.get("to")
+        if to:
+            p = next((x for x in self.task_people(summary, people) if x["id"] == to), None)
+            if p is None:
+                raise ActionError(TASK_COLLEAGUE)
+            if role and role != p["role"]:
+                raise ActionError(TASK_ROLE_MISMATCH)
+            return p["role"], p
+        if role not in tasks.ROLES:
+            raise ActionError(TASK_ROLE)
+        return role, None
+
+    def add_task(self, csn: str, at: datetime, person: dict, body: dict, people: list[dict]) -> dict:
+        """A task added by hand: text, role (nurse or physician), optionally a colleague and a due time."""
+        summary = self._task_check(csn, at, person)
+        text = (body.get("text") or "").strip()
+        if not text:
+            raise ActionError(TASK_TEXT)
+        if len(text) > MAX_TEXT:
+            raise ActionError(TOO_LONG)
+        role, to = self._target(body, summary, people)
+        due = self._due(body.get("due"))
+        self.store.add_tasks([self._event(csn, "create", at, person, summary, template=None, item_key=None, text=text,
+                                          role=role, assignee_id=to["id"] if to else None,
+                                          assignee_name=to["name"] if to else None, due=due)])
+        return self.patient_tasks(csn, at, person, people)
+
+    def task_act(self, task_id: int, at: datetime, person: dict, body: dict, people: list[dict]) -> dict:
+        """A change to one task: done, not_needed (with a reason), reassign (role or to), due (a time, or none), or
+        undo (reopens a closed task, or puts back the last reassign or due time)."""
+        create = next((e for e in self.store.all_task_events(fresh=True) if e["kind"] == "create" and e["task_id"] == task_id),
+                      None)
+        if create is None:
+            raise ActionError(NO_TASK)
+        csn = create["csn"]
+        summary = self._task_check(csn, at, person)       # also refuses a task created after `at` (the replay clock)
+        t = tasks.replay(self.store.task_events(csn, at), at)[task_id]
+        kind = body.get("kind")
+        ev = lambda k, **f: self._event(csn, k, at, person, summary, task_id=task_id, **f)  # noqa: E731
+        if kind in tasks.CLOSED:
+            if t["status"] != "open":
+                raise ActionError(TASK_CLOSED)
+            reason = (body.get("reason") or "").strip()
+            if kind == "not_needed" and not reason:
+                raise ActionError(TASK_REASON)
+            if len(reason) > MAX_REASON:
+                raise ActionError(TASK_REASON_LONG)
+            row = ev(kind, reason=reason if kind == "not_needed" else None)
+        elif kind in ("reassign", "due"):
+            if t["status"] != "open":
+                raise ActionError(TASK_CLOSED)
+            was = {"from_role": t["role"], "from_assignee_id": (t["assignee"] or {}).get("id"),
+                   "from_assignee_name": (t["assignee"] or {}).get("name")}
+            if kind == "reassign":
+                role, to = self._target(body, summary, people)
+                if (role, to["id"] if to else None) == (t["role"], was["from_assignee_id"]):
+                    who = to["name"] if to else f"the {role}"
+                    raise ActionError(f"The task is with {who} already.")
+                row = ev("reassign", role=role, assignee_id=to["id"] if to else None,
+                         assignee_name=to["name"] if to else None, **was)
+            else:
+                due = self._due(body.get("due"))
+                if due == t["due"]:
+                    raise ActionError("The task has that due time already.")
+                row = ev("due", due=due, from_due=t["due"])
+        elif kind == "undo":
+            last = tasks.undo_of(t)
+            if last is None:
+                raise ActionError(TASK_UNDO)
+            e = t["history"][-1]
+            if last in tasks.CLOSED:
+                row = ev("reopen", undo=True)
+            elif last == "reassign":
+                row = ev("reassign", role=e["from_role"], assignee_id=e.get("from_assignee_id"),
+                         assignee_name=e.get("from_assignee_name"), from_role=t["role"],
+                         from_assignee_id=(t["assignee"] or {}).get("id"),
+                         from_assignee_name=(t["assignee"] or {}).get("name"), undo=True)
+            else:
+                row = ev("due", due=e.get("from_due"), from_due=t["due"], undo=True)
+        else:
+            raise ActionError(TASK_KIND)
+        self.store.add_tasks([row])
+        return self.patient_tasks(csn, at, person, people)
+
+    def my_tasks(self, at: datetime, person: dict, scope: str = "mine") -> dict:
+        """The Tasks page: the caller's open tasks across patients (scope "mine"; "all": every task on their board),
+        grouped Overdue, Due in the next 2 hours, Later and No time, and the tasks closed in the last 12 hours."""
+        groups = {g: [] for g in ("overdue", "soon", "later", "none")}
+        done = []
+        by_csn = defaultdict(list)
+        for e in self.store.all_task_events(at):
+            by_csn[e["csn"]].append(e)
+        me = person_key(person)
+        for csn, events in by_csn.items():
+            summary = self._summary(csn, at, person)
+            if summary is None:
+                continue
+            patient = {"csn": csn, "patient": summary["patient"], "phase": summary["phase"], "facility": summary["facility"],
+                       "unit": summary["destination"]["pending_unit"], "severity": summary["severity"],
+                       "in_role": self._in_role(person, summary)}
+            for t in tasks.replay(events, at).values():
+                mine = scope == "all" or self._mine(t, summary, person)
+                if t["status"] == "open" and mine:
+                    groups[tasks.group(t, at)].append((t, patient))
+                elif t["status"] != "open" and at - t["closed"]["at"] <= tasks.RECENT and (
+                        mine or t["history"][-1].get("by_id") == me):
+                    done.append((t, patient))
+        far = datetime.max.replace(tzinfo=at.tzinfo)
+        out = {g: [tasks.shown(t, at) | p for t, p in sorted(v, key=lambda x: (x[0]["due"] or far, x[0]["created"]["at"],
+                                                                                x[0]["id"]))]
+               for g, v in groups.items()}
+        return {"at": iso(at), "scope": scope, "role": tasks.DISCIPLINE.get(person["role"]),
+                "groups": [{"id": g, "tasks": out[g]} for g in groups],
+                "done": [tasks.shown(t, at) | p for t, p in sorted(done, key=lambda x: (x[0]["closed"]["at"], x[0]["id"]),
+                                                                    reverse=True)],
+                "counts": {"open": sum(len(v) for v in groups.values()), "overdue": len(groups["overdue"])}}
 
 
 def _histogram(values: list[float]) -> list[dict]:

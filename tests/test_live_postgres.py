@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DSN = os.getenv("EDIP_TEST_PG")
 psycopg = pytest.importorskip("psycopg")
 pytestmark = pytest.mark.skipif(not DSN, reason="EDIP_TEST_PG is not set (a Postgres for the live store tests)")
-MODS = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
+MODS = ("config", "data", "assignment", "tasks", "logic", "personas", "workflow", "main", "lakebase")
 # The view_log of a deployment from before the Take over page: an inline page check without 'takeover'.
 OLD_VIEW_LOG = """CREATE TABLE app.view_log (
     view_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -73,7 +73,7 @@ def test_the_tables_are_created_and_an_old_view_log_is_widened_in_place(db, monk
     with psycopg.connect(db, autocommit=True) as conn:
         checks = conn.execute("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'app.view_log'::regclass "
                               "AND contype = 'c'").fetchall()
-        assert len(checks) == 1 and "takeover" in checks[0][0]
+        assert len(checks) == 1 and "takeover" in checks[0][0] and "'tasks'" in checks[0][0]
         conn.execute("INSERT INTO app.view_log (page, at, by_name, role) VALUES ('takeover', now(), 'RN', 'ed_nurse')")
         assert conn.execute("SELECT count(*) FROM app.view_log").fetchone()[0] == 2      # the old rows stay
         with pytest.raises(psycopg.errors.CheckViolation):
@@ -86,6 +86,77 @@ def test_the_tables_are_created_and_an_old_view_log_is_widened_in_place(db, monk
         assert "(csn, role, at)" in idx[0]
         with pytest.raises(psycopg.errors.CheckViolation):
             conn.execute("INSERT INTO app.assignment (csn, role, kind, at, by_name, by_role) VALUES ('1', 'ed_nurse', 'steal', now(), 'RN', 'ed_nurse')")
+
+
+def test_a_deployment_from_before_tasks_gets_app_task_event_and_a_view_log_that_takes_the_tasks_page(db, monkeypatch):
+    # The schema as the app before tasks left it: every table, and a view_log check with 'takeover' but not 'tasks'.
+    mod = _lakebase(monkeypatch)
+    old = [s.replace(", 'tasks'", "") for s in mod.DDL if "task_event" not in s and "task_id_seq" not in s]
+    with psycopg.connect(db, autocommit=True) as conn:
+        for s in old:
+            conn.execute(s)
+        assert conn.execute("SELECT to_regclass('app.task_event')").fetchone()[0] is None
+        conn.execute("INSERT INTO app.view_log (page, at, by_name, role) VALUES ('takeover', now(), 'RN', 'ed_nurse')")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO app.view_log (page, at, by_name, role) VALUES ('tasks', now(), 'RN', 'ed_nurse')")
+    mod.LakebaseStore(ttl=0)
+    mod.LakebaseStore(ttl=0)                      # again: safe to repeat
+    with psycopg.connect(db, autocommit=True) as conn:
+        conn.execute("INSERT INTO app.view_log (page, at, by_name, role) VALUES ('tasks', now(), 'RN', 'ed_nurse')")
+        assert conn.execute("SELECT count(*) FROM app.view_log").fetchone()[0] == 2
+        cols = [r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' "
+                                           "AND table_name = 'task_event' ORDER BY ordinal_position")]
+        assert cols == ["event_id", "task_id", "csn", "kind", "template", "item_key", "text", "role", "assignee_id",
+                        "assignee_name", "due", "reason", "at", "recorded_ts", "by_name", "by_role", "user_email", "detail"]
+        idx = dict(conn.execute("SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'app' "
+                                "AND tablename = 'task_event'").fetchall())
+        assert "(csn, at)" in idx["ix_task_event_csn"]
+        assert "UNIQUE" in idx["ux_task_event_item"] and "(csn, template, item_key)" in idx["ux_task_event_item"]
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO app.task_event (task_id, csn, kind, at, by_name, by_role) "
+                         "VALUES (1, '1', 'delete', now(), 'RN', 'ed_nurse')")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO app.task_event (task_id, csn, kind, role, at, by_name, by_role) "
+                         "VALUES (1, '1', 'create', 'pharmacist', now(), 'RN', 'ed_nurse')")
+
+
+def _task(csn, kind, at, task_id=None, **f):
+    return {"csn": csn, "kind": kind, "at": at, "by_name": "RN", "by_role": "ed_nurse", "user_email": "rn@example.org",
+            "by_id": "rn@example.org"} | ({"task_id": task_id} if task_id else {}) | f
+
+
+def test_task_events_round_trip_and_an_item_becomes_a_task_once_across_processes(db, monkeypatch):
+    mod = _lakebase(monkeypatch)
+    import tasks
+    a, b = mod.LakebaseStore(ttl=60), mod.LakebaseStore(ttl=60)
+    t = datetime(2026, 10, 28, 20, tzinfo=timezone.utc)
+    assert b.task_events("1") == []                               # b has read (and cached) the table
+    item = dict(template="sbar_nurse", version=2, item_key="repeat lactate", text="Repeat lactate", role="nurse",
+                due=t + timedelta(hours=1), due_text="16:00", owner_text="RN")
+    saved = a.add_tasks([_task("1", "create", t, **item), _task("1", "create", t, template=None, item_key=None,
+                                                                text="By hand", role="physician")])
+    assert [r["task_id"] for r in saved] == [1, 2] and all(r["event_id"] and r["recorded_ts"] for r in saved)
+    # Another process saving the same item (the same sign off) adds nothing: the unique index skips it.
+    assert mod.LakebaseStore(ttl=60).add_tasks([_task("1", "create", t, **item)]) == []
+    assert a.add_tasks([_task("1", "create", t, **(item | {"template": "ipass_physician"}))])[0]["task_id"] == 4
+    a.add_tasks([_task("1", "due", t + timedelta(hours=1), task_id=1, due=None, from_due=t + timedelta(hours=1)),
+                 _task("1", "reassign", t, task_id=2, role="nurse", assignee_id="rn2@example.org", assignee_name="Sam",
+                       from_role="physician", outside_role=True),
+                 _task("1", "not_needed", t + timedelta(hours=2), task_id=2, reason="Done by the unit")])
+    assert b.task_events("1") == []                               # within its ttl, b reuses what it read
+    rows = b.task_events("1", fresh=True)
+    assert [(r["kind"], r["task_id"]) for r in rows] == [("create", 1), ("create", 2), ("create", 4), ("reassign", 2),
+                                                          ("due", 1), ("not_needed", 2)]       # by time, then the order saved
+    assert rows[0]["due"] == t + timedelta(hours=1) and rows[0]["version"] == 2 and rows[0]["owner_text"] == "RN"
+    assert rows[4]["from_due"] == t + timedelta(hours=1) and rows[4]["due"] is None
+    assert rows[3]["outside_role"] is True and rows[3]["by_id"] == "rn@example.org"
+    state = tasks.replay(rows, t + timedelta(hours=3))
+    assert (state[1]["due"], state[2]["status"], state[2]["assignee"]["name"]) == (None, "not_needed", "Sam")
+    assert len(b.task_events("1", at=t)) == 4 and b.all_task_events() == rows
+    assert mod.LakebaseStore(ttl=0).names() == {"rn@example.org": "RN"}
+    with psycopg.connect(db) as conn:
+        assert conn.execute("SELECT detail FROM app.task_event WHERE kind = 'due'").fetchone()[0] == {
+            "by_id": "rn@example.org", "from_due": (t + timedelta(hours=1)).isoformat()}
 
 
 def test_assignments_are_kept_in_order_and_every_process_sees_them(db, monkeypatch):
@@ -193,3 +264,89 @@ def test_colleagues_keep_the_name_they_last_used_after_a_restart(live_app, monke
     # Signing in again wins over the saved name.
     c2.get("/api/me", headers=who("rn.one@example.org", "Pat One"))
     assert c2.get("/api/colleagues", headers=who("rn.two@example.org")).json()[0]["name"] == "Pat One"
+
+
+def _sign_live(c, csn, headers, items):
+    """Resolve what blocks sign off, write the action list, sign: as the ED nurse would, at the current time."""
+    url = f"/api/handoffs/{csn}"
+    d = c.get(url, headers=headers).json()["templates"]["sbar_nurse"]["draft"]
+    for rule in d["rules"]:
+        if rule["rule"] in d["completeness"]["blocking"]:
+            opts = rule.get("attest_options") or []
+            body, kind = ({"rule": rule["rule"], "option": opts[0]}, "attest") if opts and rule["status"] != "missing" else \
+                ({"element": rule["element"], "text": "Written by the nurse"}, "edit")
+            assert c.post(f"{url}/sbar_nurse/{kind}", json=body, headers=headers).status_code == 200
+    assert c.post(f"{url}/sbar_nurse/edit", json={"element": "E24", "items": items}, headers=headers).status_code == 200
+    r = c.post(f"{url}/sbar_nurse/sign", json={"callback": "x4471"}, headers=headers)
+    assert r.status_code == 200, r.json()
+
+
+ITEMS = [{"text": "Repeat lactate", "owner": "RN", "due": "Now"}, {"text": "Call the family", "owner": "team", "due": ""}]
+
+
+def test_the_live_app_keeps_tasks_in_app_task_event(live_app, db):
+    c, main = live_app
+    one, two, md = who("rn.one@example.org", "Pat One"), who("rn.two@example.org", "Sam Two"), who("md@example.org", "Dr Lee")
+    c.get("/api/me", headers=two)                                  # Sam signs in once, so the list has their name
+    csn = next(r["csn"] for r in c.get("/api/board", headers=one).json()["rows"] if r["phase"] == "boarding")
+    c.post(f"/api/handoffs/{csn}/owner", json={"kind": "claim"}, headers=one)
+    _sign_live(c, csn, one, ITEMS)
+    _sign_live(c, csn, one, ITEMS)                                 # signing twice adds nothing
+    tu = f"/api/handoffs/{csn}/tasks"
+    view = c.get(tu, headers=one).json()
+    assert [(t["text"], t["role"], t["created"]["by"]) for t in view["tasks"]] == [
+        ("Repeat lactate", "nurse", "Pat One"), ("Call the family", "physician", "Pat One")]
+    assert {p["id"] for p in view["people"]} == {"rn.one@example.org", "rn.two@example.org", "md@example.org"}
+    assert next(r for r in c.get("/api/board", headers=one).json()["rows"] if r["csn"] == csn)["tasks"]["open"] == 2
+    lac, fam = (t["id"] for t in view["tasks"])
+    added = c.post(tu, json={"text": "Bring glasses", "to": "rn.two@example.org"}, headers=one).json()["tasks"][-1]
+    assert added["assignee"] == {"id": "rn.two@example.org", "name": "Sam Two"} and added["role"] == "nurse"
+    assert c.post(f"/api/tasks/{lac}", json={"kind": "done"}, headers=two).status_code == 200
+    assert c.post(f"/api/tasks/{fam}", json={"kind": "not_needed", "reason": "Spoke with them"}, headers=md).status_code == 200
+    assert c.post(f"/api/tasks/{lac}", json={"kind": "undo"}, headers=one).status_code == 200
+    assert c.post(f"/api/tasks/{added['id']}", json={"kind": "reassign", "role": "physician"}, headers=one).status_code == 200
+    # Pat owns the patient: the nurse's open task is theirs.
+    page = c.get("/api/tasks", headers=one).json()
+    assert [t["text"] for g in page["groups"] for t in g["tasks"]] == ["Repeat lactate"]
+    # A signed in user without a role reads tasks but cannot change them.
+    viewer = who("someone@example.org")
+    assert c.get(tu, headers=viewer).json()["access"]["can_act"] is False
+    assert c.post(f"/api/tasks/{lac}", json={"kind": "done"}, headers=viewer).status_code == 409
+    # Looking at an earlier time is read only and logged: the Tasks page as 'tasks', the panel as 'handoff'.
+    earlier = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    assert c.get("/api/tasks", params={"at": earlier}, headers=one).json()["counts"]["open"] == 0
+    assert c.get(tu, params={"at": earlier}, headers=one).json()["tasks"] == []
+    refused = c.post(f"/api/tasks/{lac}", params={"at": earlier}, json={"kind": "done"}, headers=one)
+    assert refused.status_code == 409 and "earlier time" in refused.json()["detail"]
+    assert c.post(tu, params={"at": earlier}, json={"text": "x", "role": "nurse"}, headers=one).status_code == 409
+    with psycopg.connect(db) as conn:
+        rows = conn.execute("SELECT kind, task_id, template, text, role, by_name, user_email, reason, detail FROM app.task_event "
+                            "ORDER BY event_id").fetchall()
+        assert [(r[0], r[1]) for r in rows] == [("create", 1), ("create", 2), ("create", 3), ("done", 1), ("not_needed", 2),
+                                                ("reopen", 1), ("reassign", 3)]
+        assert rows[0][2:7] == ("sbar_nurse", "Repeat lactate", "nurse", "Pat One", "rn.one@example.org")
+        assert rows[4][7] == "Spoke with them" and rows[5][8] == {"by_id": "rn.one@example.org", "undo": True}
+        assert rows[2][2] is None and rows[2][8]["by_id"] == "rn.one@example.org"
+        assert conn.execute("SELECT page FROM app.view_log ORDER BY view_id").fetchall() == [("tasks",), ("handoff",)]
+
+
+def test_handoffs_signed_before_tasks_existed_get_their_tasks_at_start_up(live_app, db, monkeypatch):
+    c, main = live_app
+    one = who("rn.one@example.org", "Pat One")
+    csn = next(r["csn"] for r in c.get("/api/board", headers=one).json()["rows"] if r["phase"] == "boarding")
+    _sign_live(c, csn, one, ITEMS)
+    # As a deployment from before tasks: the sign off is in app.handoff_action, and there is no app.task_event.
+    with psycopg.connect(db, autocommit=True) as conn:
+        conn.execute("DROP TABLE app.task_event")
+        signed = conn.execute("SELECT at, by_name FROM app.handoff_action WHERE kind = 'sign'").fetchone()
+    for _ in range(2):                                             # two starts (or two processes): the tasks once
+        _lakebase(monkeypatch)
+        main2 = importlib.import_module("main")
+    from fastapi.testclient import TestClient
+    got = TestClient(main2.app).get(f"/api/handoffs/{csn}/tasks", headers=one).json()["tasks"]
+    assert [(t["text"], t["role"], t["created"]["by"]) for t in got] == [("Repeat lactate", "nurse", signed[1]),
+                                                                       ("Call the family", "physician", signed[1])]
+    assert datetime.fromisoformat(got[0]["created"]["at"]) == signed[0].replace(microsecond=0)
+    assert datetime.fromisoformat(got[0]["due"]) == signed[0].replace(microsecond=0)
+    with psycopg.connect(db) as conn:
+        assert conn.execute("SELECT count(*) FROM app.task_event").fetchone()[0] == 2

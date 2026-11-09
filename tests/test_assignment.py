@@ -21,7 +21,7 @@ pytest.importorskip("httpx")
 
 from eval import run_eval  # noqa: E402
 
-MODS = ("config", "data", "assignment", "logic", "personas", "workflow", "main", "lakebase")
+MODS = ("config", "data", "assignment", "tasks", "logic", "personas", "workflow", "main", "lakebase")
 
 
 def _load(**env):

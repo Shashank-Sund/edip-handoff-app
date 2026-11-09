@@ -80,6 +80,104 @@ export interface Takeover {
   taken?: string[];
 }
 
+/** Tasks: who a task is for (nurse or physician), and its state. */
+export type TaskRole = 'nurse' | 'physician';
+export type TaskStatus = 'open' | 'done' | 'not_needed';
+export type TaskEventKind = 'create' | 'done' | 'not_needed' | 'reopen' | 'reassign' | 'due';
+
+/** Open and overdue tasks of a patient (the board row). */
+export interface TaskCounts {
+  open: number;
+  overdue: number;
+}
+
+/** One change to a task, with who and when. */
+export interface TaskStep {
+  kind: TaskEventKind;
+  by: string;
+  by_role: string;
+  at: string;
+  reason?: string | null;
+  role?: TaskRole;
+  to?: string | null;
+  from_role?: TaskRole | null;
+  from?: string | null;
+  due?: string | null;
+  from_due?: string | null;
+  /** Recorded by Undo. */
+  undo?: boolean;
+  /** Done by someone who did not have the patient then. */
+  outside_role?: boolean;
+}
+
+export interface Task {
+  id: number;
+  csn: string;
+  text: string;
+  role: TaskRole;
+  /** A colleague the task was given to, or null when it is for the role. */
+  assignee: { id: string; name: string } | null;
+  due: string | null;
+  /** The action list's own words for when (such as "ongoing"), for a task from a handoff. */
+  due_text: string | null;
+  overdue: boolean;
+  status: TaskStatus;
+  reason: string | null;
+  source: 'handoff' | 'added';
+  template: string | null;
+  version: number | null;
+  /** The action list's own words for who. */
+  owner_text: string | null;
+  created: { by: string; at: string };
+  closed: { by: string; at: string } | null;
+  /** What Undo would revert, or null when there is nothing to undo. */
+  undo: 'done' | 'not_needed' | 'reassign' | 'due' | null;
+  history: TaskStep[];
+}
+
+/** Someone a task can go to. */
+export interface TaskPerson {
+  id: string;
+  name: string;
+  role: TaskRole;
+  role_label: string | null;
+}
+
+/** GET /api/handoffs/{csn}/tasks, and the answer to every task change. */
+export interface PatientTasks {
+  at: string;
+  csn: string;
+  phase: Phase;
+  tasks: Task[];
+  counts: TaskCounts;
+  /** can_act: false for the viewer. in_role: you have the patient now; note: what the panel says otherwise. */
+  access: { can_act: boolean; in_role: boolean; note: string | null };
+  people: TaskPerson[];
+}
+
+/** A task on the Tasks page, with its patient. */
+export interface TaskRow extends Task {
+  patient: { name: string; mrn: string; sex: string; age: number | null };
+  phase: Phase;
+  facility: string;
+  unit: string | null;
+  severity: Severity | null;
+  in_role: boolean;
+}
+
+export type TaskGroupId = 'overdue' | 'soon' | 'later' | 'none';
+
+/** GET /api/tasks */
+export interface TasksPage {
+  at: string;
+  scope: 'mine' | 'all';
+  role: TaskRole | null;
+  groups: { id: TaskGroupId; tasks: TaskRow[] }[];
+  /** Closed in the last 12 hours, newest first. */
+  done: TaskRow[];
+  counts: TaskCounts;
+}
+
 export interface TemplateInfo {
   id: string;
   name: string;
@@ -168,6 +266,8 @@ export interface CaseSummary {
   templates: Record<string, TemplateSummary>;
   /** The nurse and physician owner, or null when no one owns the patient for that role. */
   owners?: Record<EdRole, Owner | null>;
+  /** Open and overdue tasks. */
+  tasks?: TaskCounts;
 }
 
 export interface Board {
@@ -324,9 +424,11 @@ export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
   activity: {
-    kind: string; template: string; by: string; at: string; version: number; detail?: string; restore?: boolean; entered?: string; note?: string; removed?: string;
+    kind: string; template: string | null; by: string; at: string; version: number | null; detail?: string | null; restore?: boolean; entered?: string; note?: string; removed?: string;
     /** Done by an ED clinician on a patient a colleague owned. */
     off_assignment?: boolean; assigned_to?: string;
+    /** kind "task": the task event, its task, and whether it was outside the role (detail: the task's text). */
+    task?: TaskEventKind; task_id?: number; outside_role?: boolean;
   }[];
 }
 

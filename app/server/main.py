@@ -9,6 +9,7 @@ within EDIP_PAST_VIEW_HOURS (read only, and logged in the view log), and every a
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Optional
@@ -24,6 +25,7 @@ from assignment import ROLES
 from data import iso, load_fixtures, ts
 from logic import ActionError, Views
 from personas import demo_personas, mapped_units, parse_role_map, unit_id
+from tasks import DISCIPLINE
 from workflow import MemoryStore, StoreUnavailable
 
 log = logging.getLogger("edip")
@@ -56,6 +58,13 @@ if config.MODE == "live":
     SOURCE = Reloading()
     STORE = LakebaseStore()               # does not fail when Lakebase is unreachable; it retries on use
     VIEWS = Views(SOURCE.get, STORE, _templates(), STALE_BOARDING, **OWNERSHIP)
+    try:
+        # Handoffs signed before tasks existed get their action list as tasks (safe to repeat; see backfill_tasks).
+        _added = VIEWS.backfill_tasks()
+        if _added:
+            log.warning("Added %d tasks from handoffs signed before tasks existed", _added)
+    except StoreUnavailable as exc:   # Lakebase unreachable at start up: the next start tries again
+        log.warning("Tasks from earlier sign offs not checked: %s", exc)
 else:
     STORE = MemoryStore()
     VIEWS = Views(load_fixtures(config.FIXTURES), STORE, _templates(), STALE_BOARDING, **OWNERSHIP)
@@ -125,17 +134,26 @@ def _colleagues(person: dict) -> list[dict]:
     as they last acted (app.handoff_action, app.assignment), else by their email."""
     if person["role"] not in ROLES:
         return []
+    return [{"id": p["id"], "name": p["name"]} for p in _people() if p["role"] == person["role"]]
+
+
+def _people() -> list[dict]:
+    """Everyone with a clinical role, as their persona with id and name: the demo personas, or live every email the
+    role map gives a persona, named as they last signed in to this process, else as they last acted (app.handoff_action,
+    app.assignment, app.task_event), else by their email. Colleagues to own a patient (_colleagues), and who a task can
+    go to (tasks.py)."""
     personas, _ = _current()
     if config.DEMO_PERSONAS:
-        return [{"id": p["id"], "name": p["name"]} for p in personas if p["role"] == person["role"]]
-    roles = {p["id"]: p["role"] for p in personas}
+        return [p for p in personas if p["role"] in DISCIPLINE]
+    by_id = {p["id"]: p for p in personas}
     try:
-        # Names from earlier actions and ownership changes, so a colleague keeps their name after a restart.
+        # Names from earlier actions, ownership changes and tasks, so a colleague keeps their name after a restart.
         saved = STORE.names()
     except StoreUnavailable:
         saved = {}
-    return sorted(({"id": email, "name": _names.get(email) or saved.get(email) or email} for email, pid in ROLE_MAP.items()
-                   if roles.get(pid) == person["role"]), key=lambda c: (c["name"].lower(), c["id"]))
+    return sorted(({**by_id[pid], "id": email, "name": _names.get(email) or saved.get(email) or email}
+                   for email, pid in ROLE_MAP.items() if pid in by_id and by_id[pid]["role"] in DISCIPLINE),
+                  key=lambda c: (c["name"].lower(), c["id"]))
 
 
 # The live clock: a read may look back this far (none when 0); an `at` this close to now is now, as the clocks of
@@ -236,18 +254,36 @@ class TakeoverBody(BaseModel):
     csns: list[StrictStr]
 
 
+class TaskBody(BaseModel):
+    text: StrictStr
+    role: Optional[StrictStr] = None            # nurse or physician; with `to`, the colleague's role
+    to: Optional[StrictStr] = None              # a colleague's id (the task's people)
+    due: Optional[StrictStr] = None             # ISO time
+
+
+class TaskChangeBody(BaseModel):
+    kind: StrictStr                             # done, not_needed, reassign, due or undo
+    reason: Optional[StrictStr] = None          # not_needed
+    role: Optional[StrictStr] = None            # reassign
+    to: Optional[StrictStr] = None              # reassign
+    due: Optional[StrictStr] = None             # due: ISO time, or none to clear it
+
+
 FIELD = {"element": "item", "text": "text", "items": "action items", "restore": "restore choice", "rule": "rule",
          "option": "attestation", "entry": "entered value", "entry_note": "note", "remove": "remove choice", "callback": "callback number", "readback": "read back", "questions": "questions",
-         "kind": "choice of Take, Assign or Release", "to": "colleague", "colleague": "colleague", "csns": "patients"}
+         "kind": "choice of Take, Assign or Release", "to": "colleague", "colleague": "colleague", "csns": "patients",
+         "role": "role", "due": "due time", "reason": "reason"}
+# A change to a task (/api/tasks/<id>) names its kind differently.
+TASK_FIELD = FIELD | {"kind": "task change"}
 
 
-def plain_validation(errors: list[dict]) -> str:
+def plain_validation(errors: list[dict], fields: dict = FIELD) -> str:
     """A request body the API cannot use, in one plain sentence (the static demo says the same)."""
     e = errors[0] if errors else {}
     loc = [x for x in e.get("loc", ()) if x != "body"]
     if not loc or not isinstance(loc[0], str):
         return "The request could not be read. Reload the page and try again."
-    label = FIELD.get(loc[0], loc[0])
+    label = fields.get(loc[0], loc[0])
     if e.get("type") == "missing" and len(loc) == 1:
         return f"The request is missing the {label}."
     return f"The request has a value the app cannot use for the {label}."
@@ -255,7 +291,8 @@ def plain_validation(errors: list[dict]) -> str:
 
 @app.exception_handler(RequestValidationError)
 async def _invalid(request: Request, exc: RequestValidationError):
-    return JSONResponse({"detail": plain_validation(exc.errors())}, status_code=422)
+    fields = TASK_FIELD if request.url.path.startswith("/api/tasks/") else FIELD
+    return JSONResponse({"detail": plain_validation(exc.errors(), fields)}, status_code=422)
 
 
 @app.exception_handler(StoreUnavailable)
@@ -362,6 +399,42 @@ def post_takeover(body: TakeoverBody, request: Request, at: Optional[str] = None
     t, p = _act_at(at), _person(request)
     try:
         return VIEWS.take_over(t, p, body.colleague, body.csns, _colleagues(p))
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@api.get("/tasks")
+def get_tasks(request: Request, at: Optional[str] = None, scope: str = "mine") -> dict[str, Any]:
+    """The Tasks page: the caller's open tasks across patients (scope mine), or every task on their board (all)."""
+    if scope not in ("mine", "all"):
+        raise HTTPException(400, "scope must be mine or all")
+    return VIEWS.my_tasks(_read_at(at, request, "tasks"), _person(request), scope)
+
+
+@api.get("/handoffs/{csn}/tasks")
+def get_patient_tasks(csn: str, request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    t = VIEWS.patient_tasks(csn, _read_at(at, request, "handoff", csn), _person(request), _people())
+    if t is None:
+        raise HTTPException(404, "This patient is not on your board at this time.")
+    return t
+
+
+@api.post("/handoffs/{csn}/tasks")
+def post_task(csn: str, body: TaskBody, request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    """A task added by hand; returns the patient's tasks."""
+    t, p = _act_at(at), _person(request)
+    try:
+        return VIEWS.add_task(csn, t, p, body.model_dump(), _people())
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@api.post("/tasks/{task_id}")
+def post_task_change(task_id: str, body: TaskChangeBody, request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    """Done, not needed, reassign, a new due time, or undo; returns the patient's tasks."""
+    t, p = _act_at(at), _person(request)
+    try:
+        return VIEWS.task_act(int(task_id) if re.fullmatch(r"[0-9]{1,15}", task_id) else -1, t, p, body.model_dump(), _people())
     except ActionError as exc:
         raise HTTPException(409, str(exc))
 

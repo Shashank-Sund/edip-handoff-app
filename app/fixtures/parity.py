@@ -84,7 +84,7 @@ def load_app(fixtures: Path):
     for k in ("EDIP_MODE", "EDIP_CLOCK", "EDIP_CLOCK_MODE", "EDIP_DEMO_PERSONAS", "EDIP_SYNTHETIC_DATA"):
         os.environ.pop(k, None)
     sys.path.insert(0, str(ROOT / "app/server"))
-    for m in ("config", "data", "assignment", "logic", "personas", "workflow", "main"):
+    for m in ("config", "data", "assignment", "tasks", "logic", "personas", "workflow", "main"):
         sys.modules.pop(m, None)
     main = importlib.import_module("main")
     from fastapi.testclient import TestClient
@@ -294,6 +294,7 @@ def scenarios(c, main):
     entered_scenarios(rec, ds, default, boarding, units)
     canceled_scenarios(rec, ds)
     assignment_scenarios(rec, ds, default, boarding, units)
+    task_scenarios(rec, ds, default, units)
     return rec.items
 
 
@@ -740,6 +741,168 @@ def assignment_scenarios(rec, ds, default, boarding, units):
     for label, t in (("before the change", tt), ("after the change", iso(nxt + timedelta(hours=1))), ("end", iso(ds.end))):
         rec(f"owners analytics {label}", "GET", "/api/analytics", at=t)
     rec("owner reset end", "POST", "/api/demo/reset")
+
+
+def task_scenarios(rec, ds, default, units):
+    """Tasks: the action list turned into tasks on signing (owner and due mapping, Now, a time of day today and
+    tomorrow, duplicates in one list, signing again, a new item after a change, an addendum), tasks added by hand,
+    every change and Undo with each refusal, who has the patient (outside the role, the viewer), the replay clock,
+    overdue, the Tasks page for each role and scope with its groups, the board counts and the handoff activity."""
+    iso = lambda t: t.isoformat()  # noqa: E731
+    from data import TZ
+    rec("tasks reset", "POST", "/api/demo/reset")
+    _, b = rec("tasks board before", "GET", "/api/board", persona="ed-rn")
+    # A patient the demo seed gave Jordan (ed-rn) and Kai (ed-md-2), boarding now.
+    p = next(r for r in b["rows"] if r["phase"] == "boarding" and (r["owners"]["ed_nurse"] or {}).get("you")
+             and r["owners"]["ed_physician"])
+    csn = p["csn"]
+    url, tu = f"/api/handoffs/{csn}", f"/api/handoffs/{csn}/tasks"
+    recv = next(u for u in units if u["unit"] == p["destination"]["pending_unit"] and u["facility"] == p["facility"])
+    other_unit = next(u for u in units if u["id"] != recv["id"])
+    rec("tasks none yet", "GET", tu, persona="ed-rn")
+    rec("tasks page empty", "GET", "/api/tasks", persona="ed-rn")
+    resolve(rec, url, "sbar_nurse", "ed-rn", None, "tasks")
+    hour = default.astimezone(TZ).hour
+    later, earlier = f"{(hour + 1) % 24:02d}:30", f"{(hour - 1) % 24:02d}:00"
+    items = [{"text": "Repeat lactate", "owner": "RN", "due": later},
+             {"text": "Update the family", "owner": "Hospital Medicine team", "due": "Now"},
+             {"text": "Check glucose", "owner": "Cardiology", "due": "ongoing"},
+             {"text": "Review imaging", "owner": "MD/RN", "due": ""},
+             {"text": "Recheck potassium", "owner": "physician", "due": earlier},
+             {"text": "  repeat   LACTATE ", "owner": "nurse", "due": "08:00"}]
+    rec("tasks write the action list", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn", body={"element": "E24", "items": items})
+    rec("tasks sign", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    _, after = rec("tasks after signing", "GET", tu, persona="ed-rn")
+    rec("tasks sign again (no new tasks)", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    rec("tasks add an item to the action list", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn",
+        body={"element": "E24", "items": items + [{"text": "Hold heparin before the procedure", "owner": "MD", "due": "now"}]})
+    rec("tasks sign after the change (one new task)", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
+    # The physician's handoff turns its own action list into tasks; the same text on another template is a new task.
+    resolve(rec, url, "ipass_physician", "ed-md-2", None, "tasks physician")
+    rec("tasks physician action list", "POST", f"{url}/ipass_physician/edit", persona="ed-md-2",
+        body={"element": "E24", "items": [{"text": "Repeat lactate", "owner": "team", "due": "Now"}]})
+    rec("tasks physician sign", "POST", f"{url}/ipass_physician/sign", persona="ed-md-2", body={"callback": "x2210"})
+    # Added by hand.
+    add = lambda name, persona, body, at=None: rec(f"tasks add {name}", "POST", tu, at=at, persona=persona, body=body)  # noqa: E731
+    add("for the nurse", "ed-rn", {"text": "Bring glasses from home", "role": "nurse"})
+    add("for a colleague, due soon", "ed-rn", {"text": "Order a repeat ECG", "to": "ed-md", "due": iso(default + timedelta(minutes=45))})
+    add("overdue", "ed-rn", {"text": "Send the urine sample", "role": "nurse", "due": iso(default - timedelta(hours=1))})
+    add("for the receiving nurse", "ed-rn", {"text": "Set up telemetry", "to": recv["id"], "role": "nurse",
+                                             "due": iso(default + timedelta(hours=5))})
+    for name, persona, body in (("text missing (422)", "ed-rn", {"role": "nurse"}),
+                                ("text not text (422)", "ed-rn", {"text": 5, "role": "nurse"}),
+                                ("due not text (422)", "ed-rn", {"text": "x", "role": "nurse", "due": 5}),
+                                ("body a list (422)", "ed-rn", [1]),
+                                ("text blank (409)", "ed-rn", {"text": "   ", "role": "nurse"}),
+                                ("text too long (409)", "ed-rn", {"text": "x" * 2001, "role": "nurse"}),
+                                ("no role (409)", "ed-rn", {"text": "x"}),
+                                ("unknown role (409)", "ed-rn", {"text": "x", "role": "pharmacist"}),
+                                ("unknown colleague (409)", "ed-rn", {"text": "x", "to": "nobody"}),
+                                ("colleague of another unit (409)", "ed-rn", {"text": "x", "to": other_unit["id"]}),
+                                ("colleague in another role (409)", "ed-rn", {"text": "x", "to": "ed-md", "role": "nurse"}),
+                                ("the viewer (409)", "viewer", {"text": "x", "role": "nurse"}),
+                                ("due not a time (409)", "ed-rn", {"text": "x", "role": "nurse", "due": "tomorrow"}),
+                                ("unknown persona (400)", "nobody", {"text": "x", "role": "nurse"})):
+        add(name, persona, body)
+    add("invalid at (400)", "ed-rn", {"text": "x", "role": "nurse"}, "nope")
+    rec("tasks add unknown patient (409)", "POST", "/api/handoffs/0000000/tasks", persona="ed-rn", body={"text": "x", "role": "nurse"})
+    rec("tasks get unknown patient (404)", "GET", "/api/handoffs/0000000/tasks", persona="ed-rn")
+    rec("tasks get other unit (404)", "GET", tu, persona=other_unit["id"])
+    rec("tasks get invalid at (400)", "GET", tu, at="nope", persona="ed-rn")
+    rec("tasks get unknown persona (400)", "GET", tu, persona="nobody")
+    _, now = rec("tasks after adding", "GET", tu, persona="ed-rn")
+    ids = {}
+    for t in now["tasks"]:
+        ids.setdefault(t["text"], t["id"])          # the nurse handoff's "Repeat lactate", not the physician's
+    ch = lambda name, persona, tid, body, at=None: rec(f"tasks change {name}", "POST", f"/api/tasks/{tid}", at=at,  # noqa: E731
+                                                       persona=persona, body=body)
+    lac, fam, glass, ecg = ids["Repeat lactate"], ids["Update the family"], ids["Bring glasses from home"], ids["Order a repeat ECG"]
+    ch("done", "ed-rn", lac, {"kind": "done"})
+    ch("done again (409)", "ed-rn", lac, {"kind": "done"})
+    ch("not needed when done (409)", "ed-rn", lac, {"kind": "not_needed", "reason": "x"})
+    ch("reassign when done (409)", "ed-rn", lac, {"kind": "reassign", "role": "physician"})
+    ch("undo done", "ed-rn", lac, {"kind": "undo"})
+    ch("undo again (409)", "ed-rn", lac, {"kind": "undo"})
+    ch("undo with nothing to undo (409)", "ed-rn", glass, {"kind": "undo"})
+    ch("not needed without a reason (409)", "ed-rn", fam, {"kind": "not_needed"})
+    ch("not needed blank reason (409)", "ed-rn", fam, {"kind": "not_needed", "reason": "  "})
+    ch("not needed reason too long (409)", "ed-rn", fam, {"kind": "not_needed", "reason": "x" * 201})
+    ch("not needed", "ed-md-2", fam, {"kind": "not_needed", "reason": " Family already updated by the team "})
+    ch("undo not needed", "ed-md-2", fam, {"kind": "undo"})
+    ch("not needed again", "ed-md-2", fam, {"kind": "not_needed", "reason": "Done at the bedside"})
+    ch("reassign to the physician", "ed-rn", glass, {"kind": "reassign", "role": "physician"})
+    ch("reassign to the same role (409)", "ed-rn", glass, {"kind": "reassign", "role": "physician"})
+    ch("reassign without a role (409)", "ed-rn", glass, {"kind": "reassign"})
+    ch("reassign to a colleague", "ed-rn", glass, {"kind": "reassign", "to": "ed-rn-2"})
+    ch("reassign to the same colleague (409)", "ed-rn", glass, {"kind": "reassign", "to": "ed-rn-2"})
+    ch("reassign to an unknown colleague (409)", "ed-rn", glass, {"kind": "reassign", "to": "nobody"})
+    ch("undo reassign", "ed-rn", glass, {"kind": "undo"})
+    ch("undo after an undo (409)", "ed-rn", glass, {"kind": "undo"})
+    ch("due later", "ed-rn", ecg, {"kind": "due", "due": iso(default + timedelta(hours=3))})
+    ch("due the same (409)", "ed-rn", ecg, {"kind": "due", "due": iso(default + timedelta(hours=3))})
+    ch("due not a time (409)", "ed-rn", ecg, {"kind": "due", "due": "soon"})
+    ch("due cleared", "ed-rn", ecg, {"kind": "due"})
+    ch("due cleared again (409)", "ed-rn", ecg, {"kind": "due", "due": None})
+    ch("undo due", "ed-rn", ecg, {"kind": "undo"})
+    for name, persona, tid, body in (("kind missing (422)", "ed-rn", lac, {}), ("kind not text (422)", "ed-rn", lac, {"kind": 1}),
+                                     ("reason not text (422)", "ed-rn", lac, {"kind": "not_needed", "reason": ["x"]}),
+                                     ("unknown kind (409)", "ed-rn", lac, {"kind": "delete"}),
+                                     ("reopen is Undo (409)", "ed-rn", lac, {"kind": "reopen"}),
+                                     ("unknown task (409)", "ed-rn", 999999, {"kind": "done"}),
+                                     ("not a task id (409)", "ed-rn", "abc", {"kind": "done"}),
+                                     ("by the viewer (409)", "viewer", lac, {"kind": "done"}),
+                                     ("unknown persona (400)", "nobody", lac, {"kind": "done"}),
+                                     ("other unit's nurse (409)", other_unit["id"], lac, {"kind": "done"})):
+        ch(name, persona, tid, body)
+    rec("tasks change GET (405)", "GET", f"/api/tasks/{lac}", persona="ed-rn")
+    # Outside the role: the receiving nurse and the admitting physician act while the patient boards.
+    ch("by the receiving nurse while boarding (outside role)", recv["id"], ids["Check glucose"], {"kind": "done"})
+    ch("by the admitting physician while boarding (outside role)", "hosp-md", ids["Review imaging"],
+       {"kind": "reassign", "to": "hosp-md"})
+    for persona in ("ed-rn", "ed-md", recv["id"], "hosp-md", "viewer"):
+        rec(f"tasks panel as {persona}", "GET", tu, persona=persona)
+    # The replay clock: nothing before a task already recorded; earlier views show what was true then.
+    ch("an hour earlier (409)", "ed-rn", lac, {"kind": "done"}, iso(default - timedelta(hours=1)))
+    add("an hour earlier (409)", "ed-rn", {"text": "x", "role": "nurse"}, iso(default - timedelta(hours=1)))
+    rec("tasks panel an hour earlier", "GET", tu, at=iso(default - timedelta(hours=1)), persona="ed-rn")
+    rec("tasks case with the activity", "GET", url, persona="ed-rn")
+    rec("tasks board with counts", "GET", "/api/board", persona="ed-rn")
+    rec("tasks board three hours on (overdue)", "GET", "/api/board", at=iso(default + timedelta(hours=3)), persona="ed-rn")
+    # The Tasks page for every role, both scopes, and later times (the groups move).
+    for persona in ("ed-rn", "ed-rn-2", "ed-md", "ed-md-2", recv["id"], "hosp-md", "viewer"):
+        rec(f"tasks page {persona}", "GET", "/api/tasks", persona=persona)
+        rec(f"tasks page {persona} all", "GET", "/api/tasks", persona=persona, params={"scope": "all"})
+    for h in (1, 3, 6, 13):
+        rec(f"tasks page ed-rn {h} hours on", "GET", "/api/tasks", at=iso(default + timedelta(hours=h)), persona="ed-rn")
+    rec("tasks page an hour earlier", "GET", "/api/tasks", at=iso(default - timedelta(hours=1)), persona="ed-rn")
+    rec("tasks page unknown scope (400)", "GET", "/api/tasks", persona="ed-rn", params={"scope": "theirs"})
+    rec("tasks page unknown persona (400)", "GET", "/api/tasks", persona="nobody")
+    rec("tasks page invalid at (400)", "GET", "/api/tasks", at="nope", persona="ed-rn")
+    rec("tasks page POST (405)", "POST", "/api/tasks", persona="ed-rn", body={})
+    # After arrival the receiving nurse and the admitting physician have the patient; the ED is outside its role.
+    dep = ds.enc[csn]["ed_departure_ts"]
+    if dep:
+        t = iso(dep + timedelta(minutes=30))
+        rec("tasks panel after arrival (receiver)", "GET", tu, at=t, persona=recv["id"])
+        rec("tasks panel after arrival (ED nurse)", "GET", tu, at=t, persona="ed-rn")
+        ch("after arrival: receiver done", recv["id"], lac, {"kind": "done"}, t)
+        ch("after arrival: ED nurse (outside role)", "ed-rn", ids["Recheck potassium"], {"kind": "not_needed", "reason": "Left the ED"}, t)
+        ch("after arrival: admitting physician", "hosp-md", ecg, {"kind": "reassign", "role": "nurse"}, t)
+        for persona in (recv["id"], "hosp-md", "ed-rn"):
+            rec(f"tasks page after arrival {persona}", "GET", "/api/tasks", at=t, persona=persona)
+        rec("tasks board after arrival (receiver)", "GET", "/api/board", at=t, persona=recv["id"])
+    # An addendum after departure: signing it adds its action list items as tasks.
+    adds = [r for rows in ds.versions.values() for r in rows if r["status"] == "addendum" and r["template"] == "sbar_nurse"]
+    if adds:
+        a = adds[0]
+        t, au = iso(a["at"] + timedelta(minutes=1)), f"/api/handoffs/{a['csn']}"
+        resolve(rec, au, "sbar_nurse", "ed-rn", t, "tasks addendum")
+        rec("tasks addendum action list", "POST", f"{au}/sbar_nurse/edit", at=t, persona="ed-rn",
+            body={"element": "E24", "items": [{"text": "Repeat troponin at 6 hours", "owner": "Nursing", "due": "Now"}]})
+        rec("tasks addendum sign", "POST", f"{au}/sbar_nurse/sign", at=t, persona="ed-rn", body={"callback": "x4471"})
+        rec("tasks addendum panel", "GET", f"{au}/tasks", at=t, persona="ed-rn")
+    rec("tasks reset end", "POST", "/api/demo/reset")
+    rec("tasks after reset", "GET", tu, persona="ed-rn")
 
 
 def main():

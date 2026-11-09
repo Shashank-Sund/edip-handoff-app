@@ -1,4 +1,4 @@
-import type { Analytics, AppConfig, Board, CaseDetail, Colleague, Persona, Takeover, TemplateDef } from './types';
+import type { Analytics, AppConfig, Board, CaseDetail, Colleague, PatientTasks, Persona, TaskRole, TasksPage, Takeover, TemplateDef } from './types';
 
 /** An error the server explains in plain words (HTTP 409 for rules, 404 for scope). */
 export class ApiError extends Error {
@@ -43,6 +43,19 @@ async function call<T>(path: string, init?: RequestInit & { at?: string }): Prom
 type Kind = 'edit' | 'attest' | 'sign' | 'ack';
 /** Take (claim), Assign to a colleague (to: their id), or Release, for your ED role. */
 export type OwnerBody = { kind: 'claim' | 'release' } | { kind: 'assign'; to: string };
+/** A task added by hand: for a role, or a colleague (to: their id); due an ISO time. */
+export interface NewTask {
+  text: string;
+  role?: TaskRole;
+  to?: string;
+  due?: string;
+}
+/** A change to a task. due: an ISO time, or null to clear it. */
+export type TaskChange =
+  | { kind: 'done' | 'undo' }
+  | { kind: 'not_needed'; reason: string }
+  | { kind: 'reassign'; role?: TaskRole; to?: string }
+  | { kind: 'due'; due: string | null };
 interface Api {
   config(): Promise<AppConfig>;
   me(): Promise<Persona>;
@@ -55,6 +68,11 @@ interface Api {
   colleagues(): Promise<Colleague[]>;
   takeover(colleague: string | null, at: string): Promise<Takeover>;
   takeOver(colleague: string, csns: string[], at: string): Promise<Takeover>;
+  /** The Tasks page: your open tasks (mine), or every task on your board (all). */
+  tasks(scope: 'mine' | 'all', at: string): Promise<TasksPage>;
+  patientTasks(csn: string, at: string): Promise<PatientTasks>;
+  addTask(csn: string, body: NewTask, at: string): Promise<PatientTasks>;
+  changeTask(id: number, body: TaskChange, at: string): Promise<PatientTasks>;
   reset(): Promise<{ status: string }>;
 }
 
@@ -77,6 +95,10 @@ function staticDemo(): Api {
     colleagues: () => go<Colleague[]>('GET', '/api/colleagues'),
     takeover: (colleague, at) => go<Takeover>('GET', '/api/takeover', at, undefined, colleague ? { colleague } : undefined),
     takeOver: (colleague, csns, at) => go<Takeover>('POST', '/api/takeover', at, { colleague, csns }),
+    tasks: (scope, at) => go<TasksPage>('GET', '/api/tasks', at, undefined, { scope }),
+    patientTasks: (csn, at) => go<PatientTasks>('GET', `/api/handoffs/${csn}/tasks`, at),
+    addTask: (csn, body, at) => go<PatientTasks>('POST', `/api/handoffs/${csn}/tasks`, at, body),
+    changeTask: (id, body, at) => go<PatientTasks>('POST', `/api/tasks/${id}`, at, body),
     reset: () => go<{ status: string }>('POST', '/api/demo/reset'),
   };
 }
@@ -96,5 +118,11 @@ export const api: Api = __STATIC_DEMO__ ? staticDemo() : {
     call<Takeover>(colleague ? `/api/takeover?colleague=${encodeURIComponent(colleague)}` : '/api/takeover', { at }),
   takeOver: (colleague: string, csns: string[], at: string) =>
     call<Takeover>('/api/takeover', { method: 'POST', body: JSON.stringify({ colleague, csns }), at }),
+  tasks: (scope: 'mine' | 'all', at: string) => call<TasksPage>(`/api/tasks?scope=${scope}`, { at }),
+  patientTasks: (csn: string, at: string) => call<PatientTasks>(`/api/handoffs/${csn}/tasks`, { at }),
+  addTask: (csn: string, body: NewTask, at: string) =>
+    call<PatientTasks>(`/api/handoffs/${csn}/tasks`, { method: 'POST', body: JSON.stringify(body), at }),
+  changeTask: (id: number, body: TaskChange, at: string) =>
+    call<PatientTasks>(`/api/tasks/${id}`, { method: 'POST', body: JSON.stringify(body), at }),
   reset: () => call<{ status: string }>('/api/demo/reset', { method: 'POST' }),
 };
