@@ -86,10 +86,12 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   const views = new Views(ds, store, fixtures.templates, null, STALE_OWNER_HOURS * HOUR, SHIFT_CHANGES, SHIFT_WARNING_MINUTES * 60000);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
-  /** main._seed: the demo's starting owners, at start and after Reset. */
+  /** main._seed: the demo's starting owners and tasks, at start and after Reset. */
   const seed = () => {
     const who = (id: string) => { const p = personas.find((x) => x.id === id); return { id: p.id, name: p.name }; };
-    for (const row of views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'))) store.assign(row);
+    const owners = views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'));
+    for (const row of owners) store.assign(row);
+    store.addTasks(views.seedTasks(defaultAt, owners));
   };
   seed();
 

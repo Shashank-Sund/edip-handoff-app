@@ -64,10 +64,15 @@ def test_an_owner_names_the_nurse_or_the_physician_and_anything_unclear_is_the_n
     t = _rules()
     for owner in ("RN", "rn", "Nurse", "nursing", "Nursing staff", "Floor nursing staff", "ICU nursing", "Nursing/MD"):
         assert t.role_of(owner) == "nurse", owner
-    for owner in ("MD", "physician", "Team", "ICU team", "Hospital Medicine team", "admitting team", "MD/RN", "Pharmacy/Team"):
+    for owner in ("MD", "physician", "Team", "ICU team", "Hospital Medicine team", "admitting team", "MD/RN", "Pharmacy/Team",
+                  # Medical services and specialties, as the model writes them.
+                  "Hospital Medicine", "Cardiology", "cardiology", "GI service", "Gastroenterology", "Orthopedics",
+                  "Psychiatry", "Observation Medicine", "Surgery", "Hospitalist", "Attending", "Resident",
+                  "Neurology/RN"):
         assert t.role_of(owner) == "physician", owner
-    # Unclear (no RN, nurse, MD, physician or team word): the nurse. "Hospital Medicine" and "Cardiology" included.
-    for owner in (None, "", "Cardiology", "Hospital Medicine", "Respiratory Therapy", "Pharmacy", "RNA lab", "mdx"):
+    # Unclear (no nurse or physician word): the nurse. Pharmacy and the therapies stay with the nurse.
+    for owner in (None, "", "Respiratory Therapy", "speech therapy", "Pharmacy", "Pharmacy/Nursing", "RNA lab", "mdx",
+                  "Case management", "Medical"):
         assert t.role_of(owner) == "nurse", owner
 
 
@@ -81,9 +86,14 @@ def test_a_due_time_of_day_is_the_next_one_at_or_after_signing_now_is_the_signin
     assert t.due_of("15:20", signed) == signed                                     # at signing counts
     assert t.due_of("15:19", signed) == local(2026, 10, 29, 15, 19)
     assert t.due_of("00:00", signed) == local(2026, 10, 29, 0, 0)
-    for now in ("Now", "now", " NOW "):
-        assert t.due_of(now, signed) == signed
-    for none in (None, "", "  ", "ongoing", "q4h", "immediately", "by 16:00", "24:00", "16:60", "1600", "16:00 today"):
+    for now in ("Now", "now", " NOW ", "immediate", "Immediately", "STAT", "stat"):
+        assert t.due_of(now, signed) == signed, now
+    # "by" or "at" a time is that time.
+    assert t.due_of("by 16:00", signed) == t.due_of("At 16:00", signed) == local(2026, 10, 28, 16, 0)
+    assert t.due_of("BY 9:05", signed) == local(2026, 10, 29, 9, 5)
+    # Repeating or vague: no due time (the task keeps the words).
+    for none in (None, "", "  ", "ongoing", "daily", "q4h", "every 4 hours", "as needed", "start now", "immediately upon breach",
+                 "next dose at 18:18", "by16:00", "before 16:00", "24:00", "16:60", "1600", "16:00 today"):
         assert t.due_of(none, signed) is None, none
     # Wall clock across the clocks falling back (America/New_York, November 1, 2026): 07:00 is 07:00 EST.
     assert t.due_of("07:00", local(2026, 10, 31, 22, 0)).astimezone(timezone.utc) == \
@@ -124,12 +134,17 @@ def test_a_task_replays_its_events_up_to_the_time_and_undo_reverts_the_last_chan
 
 
 # ---------------------------------------------------------------------------------------- in the app
-def _patient(c):
-    """A boarding patient the demo seed gave Jordan (ed-rn) and Kai (ed-md-2), its unit's nurse persona and another."""
+def _patient(c, main):
+    """A boarding patient with no owner yet (so none of the demo's seeded tasks) who later leaves the ED, taken by
+    Jordan (ed-rn) and Kai (ed-md-2); its unit's nurse persona and another unit's."""
     b = c.get("/api/board", headers=h("ed-rn")).json()
-    p = next(r for r in b["rows"] if r["phase"] == "boarding" and (r["owners"]["ed_nurse"] or {}).get("you")
-             and r["owners"]["ed_physician"])
     cfg = c.get("/api/config").json()
+    personas = {(x["facility"], x["unit"]) for x in cfg["personas"] if x["role"] == "unit_nurse"}
+    p = next(r for r in b["rows"] if r["phase"] == "boarding" and not any(r["owners"].values())
+             and main.VIEWS.ds.enc[r["csn"]]["ed_departure_ts"] and (r["facility"], r["destination"]["pending_unit"]) in personas)
+    for persona in ("ed-rn", "ed-md-2"):
+        assert c.post(f"/api/handoffs/{p['csn']}/owner", json={"kind": "claim"}, headers=h(persona)).status_code == 200
+    p = next(r for r in c.get("/api/board", headers=h("ed-rn")).json()["rows"] if r["csn"] == p["csn"])
     units = [x for x in cfg["personas"] if x["role"] == "unit_nurse"]
     recv = next(u for u in units if u["unit"] == p["destination"]["pending_unit"] and u["facility"] == p["facility"])
     return p, recv, next(u for u in units if u["id"] != recv["id"])
@@ -165,14 +180,14 @@ def _change(c, tid, persona, body, at=None):
 
 ITEMS = [{"text": "Repeat lactate", "owner": "RN", "due": "Now"},
          {"text": "Call the family", "owner": "Hospital Medicine team", "due": ""},
-         {"text": "Check glucose", "owner": "Cardiology", "due": "ongoing"},
+         {"text": "Check glucose", "owner": "Respiratory Therapy", "due": "ongoing"},
          {"text": "  repeat  LACTATE", "owner": "MD", "due": "08:00"}]
 
 
 def test_signing_turns_the_action_list_into_tasks_once_and_an_addendum_adds_only_new_items(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, _, _ = _patient(c)
+    p, _, _ = _patient(c, main)
     csn = p["csn"]
     signed = _sign(c, csn, items=ITEMS)
     at = datetime.fromisoformat(c.get("/api/config").json()["default_at"])
@@ -217,7 +232,7 @@ def test_an_addendum_after_departure_adds_its_new_items(client):
 def test_a_task_added_by_hand_with_its_refusals(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, recv, other = _patient(c)
+    p, recv, other = _patient(c, main)
     csn, tu = p["csn"], f"/api/handoffs/{p['csn']}/tasks"
     view = _tasks(c, csn)
     people = {x["id"]: x["role"] for x in view["people"]}
@@ -251,7 +266,7 @@ def test_a_task_added_by_hand_with_its_refusals(client):
 def test_every_change_and_undo_with_their_refusals_and_who_and_when(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, recv, _ = _patient(c)
+    p, recv, _ = _patient(c, main)
     csn = p["csn"]
     _sign(c, csn, items=ITEMS[:3])
     ids = {t["text"]: t["id"] for t in _tasks(c, csn)["tasks"]}
@@ -323,7 +338,7 @@ def test_every_change_and_undo_with_their_refusals_and_who_and_when(client):
 def test_who_has_the_patient_acts_anyone_else_is_outside_the_role_and_the_viewer_reads(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, recv, _ = _patient(c)
+    p, recv, _ = _patient(c, main)
     csn = p["csn"]
     _sign(c, csn, items=ITEMS[:3])
     ids = [t["id"] for t in _tasks(c, csn)["tasks"]]
@@ -365,7 +380,7 @@ def test_who_has_the_patient_acts_anyone_else_is_outside_the_role_and_the_viewer
 def test_tasks_follow_the_replay_clock(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, _, _ = _patient(c)
+    p, _, _ = _patient(c, main)
     csn = p["csn"]
     at = datetime.fromisoformat(c.get("/api/config").json()["default_at"])
     _sign(c, csn, items=[{"text": "Repeat lactate", "owner": "RN", "due": "Now"}])
@@ -388,7 +403,7 @@ def test_tasks_follow_the_replay_clock(client):
 def test_overdue_on_the_board_row_and_the_tasks_page_groups(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, recv, _ = _patient(c)
+    p, recv, _ = _patient(c, main)
     csn, tu = p["csn"], f"/api/handoffs/{p['csn']}/tasks"
     at = datetime.fromisoformat(c.get("/api/config").json()["default_at"])
     iso = lambda d: (at + d).isoformat()  # noqa: E731
@@ -403,41 +418,77 @@ def test_overdue_on_the_board_row_and_the_tasks_page_groups(client):
     row = next(r for r in c.get("/api/board", headers=h("ed-rn"), params={"at": iso(timedelta(hours=2))}).json()["rows"]
                if r["csn"] == csn)
     assert row["tasks"] == {"open": 8, "overdue": 3}                # Now item and Soon are past due too
+    # The Tasks page, for this patient (the demo seed adds tasks on other patients).
+    def page(persona, **params):
+        out = c.get("/api/tasks", headers=h(persona), params=params or None).json()
+        out["groups"] = [g | {"tasks": [t for t in g["tasks"] if t["csn"] == csn]} for g in out["groups"]]
+        out["done"] = [t for t in out["done"] if t["csn"] == csn]
+        out["counts"] = {"open": sum(len(g["tasks"]) for g in out["groups"]),
+                         "overdue": sum(1 for g in out["groups"] for t in g["tasks"] if t["overdue"])}
+        return out
     texts = lambda page: {g["id"]: [t["text"] for t in g["tasks"]] for g in page["groups"]}  # noqa: E731
-    mine = c.get("/api/tasks", headers=h("ed-rn")).json()
+    mine = page("ed-rn")
     assert texts(mine) == {"overdue": ["Overdue"], "soon": ["Now item", "Soon"], "later": ["Later"], "none": ["No time"]}
     assert mine["counts"] == {"open": 5, "overdue": 1} and mine["role"] == "nurse" and mine["done"] == []
     first = mine["groups"][0]["tasks"][0]
     assert first["csn"] == csn and first["patient"] == p["patient"] and first["in_role"] is True and first["overdue"]
     # Robin is a nurse who does not own the patient: only the task given to them. Kai owns it for the physician.
-    assert texts(c.get("/api/tasks", headers=h("ed-rn-2")).json())["none"] == ["For Robin"]
-    assert texts(c.get("/api/tasks", headers=h("ed-md-2")).json())["none"] == ["For the physician"]
-    assert c.get("/api/tasks", headers=h("ed-md")).json()["counts"]["open"] == 0          # no owner of this patient
-    assert texts(c.get("/api/tasks", headers=h(recv["id"])).json())["none"] == ["For the unit"]
+    assert texts(page("ed-rn-2"))["none"] == ["For Robin"]
+    assert texts(page("ed-md-2"))["none"] == ["For the physician"]
+    assert page("ed-md")["counts"]["open"] == 0                    # no owner of this patient
+    assert texts(page(recv["id"]))["none"] == ["For the unit"]
     assert c.get("/api/tasks", headers=h("viewer")).json()["counts"]["open"] == 0
-    assert c.get("/api/tasks", headers=h("viewer"), params={"scope": "all"}).json()["counts"]["open"] == 8
+    assert page("viewer", scope="all")["counts"]["open"] == 8
     assert c.get("/api/tasks", headers=h("ed-rn"), params={"scope": "x"}).status_code == 400
     # Done goes to the recently completed list, for 12 hours.
     tid = mine["groups"][0]["tasks"][0]["id"]
     assert _change(c, tid, "ed-rn", {"kind": "done"}).status_code == 200
-    page = c.get("/api/tasks", headers=h("ed-rn")).json()
-    assert [t["text"] for t in page["done"]] == ["Overdue"] and page["counts"] == {"open": 4, "overdue": 0}
+    after = page("ed-rn")
+    assert [t["text"] for t in after["done"]] == ["Overdue"] and after["counts"] == {"open": 4, "overdue": 0}
     # After arrival the receiving nurse has the nurse's tasks; the ED nurse has none.
     dep = main.VIEWS.ds.enc[csn]["ed_departure_ts"]
     t = (dep + timedelta(minutes=30)).isoformat()
-    unit = c.get("/api/tasks", headers=h(recv["id"]), params={"at": t}).json()
+    unit = page(recv["id"], at=t)
     assert sorted(x["text"] for g in unit["groups"] for x in g["tasks"]) == ["For the unit", "Later", "No time", "Now item", "Soon"]
-    assert c.get("/api/tasks", headers=h("ed-rn"), params={"at": t}).json()["counts"]["open"] == 0
-    hosp = c.get("/api/tasks", headers=h("hosp-md"), params={"at": t}).json()
+    assert page("ed-rn", at=t)["counts"]["open"] == 0
+    hosp = page("hosp-md", at=t)
     assert [x["text"] for g in hosp["groups"] for x in g["tasks"]] == ["For the physician"]
+
+
+def test_the_demo_starts_with_tasks_in_every_group_for_the_seeded_owners_and_reset_restores_them(client):
+    c, main = client
+    c.post("/api/demo/reset")
+    seeded = main.STORE.all_task_events()
+    owners = {(r["csn"], r["role"]): r for csn in main.VIEWS.ds.enc for r in main.STORE.assignments(csn)}
+    at = datetime.fromisoformat(c.get("/api/config").json()["default_at"])
+    assert len(seeded) == 8 and {e["kind"] for e in seeded} == {"create"} and all(e["template"] is None for e in seeded)
+    for e in seeded:
+        o = owners[(e["csn"], e["by_role"])]                       # by the patient's seeded owner, when they took it
+        assert (e["by_id"], e["at"]) == (o["assignee_id"], o["at"]) and e["at"] <= at
+        assert e["role"] == {"ed_nurse": "nurse", "ed_physician": "physician"}[e["by_role"]]
+    for persona, role in (("ed-rn", "nurse"), ("ed-md-2", "physician")):
+        page = c.get("/api/tasks", headers=h(persona)).json()
+        assert [len(g["tasks"]) for g in page["groups"]] == [1, 1, 1, 1], persona          # overdue, soon, later, none
+        assert page["counts"] == {"open": 4, "overdue": 1} and {t["role"] for g in page["groups"] for t in g["tasks"]} == {role}
+    rows = [r for r in c.get("/api/board", headers=h("ed-rn")).json()["rows"] if r["tasks"]["open"]]
+    assert sum(r["tasks"]["open"] for r in rows) == 8 and sum(r["tasks"]["overdue"] for r in rows) == 2
+    # No sign off: the seed changes no handoff state.
+    assert main.STORE.all_actions() == []
+    # Acting at the default time on a seeded task works (nothing is recorded later than it).
+    tid = next(e["task_id"] for e in seeded if e["by_role"] == "ed_nurse")
+    assert _change(c, tid, "ed-rn", {"kind": "done"}).status_code == 200
+    c.post("/api/demo/reset")
+    again = main.STORE.all_task_events()
+    assert [(e["csn"], e["text"], e["due"]) for e in again] == [(e["csn"], e["text"], e["due"]) for e in seeded]
 
 
 def test_reset_clears_tasks_and_a_post_to_the_page_is_refused(client):
     c, main = client
     c.post("/api/demo/reset")
-    p, _, _ = _patient(c)
+    seeded = len(main.STORE.all_task_events())
+    p, _, _ = _patient(c, main)
     _sign(c, p["csn"], items=ITEMS[:1])
-    assert main.STORE.all_task_events()
+    assert len(main.STORE.all_task_events()) == seeded + 1
     c.post("/api/demo/reset")
-    assert main.STORE.all_task_events() == [] and _tasks(c, p["csn"])["tasks"] == []
+    assert len(main.STORE.all_task_events()) == seeded and _tasks(c, p["csn"])["tasks"] == []
     assert c.post("/api/tasks", headers=h("ed-rn"), json={}).status_code == 405

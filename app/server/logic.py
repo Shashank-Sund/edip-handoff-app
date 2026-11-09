@@ -832,6 +832,35 @@ class Views:
                                  "detail": {"seed": True}})
         return rows
 
+    # The demo's starting tasks (seed_tasks), per role: text, and when due from the default time (None: no due time),
+    # so each role's owner has one task in every Tasks page group (overdue, due soon, later, no time).
+    SEED_TASKS = {
+        "ed_nurse": (("Recheck blood pressure after the fluid bolus", timedelta(minutes=-30)),
+                     ("Send the urine sample to the lab", timedelta(minutes=90)),
+                     ("Confirm the bed with the receiving unit", timedelta(hours=5)),
+                     ("Ask the family to bring the home medication list", None)),
+        "ed_physician": (("Order the repeat ECG", timedelta(minutes=-20)),
+                         ("Review the repeat troponin", timedelta(hours=1)),
+                         ("Talk with the family about the plan of care", timedelta(hours=4)),
+                         ("Reconcile the home medications", None)),
+    }
+
+    def seed_tasks(self, at: datetime, owners: list[dict]) -> list[dict]:
+        """The demo's starting tasks (mock mode, and again after Reset), so the board counts and every group of the Tasks
+        page show something at the default time `at` for the seeded nurse and physician: tasks added by hand, by the
+        owner when they took the patient, spread in turn over the seeded patients they own by `at` (owners: the rows of
+        seed_owners; a task event after `at` would make acting at `at` refuse as an earlier time). No sign off."""
+        rows = []
+        for role, plan in self.SEED_TASKS.items():
+            mine = [r for r in owners if r["role"] == role and r["at"] <= at]
+            for i, (text, due) in enumerate(plan if mine else ()):
+                who = mine[i % len(mine)]
+                rows.append({"csn": who["csn"], "kind": "create", "template": None, "item_key": None, "text": text,
+                             "role": tasks.DISCIPLINE[role], "assignee_id": None, "assignee_name": None,
+                             "due": at + due if due is not None else None, "at": who["at"], "by_name": who["assignee_name"],
+                             "by_role": role, "user_email": None, "by_id": who["assignee_id"]})
+        return rows
+
     def first_shown(self, csn: str, at: datetime) -> datetime | None:
         """When the patient's first draft shows, if it shows by `at`."""
         rows = self.ds.rows_at(csn, at)

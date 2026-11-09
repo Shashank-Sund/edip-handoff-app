@@ -98,11 +98,14 @@ def _current():
 
 def _seed() -> None:
     """Mock mode: the demo's starting owners, Jordan Reyes for the nurse role and Kai Moreno for the physician role,
-    before the default clock (logic.Views.seed_owners). Written at start up and again after Reset."""
+    before the default clock (logic.Views.seed_owners), and a few tasks on their patients (logic.Views.seed_tasks).
+    Written at start up and again after Reset."""
     personas, default_at = _current()
     who = {p["id"]: {"id": p["id"], "name": p["name"]} for p in personas}
-    for row in VIEWS.seed_owners(default_at, who["ed-rn"], who["ed-md-2"]):
+    owners = VIEWS.seed_owners(default_at, who["ed-rn"], who["ed-md-2"])
+    for row in owners:
         STORE.assign(row)
+    STORE.add_tasks(VIEWS.seed_tasks(default_at, owners))
 
 
 def _person(request: Request) -> dict:

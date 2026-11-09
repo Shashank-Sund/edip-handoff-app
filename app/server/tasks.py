@@ -32,31 +32,37 @@ DISCIPLINE = {"ed_nurse": "nurse", "unit_nurse": "nurse", "ed_physician": "physi
 # Who has the patient: while boarding (or after a canceled admission, still in the ED), and once on the unit.
 HAS_PATIENT = {"boarding": ("ed_nurse", "ed_physician"), "canceled": ("ed_nurse", "ed_physician"),
                "arrived": ("unit_nurse", "admitting_physician")}
-# The words of an action list owner that name a role; the first one in the text decides, else the nurse.
+# The words of an action list owner that name a role; the first one in the text decides, else the nurse. A medical
+# service or specialty is the physician: "Hospital Medicine", "GI service", "Cardiology" (any word ending in -ology).
 NURSE_WORDS = ("rn", "nurse", "nurses", "nursing")
-PHYSICIAN_WORDS = ("md", "physician", "physicians", "team")
-CLOCK = re.compile(r"([01]?[0-9]|2[0-3]):([0-5][0-9])")
+PHYSICIAN_WORDS = ("md", "physician", "physicians", "team", "medicine", "service", "hospitalist", "attending", "resident",
+                   "orthopedics", "psychiatry", "surgery")
+# Due words that mean the time of signing, and a time of day, alone or after "by" or "at".
+NOW_WORDS = ("now", "immediate", "immediately", "stat")
+CLOCK = re.compile(r"(?:(?:by|at)[ \t]+)?([01]?[0-9]|2[0-3]):([0-5][0-9])", re.IGNORECASE)
 SOON = timedelta(hours=2)                 # the Tasks page's "Due in the next 2 hours"
 RECENT = timedelta(hours=12)              # and its recently completed tasks
 
 
 def role_of(owner: str | None) -> str:
-    """The role an action list item's owner names: "RN", "nurse" or "Nursing" is the nurse, "MD", "physician" or a
-    "team" the physician; the first such word wins ("Nursing/MD" is the nurse); anything else is the nurse."""
+    """The role an action list item's owner names: "RN", "nurse" or "Nursing" is the nurse; "MD", "physician", a
+    "team" or a medical service or specialty ("Hospital Medicine", "Cardiology") the physician; the first such word
+    wins ("Nursing/MD" is the nurse); anything else ("Pharmacy", "Respiratory Therapy") is the nurse."""
     for w in re.findall(r"[a-z]+", (owner or "").lower()):
         if w in NURSE_WORDS:
             return "nurse"
-        if w in PHYSICIAN_WORDS:
+        if w in PHYSICIAN_WORDS or w.endswith("ology"):
             return "physician"
     return "nurse"
 
 
 def due_of(due: str | None, signed: datetime) -> datetime | None:
     """When an action list item is due, from its due text and the time the handoff was signed: a time of day such as
-    "16:00" is the next 16:00 at or after signing (facility time, wall clock), "Now" is the time of signing, anything
-    else (empty, "ongoing", "q4h") has no due time."""
+    "16:00" (or "by 16:00", "at 16:00") is the next 16:00 at or after signing (facility time, wall clock); "Now",
+    "immediate", "immediately" and "stat" are the time of signing; anything else (empty, or repeating or vague such
+    as "ongoing", "daily", "q4h") has no due time. The task keeps the words (due_text)."""
     text = (due or "").strip()
-    if text.lower() == "now":
+    if text.lower() in NOW_WORDS:
         return signed
     m = CLOCK.fullmatch(text)
     if not m:

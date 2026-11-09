@@ -18,9 +18,14 @@ export const DISCIPLINE: Record<string, string> = { ed_nurse: 'nurse', unit_nurs
 export const HAS_PATIENT: Record<string, string[]> = {
   boarding: ['ed_nurse', 'ed_physician'], canceled: ['ed_nurse', 'ed_physician'], arrived: ['unit_nurse', 'admitting_physician'],
 };
+// The words of an action list owner that name a role; the first one wins, else the nurse. A medical service or
+// specialty is the physician (any word ending in -ology too).
 const NURSE_WORDS = ['rn', 'nurse', 'nurses', 'nursing'];
-const PHYSICIAN_WORDS = ['md', 'physician', 'physicians', 'team'];
-const CLOCK = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+const PHYSICIAN_WORDS = ['md', 'physician', 'physicians', 'team', 'medicine', 'service', 'hospitalist', 'attending', 'resident',
+  'orthopedics', 'psychiatry', 'surgery'];
+// Due words that mean the time of signing, and a time of day, alone or after "by" or "at".
+const NOW_WORDS = ['now', 'immediate', 'immediately', 'stat'];
+const CLOCK = /^(?:(?:by|at)[ \t]+)?([01]?[0-9]|2[0-3]):([0-5][0-9])$/i;
 const MINUTE = 60_000;
 /** The Tasks page's "Due in the next 2 hours", and its recently completed tasks. */
 export const SOON = 2 * HOUR;
@@ -32,15 +37,16 @@ export type TaskEvent = Record<string, any> & { csn: string; kind: string; at: n
 export function roleOf(owner: string | null | undefined): string {
   for (const w of (owner ?? '').toLowerCase().match(/[a-z]+/g) ?? []) {
     if (NURSE_WORDS.includes(w)) return 'nurse';
-    if (PHYSICIAN_WORDS.includes(w)) return 'physician';
+    if (PHYSICIAN_WORDS.includes(w) || w.endsWith('ology')) return 'physician';
   }
   return 'nurse';
 }
 
-/** When an action list item is due: "16:00" is the next 16:00 at or after signing, "Now" the signing, else none. */
+/** When an action list item is due: "16:00", "by 16:00" or "at 16:00" is the next 16:00 at or after signing; "Now",
+ * "immediate", "immediately" and "stat" the signing; anything else none. */
 export function dueOf(due: string | null | undefined, signed: number): number | null {
   const text = strip(due ?? '');
-  if (text.toLowerCase() === 'now') return signed;
+  if (NOW_WORDS.includes(text.toLowerCase())) return signed;
   const m = CLOCK.exec(text);
   if (!m) return null;
   const day = Math.floor(wall(signed) / DAY) * DAY;

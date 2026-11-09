@@ -62,6 +62,13 @@ const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physic
 // The patient level items Take over lists when their attestation is not confirmed yet.
 const CONFIRM_LABEL: Record<string, string> = { E08: 'Code status', E09: 'Allergies', E10: 'Isolation' };
 const NOT_ED = 'Only ED nurses and physicians take patients.';
+// The demo's starting tasks (seedTasks), per role: [text, due in ms from the default time, null for no due time].
+const SEED_TASKS: [string, [string, number | null][]][] = [
+  ['ed_nurse', [['Recheck blood pressure after the fluid bolus', -30 * MINUTE], ['Send the urine sample to the lab', 90 * MINUTE],
+    ['Confirm the bed with the receiving unit', 5 * HOUR], ['Ask the family to bring the home medication list', null]]],
+  ['ed_physician', [['Order the repeat ECG', -20 * MINUTE], ['Review the repeat troponin', HOUR],
+    ['Talk with the family about the plan of care', 4 * HOUR], ['Reconcile the home medications', null]]],
+];
 // Tasks: what the panel and the Tasks page say, and the refusals.
 const MAX_REASON = 200;
 const TASK_READ_ONLY = 'The viewer role can read tasks but not change them.';
@@ -881,6 +888,26 @@ export class Views {
       }
     });
     return out;
+  }
+
+  /**
+   * The demo's starting tasks (logic.py seed_tasks): tasks added by hand by each seeded owner, spread in turn over the
+   * patients they own by `at`, so the board counts and every Tasks page group show something at `at`.
+   */
+  seedTasks(at: number, owners: any[]): any[] {
+    const rows: any[] = [];
+    for (const [role, plan] of SEED_TASKS) {
+      const mine = owners.filter((r) => r.role === role && r.at <= at);
+      if (!mine.length) continue;
+      plan.forEach(([text, due], i) => {
+        const who = mine[i % mine.length];
+        rows.push({
+          csn: who.csn, kind: 'create', template: null, item_key: null, text, role: tasks.DISCIPLINE[role], assignee_id: null, assignee_name: null,
+          due: due !== null ? at + due : null, at: who.at, by_name: who.assignee_name, by_role: role, user_email: null, by_id: who.assignee_id,
+        });
+      });
+    }
+    return rows;
   }
 
   /** Take (claim), Assign to a colleague or Release, for the caller's ED role. */

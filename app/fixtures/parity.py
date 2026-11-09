@@ -759,8 +759,12 @@ def task_scenarios(rec, ds, default, units):
     url, tu = f"/api/handoffs/{csn}", f"/api/handoffs/{csn}/tasks"
     recv = next(u for u in units if u["unit"] == p["destination"]["pending_unit"] and u["facility"] == p["facility"])
     other_unit = next(u for u in units if u["id"] != recv["id"])
-    rec("tasks none yet", "GET", tu, persona="ed-rn")
-    rec("tasks page empty", "GET", "/api/tasks", persona="ed-rn")
+    # The demo seed: a few tasks by the seeded owners, one in every Tasks page group at the default time.
+    rec("tasks seeded", "GET", tu, persona="ed-rn")
+    for persona in ("ed-rn", "ed-md-2"):
+        rec(f"tasks page seeded {persona}", "GET", "/api/tasks", persona=persona)
+        rec(f"tasks page seeded {persona} an hour earlier", "GET", "/api/tasks", at=iso(default - timedelta(hours=1)),
+            persona=persona)
     resolve(rec, url, "sbar_nurse", "ed-rn", None, "tasks")
     hour = default.astimezone(TZ).hour
     later, earlier = f"{(hour + 1) % 24:02d}:30", f"{(hour - 1) % 24:02d}:00"
@@ -769,7 +773,12 @@ def task_scenarios(rec, ds, default, units):
              {"text": "Check glucose", "owner": "Cardiology", "due": "ongoing"},
              {"text": "Review imaging", "owner": "MD/RN", "due": ""},
              {"text": "Recheck potassium", "owner": "physician", "due": earlier},
-             {"text": "  repeat   LACTATE ", "owner": "nurse", "due": "08:00"}]
+             {"text": "  repeat   LACTATE ", "owner": "nurse", "due": "08:00"},
+             {"text": "Give the first antibiotic dose", "owner": "Pharmacy/Nursing", "due": "STAT"},
+             {"text": "Consult orthopedics", "owner": "Orthopedics", "due": f"by {later}"},
+             {"text": "Daily weights", "owner": "Observation Medicine", "due": "daily"},
+             {"text": "Start the infusion", "owner": "GI service", "due": f"At {earlier}"},
+             {"text": "Speech therapy swallow screen", "owner": "speech therapy", "due": "Immediately"}]
     rec("tasks write the action list", "POST", f"{url}/sbar_nurse/edit", persona="ed-rn", body={"element": "E24", "items": items})
     rec("tasks sign", "POST", f"{url}/sbar_nurse/sign", persona="ed-rn", body={"callback": "x4471"})
     _, after = rec("tasks after signing", "GET", tu, persona="ed-rn")
