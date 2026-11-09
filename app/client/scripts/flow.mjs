@@ -5,7 +5,9 @@
 // Usage: node scripts/flow.mjs [baseUrl] [screenshotDir]
 // The owner steps need two ED nurses, so they run with demo personas (mock mode, the static demo, a synthetic
 // deployment) and are skipped, with a line saying so, when the app maps one signed in user through EDIP_ROLE_MAP
-// (demo personas off): a single bearer token is a single person, who cannot be nurse A and nurse B.
+// (demo personas off): a single bearer token is a single person, who cannot be nurse A and nurse B. They are also
+// skipped in live mode (a deployed app): its actions are a permanent record, so patients taken and signed by earlier
+// runs, at later hours, refuse the next run's actions. The server tests run them on Postgres in CI.
 // STATIC_DEMO=1: the static demo build. Actions live in the tab, so the persona is switched in the menu rather
 // than by reloading; then the replay clock moves forward an hour. Requests to /api or failed requests fail.
 import { chromium } from 'playwright-core';
@@ -41,17 +43,26 @@ async function become(id, name) {
   await page.waitForSelector(`text=${name}`);
 }
 
+/**
+ * Move the replay clock on an hour and wait for the board of the new hour: the clock label to change and its
+ * board to arrive. A networkidle wait alone returns at once, so a loop would race through every hour.
+ */
+async function forwardHour() {
+  const before = await page.getByRole('button', { name: /Replay time/ }).textContent();
+  const board = page.waitForResponse((r) => r.url().includes('/api/board'));
+  await page.getByRole('button', { name: 'Forward 1 hour' }).click();
+  await board;
+  await page.waitForFunction((b) => ![...document.querySelectorAll('button')].some((x) => x.textContent === b), before);
+  await page.waitForLoadState('networkidle');
+}
+
 // ---------------------------------------------------------------------------------------------- owners
-const demoPersonas = STATIC_DEMO || (await (await fetch(`${base}/api/config`, { headers })).json()).demo_personas;
+const config = STATIC_DEMO ? { mode: 'static', demo_personas: true } : await (await fetch(`${base}/api/config`, { headers })).json();
 let owners = 'skipped: demo personas are off, so the app has one ED identity (the signed in user) and no second nurse to hand over to';
-if (demoPersonas) {
+if (config.mode === 'live') {
+  owners = 'skipped: live mode keeps every action, so earlier runs leave patients that refuse these steps (they run in mock mode, the static demo and CI)';
+} else if (config.demo_personas) {
   const take = page.getByRole('button', { name: /^Take / }).first();
-  // On a deployed app earlier runs took patients: when none is unassigned at this hour, move the replay clock on.
-  const forward = page.getByRole('button', { name: 'Forward 1 hour' });
-  for (let i = 0; i < 12 && !STATIC_DEMO && !(await take.count()) && (await forward.count()); i++) {
-    await forward.click();
-    await page.waitForLoadState('networkidle');
-  }
   if (!(await take.count())) {
     owners = 'skipped: no unassigned boarding patient at this hour';
   } else {
@@ -95,6 +106,8 @@ if (demoPersonas) {
     if (!(await page.evaluate(() => window.__flow))) errors.push('opening the full guide from a ? loaded the page again');
     await become('ed-rn', 'Jordan Reyes, RN');
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Board' }).click();
+    // Jordan's patients went to Robin, so My patients can be empty at this hour.
+    await page.getByRole('tab', { name: /Everyone/ }).click();
     await page.waitForSelector('tbody tr');
     owners = `ok: ${patient} taken by Jordan Reyes, acted on by Robin Asante outside the assignment, taken over by Robin, ? lands on the guide`;
   }
@@ -108,10 +121,7 @@ const everyone = page.getByRole('tab', { name: /Everyone/ });
 if (await everyone.count()) await everyone.click();
 const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
 // Every earlier run signs one patient: when none is left unsigned at this hour, move the replay clock on.
-for (let i = 0; i < 12 && !STATIC_DEMO && !(await first.count()) && (await page.getByRole('button', { name: 'Forward 1 hour' }).count()); i++) {
-  await page.getByRole('button', { name: 'Forward 1 hour' }).click();
-  await page.waitForLoadState('networkidle');
-}
+for (let i = 0; i < 12 && !STATIC_DEMO && !(await first.count()) && (await page.getByRole('button', { name: 'Forward 1 hour' }).count()); i++) await forwardHour();
 const name = (await first.locator('a').first().textContent()).trim();
 await first.click();
 const panel = page.locator('aside[aria-label="Sign off and context"]');
@@ -133,7 +143,7 @@ const dest = await page.locator('text=Going to').locator('..').locator('dd').tex
 const unit = dest.trim().split(/\s+/).slice(0, 2).join('-').toLowerCase();
 // The read back needs the receiving nurse, a second person: with demo personas off there is only the signed in user.
 let readback = `acknowledged by ${unit}`;
-if (!demoPersonas) {
+if (!config.demo_personas) {
   readback = 'read back skipped: demo personas are off, so there is no receiving nurse to switch to';
 } else if (STATIC_DEMO) {
   await page.getByRole('button', { name: /Switch persona/ }).click();
@@ -144,7 +154,7 @@ if (!demoPersonas) {
   await page.evaluate((u) => localStorage.setItem('edip.persona', `unit-${u}`), unit);
   await page.reload({ waitUntil: 'networkidle' });
 }
-if (demoPersonas) {
+if (config.demo_personas) {
   await page.getByLabel('Read back').fill(`${name}: unstable, ICU level of care. I will repeat vitals and lactate on arrival.`);
   await page.getByRole('button', { name: 'Accept handoff', exact: true }).click();
   await page.waitForSelector('text=Handoff accepted');
@@ -170,7 +180,7 @@ if (STATIC_DEMO) {
   if (out) await page.screenshot({ path: `${out}/flow-clock.png` });
 }
 await browser.close();
-const ok = state.includes(demoPersonas ? 'Acknowledged' : 'Signed') && !errors.length;
+const ok = state.includes(config.demo_personas ? 'Acknowledged' : 'Signed') && !errors.length;
 console.log(`owners ${owners}`);
 console.log(ok ? `flow ok: ${name} signed by ${signer}, ${readback}` : `flow failed: ${state} ${errors.join('; ')}`);
 process.exit(ok ? 0 : 1);
