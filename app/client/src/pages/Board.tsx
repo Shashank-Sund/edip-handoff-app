@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Layout } from '@/components/layout/Layout';
 import { Pill, ProgressRing, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { Owners } from '@/components/common/Owners';
+import { TaskCount } from '@/components/common/TaskCount';
 import { Stat } from '@/components/common/Stat';
 import { HelpButton } from '@/components/guide/HelpButton';
 import { Explain } from '@/components/guide/Explain';
@@ -37,7 +38,7 @@ function columnHelp(tplName: string): [string, string][] {
     ['Reason for visit', 'The chief complaint. Underneath, from the chart: a code status other than full code, isolation, and allergies.'],
     ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
     ['Boarding', 'Time since the admit decision while the patient is still in the ED. Amber from 4 hours, red from 6.'],
-    ['Handoffs', 'Where the nurse and the physician handoff stand: Draft, Signed, Acknowledged, Changed after signing, or Transferred without sign off.'],
+    ['Handoffs', 'Where the nurse and the physician handoff stand: Draft, Signed, Acknowledged, Changed after signing, or Transferred without sign off. Under them, the tasks not done yet and how many are overdue, for example 3 tasks · 1 overdue.'],
     ['Completeness', `For your role's template (${tplName}): the share of its checks that are met or resolved. Open counts the required items still to resolve before signing.`],
     ['Last update', 'When the latest draft was written, and what changed in the chart to trigger it.'],
   ];
@@ -442,6 +443,9 @@ export default function Board() {
                         </td>
                         <td className="px-3 py-3">
                           <Handoffs row={r} />
+                          <div className="mt-1.5">
+                            <TaskCount counts={r.tasks} />
+                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <Completeness row={r} template={data.template} />
@@ -469,7 +473,7 @@ export default function Board() {
                   label="What a card shows"
                   topic="board.columns"
                   side="bottom"
-                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, and where the nurse and physician handoffs stand.`}
+                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, where the nurse and physician handoffs stand, and the tasks not done yet (how many are overdue).`}
                 />
               </div>
               <ul className="divide-y md:hidden">
@@ -494,7 +498,10 @@ export default function Board() {
                         {r.phase === 'arrived' ? <span className="text-sm">Arrived after {duration(r.minutes_boarding)}</span> : <BoardingTime minutes={r.minutes_boarding} />}
                         <Completeness row={r} template={data.template} label={tplName} />
                       </div>
-                      <Handoffs row={r} />
+                      <div className="flex items-end justify-between gap-3">
+                        <Handoffs row={r} />
+                        <TaskCount counts={r.tasks} plain />
+                      </div>
                     </a>
                     {/* Outside the card's link: a button cannot sit inside a link. */}
                     {g.id === 'unassigned' && (

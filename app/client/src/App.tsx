@@ -11,6 +11,7 @@ const Analytics = lazy(() => import('@/pages/Analytics'));
 const Templates = lazy(() => import('@/pages/Templates'));
 const Guide = lazy(() => import('@/pages/Guide'));
 const Takeover = lazy(() => import('@/pages/Takeover'));
+const Tasks = lazy(() => import('@/pages/Tasks'));
 
 function Routes() {
   const path = usePath();
@@ -19,6 +20,7 @@ function Routes() {
   if (match(path, '/analytics')) return <Analytics />;
   if (match(path, '/templates')) return <Templates />;
   if (match(path, '/takeover')) return <Takeover />;
+  if (match(path, '/tasks')) return <Tasks />;
   if (match(path, '/guide') || match(path, '/about')) return <Guide />;
   if (path === '/' || path === '' || path === '/index.html') return <Board />;
   return <NotFound />;

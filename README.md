@@ -1,6 +1,6 @@
 # Healthcare Handoff: ED to inpatient handoff (reference Databricks App)
 
-When the emergency department decides to admit a patient, this app drafts the handoff from the chart, as an SBAR for nurses, an I-PASS for physicians and a short Joint Commission minimum. The ED clinician reviews, edits and signs it; the receiving unit accepts it with a read back. Every statement the model writes cites the chart record it came from. All data is synthetic.
+When the emergency department decides to admit a patient, this app drafts the handoff from the chart, as an SBAR for nurses, an I-PASS for physicians and a short Joint Commission minimum. The ED clinician reviews, edits and signs it; the receiving unit accepts it with a read back, and its action list becomes tasks for whoever has the patient. Every statement the model writes cites the chart record it came from. All data is synthetic.
 
 **Live demo:** [d16hyap5wh4fcn.cloudfront.net](https://d16hyap5wh4fcn.cloudfront.net). It runs entirely in your browser on the reference week's real model drafts (no Databricks, nothing sent anywhere); switch roles in the menu at the bottom left, sign as the ED and accept as the unit. Changes reset on reload.
 
@@ -43,8 +43,8 @@ Open http://localhost:8000. Details: [app/README.md](app/README.md).
 Hospital feeds (synthetic): HL7 v2, Redox FHIR (batch or Zerobus), Clarity nightly tables
   -> bronze (Unity Catalog) -> Lakeflow pipeline: parse, reconcile across feeds, encounter state, triggers
   -> handoff job: chart packet, one model call per trigger, validator, completeness rules -> gold drafts
-  -> Lakebase (synced drafts; the app's edits, attestations, sign offs and read backs)
-  -> app: board, handoff review and sign off, read back, analytics, a guide for clinicians
+  -> Lakebase (synced drafts; the app's edits, attestations, sign offs, read backs, owners and tasks)
+  -> app: board, handoff review and sign off, read back, tasks, analytics, a guide for clinicians
 ```
 
 Every table, the Lakebase schema and ready to run queries: [docs/data-model.md](docs/data-model.md).

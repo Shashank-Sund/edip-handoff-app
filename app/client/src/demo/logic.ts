@@ -8,6 +8,11 @@
  *   act(...)                 validates and records an edit, attestation, sign off or acknowledgement
  *   own(...)                 Take, Assign to a colleague, Release: who owns the patient for the ED role
  *   takeover(...), takeOver(...)   a colleague's patients at a shift change, and taking some or all of them
+ *   patientTasks(...), addTask(...), taskAct(...), myTasks(...)   tasks (tasks.ts): one patient's, a new one, a
+ *                            change to one, and the caller's across patients for the Tasks page
+ *
+ * Signing a handoff turns its action list into tasks; acting on a task while someone else has the patient is
+ * allowed and recorded as outside the role (outside_role).
  *
  * Sign off follows the content: any edit or attestation after a signature, or a newer version whose clinical
  * content differs from the signed one, puts the template in state "changed" (sign again); the receiver cannot
@@ -20,7 +25,9 @@
 import { counts, HANDOVER_BUCKETS, handoverBucket, nextShift, ownerAt, personKey, ROLES } from './assignment';
 import { statusAt, type Dataset, type Row } from './data';
 import { ACKS, SIGNS, sees } from './personas';
-import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy } from './py';
+import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy, ts } from './py';
+import * as tasks from './tasks';
+import type { TaskEvent } from './tasks';
 import type { Action, MemoryStore } from './workflow';
 
 const ARRIVED_WINDOW = 12 * HOUR;
@@ -55,6 +62,32 @@ const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physic
 // The patient level items Take over lists when their attestation is not confirmed yet.
 const CONFIRM_LABEL: Record<string, string> = { E08: 'Code status', E09: 'Allergies', E10: 'Isolation' };
 const NOT_ED = 'Only ED nurses and physicians take patients.';
+// The demo's starting tasks (seedTasks), per role: [text, due in ms from the default time, null for no due time].
+const SEED_TASKS: [string, [string, number | null][]][] = [
+  ['ed_nurse', [['Recheck blood pressure after the fluid bolus', -30 * MINUTE], ['Send the urine sample to the lab', 90 * MINUTE],
+    ['Confirm the bed with the receiving unit', 5 * HOUR], ['Ask the family to bring the home medication list', null]]],
+  ['ed_physician', [['Order the repeat ECG', -20 * MINUTE], ['Review the repeat troponin', HOUR],
+    ['Talk with the family about the plan of care', 4 * HOUR], ['Reconcile the home medications', null]]],
+];
+// Tasks: what the panel and the Tasks page say, and the refusals.
+const MAX_REASON = 200;
+const TASK_READ_ONLY = 'The viewer role can read tasks but not change them.';
+const NO_TASK = 'There is no such task.';
+const TASK_TEXT = 'Write what needs to be done.';
+const TASK_ROLE = 'Choose nurse or physician.';
+const TASK_COLLEAGUE = 'Choose a colleague from the list.';
+const TASK_ROLE_MISMATCH = 'Choose a colleague in that role, or only the role.';
+const TASK_REASON = 'Write a short reason the task is not needed.';
+const TASK_REASON_LONG = 'Keep the reason under 200 characters.';
+const TASK_DUE = 'The due time must be a date and time.';
+const TASK_CLOSED = 'This task is closed. Press Undo to open it again first.';
+const TASK_UNDO = 'There is nothing to undo on this task.';
+const TASK_KIND = 'Choose Done, Not needed, Reassign, Change due time or Undo.';
+const OUTSIDE_ROLE: Record<string, string> = {
+  boarding: 'The ED nurse and physician have this patient while they board. You can still act on a task; it is recorded as outside your role.',
+  canceled: 'The ED nurse and physician have this patient. You can still act on a task; it is recorded as outside your role.',
+  arrived: 'The receiving nurse and the admitting physician have this patient now. You can still act on a task; it is recorded as outside your role.',
+};
 // The template each ED role signs and owns the patient for, in Analytics.
 const OWN_TEMPLATE: [string, string][] = [['ed_nurse', 'sbar_nurse'], ['ed_physician', 'ipass_physician']];
 
@@ -478,6 +511,8 @@ export class Views {
       last_update: { as_of: iso(anyRow.at), trigger: anyRow.trigger },
       templates,
       owners,
+      // Open and overdue tasks, for the board row.
+      tasks: tasks.counts([...tasks.replay(this.store.taskEvents(csn, at), at).values()], at),
     };
   }
 
@@ -564,13 +599,22 @@ export class Views {
         versions: versions.map((v) => ({ version: v.version, as_of: iso(v.at), trigger: v.trigger, status: statusAt(v, at), severity: v.severity, score: v.score })),
       };
     }
-    const log = acts.map((a) => ({
+    // Task events are in the activity too (kind "task", the event in "task", the task's text in detail).
+    const events = this.store.taskEvents(csn, at);
+    const text = new Map<number, string>([...tasks.replay(events, at).values()].map((t) => [t.id, t.text]));
+    const log: any[] = acts.map((a) => ({
       kind: a.kind, template: a.template, by: a.by, at: iso(a.at) as string, version: a.version,
       detail: or(or(get(a, 'element'), get(a, 'rule')), get(a, 'option')),
       ...(truthy(get(a, 'restore')) ? { restore: true } : {}),
       ...(truthy(get(a, 'off_assignment')) ? { off_assignment: true, assigned_to: get(a, 'assigned_to') } : {}),
       ...(a.kind === 'attest' ? this.entry(a) : {}),
     }));
+    for (const e of tasks.ordered(events)) {
+      log.push({
+        kind: 'task', template: null, by: e.by_name, at: iso(e.at) as string, version: null, detail: text.get(e.task_id) ?? null, task: e.kind,
+        task_id: e.task_id, ...(e.outside_role ? { outside_role: true } : {}),
+      });
+    }
     // sorted(key=at string, reverse=True) keeps equal keys in their original order
     log.sort((a, b) => cmpStr(b.at, a.at));
     return { summary, templates, activity: log };
@@ -799,6 +843,8 @@ export class Views {
     const owner = summary.owners[person.role] ?? null;
     if (counts(owner) && !owner.you) Object.assign(row, { off_assignment: true, assigned_to: owner.name });
     this.store.add(kind, row);
+    // The action list becomes tasks; a sign again or an addendum adds only the new items.
+    if (kind === 'sign') this.handoffTasks(csn, template, latest.version, at, row, eff);
     return this.case(csn, at, person);
   }
 
@@ -842,6 +888,26 @@ export class Views {
       }
     });
     return out;
+  }
+
+  /**
+   * The demo's starting tasks (logic.py seed_tasks): tasks added by hand by each seeded owner, spread in turn over the
+   * patients they own by `at`, so the board counts and every Tasks page group show something at `at`.
+   */
+  seedTasks(at: number, owners: any[]): any[] {
+    const rows: any[] = [];
+    for (const [role, plan] of SEED_TASKS) {
+      const mine = owners.filter((r) => r.role === role && r.at <= at);
+      if (!mine.length) continue;
+      plan.forEach(([text, due], i) => {
+        const who = mine[i % mine.length];
+        rows.push({
+          csn: who.csn, kind: 'create', template: null, item_key: null, text, role: tasks.DISCIPLINE[role], assignee_id: null, assignee_name: null,
+          due: due !== null ? at + due : null, at: who.at, by_name: who.assignee_name, by_role: role, user_email: null, by_id: who.assignee_id,
+        });
+      });
+    }
+    return rows;
   }
 
   /** Take (claim), Assign to a colleague or Release, for the caller's ED role. */
@@ -934,6 +1000,209 @@ export class Views {
     }
     for (const row of rows) this.store.assign(row);
     return { ...this.takeover(at, person, colleague, colleagues), taken: rows.map((r) => r.csn) };
+  }
+
+  // ------------------------------------------------------------------------------------------------ tasks
+  /**
+   * The action list (E24) of a handoff signed at `at` as tasks: one create per item whose text is not a task of this
+   * template yet, by the clinician who signed (who: the sign off row). (logic.py's backfill_tasks, for deployments from
+   * before tasks, is live mode only and has no port.)
+   */
+  private handoffTasks(csn: string, template: string, version: number, at: number, who: any, draft: any): any[] {
+    const el = or(elements(draft).get('E24') ?? null, {}) as any;
+    const items = (or(get(or(get(el, 'narrative'), {}), 'items'), []) as any[]);
+    const have = new Set(this.store.taskEvents(csn).filter((e) => e.kind === 'create' && e.template === template).map((e) => e.item_key));
+    const rows: any[] = [];
+    for (const i of items) {
+      const text = strip(or(get(i, 'text'), '') as string);
+      const k = tasks.key(text);
+      if (!k || have.has(k)) continue;
+      have.add(k);
+      rows.push({
+        csn, kind: 'create', template, version, item_key: k, text, role: tasks.roleOf(get(i, 'owner')), assignee_id: null, assignee_name: null,
+        due: tasks.dueOf(get(i, 'due'), at), due_text: or(strip(or(get(i, 'due'), '') as string), null),
+        owner_text: or(strip(or(get(i, 'owner'), '') as string), null), at, by_name: who.by, by_role: who.role,
+        user_email: get(who, 'user_email'), by_id: get(who, 'by_id'),
+      });
+    }
+    return rows.length ? this.store.addTasks(rows) : [];
+  }
+
+  /** Whether the person has the patient: ED roles while boarding, the receiving nurse and admitting physician after. */
+  private inRole(person: any, summary: any): boolean {
+    return (tasks.HAS_PATIENT[summary.phase] ?? []).includes(person.role);
+  }
+
+  /** Who a task of this patient can go to: the nurses (ED and the destination unit's) and the physicians. */
+  taskPeople(summary: any, people: any[]): any[] {
+    const unit = summary.destination.pending_unit ?? null;
+    return people.filter((p) => p.role in tasks.DISCIPLINE && sees(p, summary.facility, unit))
+      .map((p) => ({ id: p.id, name: p.name, role: tasks.DISCIPLINE[p.role], role_label: p.role_label ?? null }));
+  }
+
+  /** A task is the caller's when it was given to them, or is for their role on a patient they have (ED: they own). */
+  private mine(t: any, summary: any, person: any): boolean {
+    if (t.assignee) return t.assignee.id === personKey(person);
+    const role = person.role;
+    if (t.role !== (tasks.DISCIPLINE[role] ?? null) || !this.inRole(person, summary)) return false;
+    if (ROLES.includes(role)) {
+      const owner = summary.owners[role];
+      return counts(owner) && owner.you;
+    }
+    return true;
+  }
+
+  /** One patient's tasks at `at`, their counts, whether the caller can act, and who a task can go to; null when off the board. */
+  patientTasks(csn: string, at: number, person: any, people: any[]): any {
+    const summary = this.summary(csn, at, person);
+    if (summary === null) return null;
+    const found = [...tasks.replay(this.store.taskEvents(csn, at), at).values()];
+    const viewer = person.role === 'viewer', inRole = this.inRole(person, summary);
+    return {
+      at: iso(at), csn, phase: summary.phase, tasks: found.map((t) => tasks.shown(t, at)), counts: tasks.counts(found, at),
+      access: { can_act: !viewer, in_role: inRole, note: viewer ? TASK_READ_ONLY : inRole ? null : OUTSIDE_ROLE[summary.phase] },
+      people: this.taskPeople(summary, people),
+    };
+  }
+
+  /** The summary for a task change: on the board, not the viewer, and not before a task event already recorded. */
+  private taskCheck(csn: string, at: number, person: any): any {
+    const summary = this.summary(csn, at, person);
+    if (summary === null) throw new ActionError('This patient is not on your board at this time.');
+    if (person.role === 'viewer') throw new ActionError(TASK_READ_ONLY);
+    if (this.store.taskEvents(csn).some((e) => e.at > at)) throw new ActionError(EARLIER);
+    return summary;
+  }
+
+  private event(csn: string, kind: string, at: number, person: any, summary: any, fields: any): any {
+    const row: any = { csn, kind, at, by_name: person.name, by_role: person.role, user_email: get(person, 'user_email'), by_id: personKey(person), ...fields };
+    if (!this.inRole(person, summary)) row.outside_role = true; // allowed, never blocked; recorded
+    return row;
+  }
+
+  private static due(raw: any): number | null {
+    if (raw === null || raw === undefined) return null;
+    try {
+      return ts(raw);
+    } catch {
+      throw new ActionError(TASK_DUE);
+    }
+  }
+
+  /** [role, colleague or null] from a body with role and to (a colleague's id). */
+  private target(body: any, summary: any, people: any[]): [string, any] {
+    const role = get(body, 'role'), to = get(body, 'to');
+    if (truthy(to)) {
+      const p = this.taskPeople(summary, people).find((x) => x.id === to) ?? null;
+      if (p === null) throw new ActionError(TASK_COLLEAGUE);
+      if (truthy(role) && role !== p.role) throw new ActionError(TASK_ROLE_MISMATCH);
+      return [p.role, p];
+    }
+    if (!tasks.ROLES.includes(role)) throw new ActionError(TASK_ROLE);
+    return [role, null];
+  }
+
+  /** A task added by hand: text, role (nurse or physician), optionally a colleague and a due time. */
+  addTask(csn: string, at: number, person: any, body: any, people: any[]): any {
+    const summary = this.taskCheck(csn, at, person);
+    const text = strip(or(get(body, 'text'), '') as string);
+    if (!truthy(text)) throw new ActionError(TASK_TEXT);
+    if (pyLen(text) > MAX_TEXT) throw new ActionError(TOO_LONG);
+    const [role, to] = this.target(body, summary, people);
+    const due = Views.due(get(body, 'due'));
+    this.store.addTasks([this.event(csn, 'create', at, person, summary, {
+      template: null, item_key: null, text, role, assignee_id: to ? to.id : null, assignee_name: to ? to.name : null, due,
+    })]);
+    return this.patientTasks(csn, at, person, people);
+  }
+
+  /** A change to one task: done, not_needed (with a reason), reassign, due, or undo. */
+  taskAct(taskId: number, at: number, person: any, body: any, people: any[]): any {
+    const create = this.store.allTaskEvents().find((e) => e.kind === 'create' && e.task_id === taskId) ?? null;
+    if (create === null) throw new ActionError(NO_TASK);
+    const csn = create.csn;
+    const summary = this.taskCheck(csn, at, person); // also refuses a task created after `at` (the replay clock)
+    const t = tasks.replay(this.store.taskEvents(csn, at), at).get(taskId);
+    const kind = get(body, 'kind');
+    const ev = (k: string, f: any = {}) => this.event(csn, k, at, person, summary, { task_id: taskId, ...f });
+    let row: any;
+    if (tasks.CLOSED.includes(kind)) {
+      if (t.status !== 'open') throw new ActionError(TASK_CLOSED);
+      const reason = strip(or(get(body, 'reason'), '') as string);
+      if (kind === 'not_needed' && !truthy(reason)) throw new ActionError(TASK_REASON);
+      if (pyLen(reason) > MAX_REASON) throw new ActionError(TASK_REASON_LONG);
+      row = ev(kind, { reason: kind === 'not_needed' ? reason : null });
+    } else if (kind === 'reassign' || kind === 'due') {
+      if (t.status !== 'open') throw new ActionError(TASK_CLOSED);
+      const was = { from_role: t.role, from_assignee_id: t.assignee ? t.assignee.id : null, from_assignee_name: t.assignee ? t.assignee.name : null };
+      if (kind === 'reassign') {
+        const [role, to] = this.target(body, summary, people);
+        if (role === t.role && (to ? to.id : null) === was.from_assignee_id) {
+          throw new ActionError(`The task is with ${to ? to.name : `the ${role}`} already.`);
+        }
+        row = ev('reassign', { role, assignee_id: to ? to.id : null, assignee_name: to ? to.name : null, ...was });
+      } else {
+        const due = Views.due(get(body, 'due'));
+        if (due === t.due) throw new ActionError('The task has that due time already.');
+        row = ev('due', { due, from_due: t.due });
+      }
+    } else if (kind === 'undo') {
+      const last = tasks.undoOf(t);
+      if (last === null) throw new ActionError(TASK_UNDO);
+      const e = t.history[t.history.length - 1];
+      if (tasks.CLOSED.includes(last)) {
+        row = ev('reopen', { undo: true });
+      } else if (last === 'reassign') {
+        row = ev('reassign', {
+          role: e.from_role, assignee_id: e.from_assignee_id ?? null, assignee_name: e.from_assignee_name ?? null, from_role: t.role,
+          from_assignee_id: t.assignee ? t.assignee.id : null, from_assignee_name: t.assignee ? t.assignee.name : null, undo: true,
+        });
+      } else {
+        row = ev('due', { due: e.from_due ?? null, from_due: t.due, undo: true });
+      }
+    } else {
+      throw new ActionError(TASK_KIND);
+    }
+    this.store.addTasks([row]);
+    return this.patientTasks(csn, at, person, people);
+  }
+
+  /** The Tasks page: the caller's open tasks across patients (or every task on their board), grouped, and the recently closed. */
+  myTasks(at: number, person: any, scope = 'mine'): any {
+    const groups: Record<string, [any, any][]> = { overdue: [], soon: [], later: [], none: [] };
+    const done: [any, any][] = [];
+    const byCsn = new Map<string, TaskEvent[]>();
+    for (const e of this.store.allTaskEvents(at)) {
+      let list = byCsn.get(e.csn);
+      if (!list) byCsn.set(e.csn, (list = []));
+      list.push(e);
+    }
+    const me = personKey(person);
+    for (const [csn, events] of byCsn) {
+      const summary = this.summary(csn, at, person);
+      if (summary === null) continue;
+      const patient = {
+        csn, patient: summary.patient, phase: summary.phase, facility: summary.facility, unit: summary.destination.pending_unit ?? null,
+        severity: summary.severity, in_role: this.inRole(person, summary),
+      };
+      for (const t of tasks.replay(events, at).values()) {
+        const mine = scope === 'all' || this.mine(t, summary, person);
+        if (t.status === 'open' && mine) groups[tasks.group(t, at)].push([t, patient]);
+        else if (t.status !== 'open' && at - t.closed.at <= tasks.RECENT && (mine || t.history[t.history.length - 1].by_id === me)) done.push([t, patient]);
+      }
+    }
+    const dueKey = (t: any) => (t.due === null ? Infinity : t.due);
+    const byDue = (a: [any, any], b: [any, any]) => {
+      const x = dueKey(a[0]), y = dueKey(b[0]);
+      return (x === y ? 0 : x < y ? -1 : 1) || a[0].created.at - b[0].created.at || a[0].id - b[0].id;
+    };
+    const ids = ['overdue', 'soon', 'later', 'none'];
+    const out = ids.map((g) => ({ id: g, tasks: [...groups[g]].sort(byDue).map(([t, p]) => ({ ...tasks.shown(t, at), ...p })) }));
+    done.sort((a, b) => b[0].closed.at - a[0].closed.at || b[0].id - a[0].id);
+    return {
+      at: iso(at), scope, role: tasks.DISCIPLINE[person.role] ?? null, groups: out, done: done.map(([t, p]) => ({ ...tasks.shown(t, at), ...p })),
+      counts: { open: ids.reduce((n, g) => n + groups[g].length, 0), overdue: groups.overdue.length },
+    };
   }
 }
 

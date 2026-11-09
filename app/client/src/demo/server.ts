@@ -13,6 +13,7 @@ import { Dataset, type Fixtures } from './data';
 import { ActionError, Views } from './logic';
 import { demoPersonas } from './personas';
 import { HOUR, iso, parseTs, TZ } from './py';
+import { DISCIPLINE } from './tasks';
 import { MemoryStore } from './workflow';
 
 export interface Request {
@@ -51,6 +52,8 @@ const BODIES: Record<string, [string[], string[]]> = {
   ack: [['readback'], ['questions']],
   owner: [['kind'], ['to']],
   takeover: [['colleague', 'csns'], []],
+  task: [['text'], ['role', 'to', 'due']],
+  task_change: [['kind'], ['reason', 'role', 'to', 'due']],
 };
 
 /** main.py FIELD: how the validation sentences name each field. */
@@ -58,10 +61,13 @@ const FIELD: Record<string, string> = {
   element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation', entry: 'entered value', entry_note: 'note', remove: 'remove choice',
   callback: 'callback number', readback: 'read back', questions: 'questions',
   kind: 'choice of Take, Assign or Release', to: 'colleague', colleague: 'colleague', csns: 'patients',
+  role: 'role', due: 'due time', reason: 'reason',
 };
+/** main.py TASK_FIELD: a change to a task (/api/tasks/<id>) names its kind differently. */
+const TASK_FIELD: Record<string, string> = { ...FIELD, kind: 'task change' };
 const UNREADABLE = 'The request could not be read. Reload the page and try again.';
-const missing = (k: string) => `The request is missing the ${FIELD[k] ?? k}.`;
-const invalid = (k: string) => `The request has a value the app cannot use for the ${FIELD[k] ?? k}.`;
+const missing = (k: string, f = FIELD) => `The request is missing the ${f[k] ?? k}.`;
+const invalid = (k: string, f = FIELD) => `The request has a value the app cannot use for the ${f[k] ?? k}.`;
 
 const isStr = (v: unknown) => typeof v === 'string';
 const optStr = (v: unknown) => v === null || v === undefined || typeof v === 'string';
@@ -80,10 +86,12 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   const views = new Views(ds, store, fixtures.templates, null, STALE_OWNER_HOURS * HOUR, SHIFT_CHANGES, SHIFT_WARNING_MINUTES * 60000);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
-  /** main._seed: the demo's starting owners, at start and after Reset. */
+  /** main._seed: the demo's starting owners and tasks, at start and after Reset. */
   const seed = () => {
     const who = (id: string) => { const p = personas.find((x) => x.id === id); return { id: p.id, name: p.name }; };
-    for (const row of views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'))) store.assign(row);
+    const owners = views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'));
+    for (const row of owners) store.assign(row);
+    store.addTasks(views.seedTasks(defaultAt, owners));
   };
   seed();
 
@@ -97,8 +105,16 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   /** main._colleagues with demo personas: the personas of the caller's ED role, the caller included. */
   function colleagues(p: any): any[] {
     if (!ROLES.includes(p.role)) return [];
-    return personas.filter((x) => x.role === p.role).map((x) => ({ id: x.id, name: x.name }));
+    return people().filter((x) => x.role === p.role).map((x) => ({ id: x.id, name: x.name }));
   }
+
+  /** main._people with demo personas: everyone with a clinical role (who a task can go to). */
+  function people(): any[] {
+    return personas.filter((x) => x.role in DISCIPLINE);
+  }
+
+  /** A path's task id as main.py reads it: digits only, else no such task. */
+  const taskId = (v: string) => (/^[0-9]{1,15}$/.test(v) ? Number(v) : -1);
 
   function at(v: string | null | undefined): number {
     if (!v) return defaultAt;
@@ -114,27 +130,28 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   /** Validation as pydantic does it (strict strings and booleans), with main.plain_validation's sentences. */
   function dump(kind: string, body: any): any {
     const [required, optional] = BODIES[kind];
+    const f = kind === 'task_change' ? TASK_FIELD : FIELD;
     if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(422, UNREADABLE);
     const out: any = {};
     for (const k of required) {
-      if (!(k in body)) throw new HttpError(422, missing(k));
-      if (k === 'csns' ? !Array.isArray(body[k]) || !body[k].every(isStr) : !isStr(body[k])) throw new HttpError(422, invalid(k));
+      if (!(k in body)) throw new HttpError(422, missing(k, f));
+      if (k === 'csns' ? !Array.isArray(body[k]) || !body[k].every(isStr) : !isStr(body[k])) throw new HttpError(422, invalid(k, f));
       out[k] = body[k];
     }
     for (const k of optional) {
       const v = body[k] ?? null;
       if (k === 'items') {
         if (v !== null) {
-          if (!Array.isArray(v)) throw new HttpError(422, invalid(k));
+          if (!Array.isArray(v)) throw new HttpError(422, invalid(k, f));
           const items = v.map(item);
-          if (items.some((i) => i === null)) throw new HttpError(422, invalid(k));
+          if (items.some((i) => i === null)) throw new HttpError(422, invalid(k, f));
           out[k] = items;
           continue;
         }
       } else if (k === 'restore' || k === 'remove') {
-        if (v !== null && typeof v !== 'boolean') throw new HttpError(422, invalid(k));
+        if (v !== null && typeof v !== 'boolean') throw new HttpError(422, invalid(k, f));
       } else if (!optStr(v)) {
-        throw new HttpError(422, invalid(k));
+        throw new HttpError(422, invalid(k, f));
       }
       out[k] = v;
     }
@@ -195,6 +212,43 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
       const me = person(req.persona);
       try {
         return views.own(body.kind, decodeURIComponent(p[1]), t, me, body.to, colleagues(me));
+      } catch (e) {
+        if (e instanceof ActionError) throw new HttpError(409, e.message);
+        throw e;
+      }
+    }
+    if (key === 'tasks') {
+      if (!get) throw new HttpError(405, 'Method Not Allowed');
+      const scope = req.params?.scope ?? 'mine';
+      if (scope !== 'mine' && scope !== 'all') throw new HttpError(400, 'scope must be mine or all');
+      const t = at(req.at);
+      return views.myTasks(t, person(req.persona), scope);
+    }
+    if (p[0] === 'tasks' && p.length === 2 && p[1]) {
+      if (!post) throw new HttpError(405, 'Method Not Allowed');
+      const body = dump('task_change', req.body);
+      const t = at(req.at);
+      const me = person(req.persona);
+      try {
+        return views.taskAct(taskId(decodeURIComponent(p[1])), t, me, body, people());
+      } catch (e) {
+        if (e instanceof ActionError) throw new HttpError(409, e.message);
+        throw e;
+      }
+    }
+    if (p[0] === 'handoffs' && p.length === 3 && p[1] && p[2] === 'tasks') {
+      if (!get && !post) throw new HttpError(405, 'Method Not Allowed');
+      const csn = decodeURIComponent(p[1]);
+      if (get) {
+        const t = views.patientTasks(csn, at(req.at), person(req.persona), people());
+        if (t === null) throw new HttpError(404, 'This patient is not on your board at this time.');
+        return t;
+      }
+      const body = dump('task', req.body);
+      const t = at(req.at);
+      const me = person(req.persona);
+      try {
+        return views.addTask(csn, t, me, body, people());
       } catch (e) {
         if (e instanceof ActionError) throw new HttpError(409, e.message);
         throw e;
