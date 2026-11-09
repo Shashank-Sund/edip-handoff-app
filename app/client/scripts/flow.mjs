@@ -114,24 +114,49 @@ if (config.mode === 'live') {
 }
 
 // ---------------------------------------------------------------------------------------------- handoff
-// The first patient whose nurse handoff is still a draft: on a deployed app, actions from earlier runs persist.
-// The ED nurse's board opens on My patients; on a deployed app the drafts left may belong to a colleague, so look
-// at Everyone.
-const everyone = page.getByRole('tab', { name: /Everyone/ });
-if (await everyone.count()) await everyone.click();
-const first = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ }).first();
-// Every earlier run signs one patient: when none is left unsigned at this hour, move the replay clock on.
-for (let i = 0; i < 12 && !STATIC_DEMO && !(await first.count()) && (await page.getByRole('button', { name: 'Forward 1 hour' }).count()); i++) await forwardHour();
-const name = (await first.locator('a').first().textContent()).trim();
-await first.click();
+// The first patient whose nurse handoff is still a draft. The ED nurse's board opens on My patients; on a deployed
+// app the drafts left may belong to a colleague, so look at Everyone. A deployed app also keeps the actions of
+// earlier runs: a handoff they acted on at a later hour refuses this one ("You are viewing an earlier time"), so
+// try the next draft, and move the replay clock on when none is left at this hour.
+const EARLIER = 'You are viewing an earlier time; move the clock to now to act.';
 const panel = page.locator('aside[aria-label="Sign off and context"]');
-await panel.waitFor();
-for (let i = 0; i < 10; i++) {
-  const btn = panel.locator('li button[data-choice]').first();
-  if (!(await btn.count())) break;
-  await btn.click();
-  await page.waitForTimeout(400);
+const refused = new Set();
+let name = null;
+for (let tries = 0; !name && tries < 24; tries++) {
+  const everyone = page.getByRole('tab', { name: /Everyone/ });
+  if (await everyone.count()) await everyone.click();
+  await page.waitForSelector('tbody tr');
+  const drafts = page.locator('tbody tr').filter({ hasText: /Nurse\s*Draft/ });
+  let row = null;
+  for (let i = 0; i < (await drafts.count()); i++) {
+    const n = (await drafts.nth(i).locator('a').first().textContent()).trim();
+    if (!refused.has(n)) { row = drafts.nth(i); name = n; break; }
+  }
+  if (!row) {
+    if (STATIC_DEMO || !(await page.getByRole('button', { name: 'Forward 1 hour' }).count())) break;
+    await forwardHour();
+    continue;
+  }
+  const before = errors.length;
+  await row.click();
+  await panel.waitFor();
+  for (let i = 0; i < 10; i++) {
+    const btn = panel.locator('li button[data-choice]').first();
+    if (!(await btn.count())) break;
+    await btn.click();
+    await page.waitForTimeout(400);
+    if (await page.getByText(EARLIER).count()) break;
+  }
+  if (await page.getByText(EARLIER).count()) {
+    refused.add(name);
+    name = null;
+    // The refusal is a 409, which the browser logs as a console error: expected here, so not a failure.
+    errors.splice(before).filter((e) => !/status of 409/.test(e)).forEach((e) => errors.push(e));
+    await page.goBack({ waitUntil: 'networkidle' });
+  }
 }
+if (!name) throw new Error(`no nurse draft that takes an action (refused: ${[...refused].join('; ') || 'none'})`);
+if (refused.size) console.log(`skipped ${refused.size} handoff(s) with later actions from earlier runs: ${[...refused].join('; ')}`);
 await panel.getByLabel('Your callback number').fill('x4471');
 await panel.getByRole('button', { name: 'Sign', exact: true }).click();
 // The signer is the ED nurse persona, or with demo personas off the signed in user (named as they signed in).
