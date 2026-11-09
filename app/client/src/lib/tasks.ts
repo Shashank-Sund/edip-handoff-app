@@ -1,6 +1,6 @@
 /** Tasks (app/server/tasks.py): words the panel, the Tasks page and the board use for them. */
 import { clock, day, fromFacilityWall, timeZone } from './format';
-import type { Task, TaskGroupId, TaskRole, TaskStep } from './types';
+import type { Task, TaskCounts, TaskGroupId, TaskRole, TaskStep } from './types';
 
 export const TASK_ROLE: Record<TaskRole, string> = { nurse: 'Nurse', physician: 'Physician' };
 
@@ -79,3 +79,9 @@ export function nextAt(hhmm: string, at: string): string | null {
   }
   return null;
 }
+
+/**
+ * "8 tasks · 2 overdue": the open tasks of a board row. Not "open", which the Completeness column next to it uses for
+ * the items still to resolve before signing.
+ */
+export const taskCountLabel = (c: TaskCounts) => `${c.open} task${c.open === 1 ? '' : 's'}${c.overdue ? ` · ${c.overdue} overdue` : ''}`;

@@ -7,7 +7,7 @@ import { AppProvider } from '@/hooks/useApp';
 import { TasksPanel } from '@/components/handoff/TasksPanel';
 import { TaskCount } from '@/components/common/TaskCount';
 import { READ_ONLY } from '@/lib/checks';
-import { dueLabel, nextAt, stepLabel } from '@/lib/tasks';
+import { dueLabel, nextAt, stepLabel, taskCountLabel } from '@/lib/tasks';
 import { AT, board, caseSummary, config, edNurse } from '@/test/fixtures';
 import type { AppConfig, PatientTasks, Persona, Task, TaskRow, TasksPage } from '@/lib/types';
 import Board from './Board';
@@ -286,15 +286,20 @@ describe('Board task count', () => {
     const table = await screen.findByRole('table');
     await userEvent.click(within(screen.getByRole('tablist', { name: 'Whose patients' })).getByRole('tab', { name: /Everyone/ }));
     const r1 = within(table).getByRole('link', { name: 'Doe, Alex' }).closest('tr')!;
-    expect(r1).toHaveTextContent('3 open · 1 overdue');
-    expect(within(r1).getByRole('button', { name: '3 open · 1 overdue' })).toBeInTheDocument();
+    expect(r1).toHaveTextContent('3 tasks · 1 overdue');
+    expect(within(r1).getByRole('button', { name: '3 tasks · 1 overdue' })).toBeInTheDocument();
     const r2 = within(table).getByRole('link', { name: 'Park, Robin' }).closest('tr')!;
-    expect(r2).not.toHaveTextContent('open ·');
+    expect(r2).not.toHaveTextContent(/\d tasks?/);
   });
 
-  it('says it in words for a screen reader in the phone card', () => {
-    render(<TaskCount counts={{ open: 1, overdue: 0 }} plain />);
-    expect(screen.getByLabelText('1 task open')).toHaveTextContent('1 open');
+  it('says tasks, not open (the Completeness column says open), singular for one, and nothing when none is open', () => {
+    expect(taskCountLabel({ open: 8, overdue: 2 })).toBe('8 tasks · 2 overdue');
+    expect(taskCountLabel({ open: 3, overdue: 0 })).toBe('3 tasks');
+    expect(taskCountLabel({ open: 1, overdue: 1 })).toBe('1 task · 1 overdue');
+    const { container } = render(<TaskCount counts={{ open: 1, overdue: 0 }} plain />);
+    expect(container).toHaveTextContent(/^1 task$/);
+    const none = render(<TaskCount counts={{ open: 0, overdue: 0 }} />);
+    expect(none.container).toBeEmptyDOMElement();
   });
 });
 

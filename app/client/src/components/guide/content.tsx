@@ -565,7 +565,7 @@ export const GUIDE: GuideSection[] = [
                 ['Reason for visit', <>The chief complaint, with safety flags underneath: <Pill tone="danger">DNR/DNI</Pill> any code status other than full code, <Pill tone="warn">Contact</Pill> isolation, <Pill>2 allergies</Pill> allergies on file.</>],
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
                 ['Boarding', 'Time since the admit decision. The bar fills over 8 hours: blue under 4 hours, amber from 4, red from 6. For patients who already left: how long they waited.'],
-                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed. Under them, the open tasks, for example <span className="text-xs">3 open · 1 overdue</span>. See <GuideLink to="tasks-board">the task count</GuideLink>.</>],
+                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed. Under them, the tasks not done yet, for example <span className="text-xs">3 tasks · 1 overdue</span>. See <GuideLink to="tasks-board">the task count</GuideLink>.</>],
                 ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> For the template of your role, named in the column title (SBAR for nurses, I-PASS for physicians): 58% of its checks are met or resolved, and 4 required items must be resolved before signing.</>],
                 ['Last update', 'When the latest draft was written, and why: Admit decision, Bed assigned, Note signed, Critical result and so on.'],
               ]}
@@ -831,7 +831,7 @@ export const GUIDE: GuideSection[] = [
         title: 'The task count on the board',
         body: (
           <p>
-            Under the handoff states of each patient: how many tasks are open, and how many of those are overdue, for example <span className="text-xs">3 open · 1 overdue</span>, red when any is overdue. Nothing shows when no task is open. Point at it for a reminder; open the patient for the list.
+            Under the handoff states of each patient: how many tasks are not done yet, and how many of those are overdue, for example <span className="text-xs">3 tasks · 1 overdue</span>, red when any is overdue, or just <span className="text-xs">3 tasks</span>. It counts open tasks only; the "open" under Completeness is something else, the items still to resolve before signing. Nothing shows when no task is open. Point at it for a reminder; open the patient for the list.
           </p>
         ),
       },

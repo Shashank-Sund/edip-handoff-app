@@ -38,7 +38,7 @@ function columnHelp(tplName: string): [string, string][] {
     ['Reason for visit', 'The chief complaint. Underneath, from the chart: a code status other than full code, isolation, and allergies.'],
     ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
     ['Boarding', 'Time since the admit decision while the patient is still in the ED. Amber from 4 hours, red from 6.'],
-    ['Handoffs', 'Where the nurse and the physician handoff stand: Draft, Signed, Acknowledged, Changed after signing, or Transferred without sign off. Under them, the open tasks and how many are overdue.'],
+    ['Handoffs', 'Where the nurse and the physician handoff stand: Draft, Signed, Acknowledged, Changed after signing, or Transferred without sign off. Under them, the tasks not done yet and how many are overdue, for example 3 tasks · 1 overdue.'],
     ['Completeness', `For your role's template (${tplName}): the share of its checks that are met or resolved. Open counts the required items still to resolve before signing.`],
     ['Last update', 'When the latest draft was written, and what changed in the chart to trigger it.'],
   ];
@@ -473,7 +473,7 @@ export default function Board() {
                   label="What a card shows"
                   topic="board.columns"
                   side="bottom"
-                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, where the nurse and physician handoffs stand, and the open tasks (how many are overdue).`}
+                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, where the nurse and physician handoffs stand, and the tasks not done yet (how many are overdue).`}
                 />
               </div>
               <ul className="divide-y md:hidden">
