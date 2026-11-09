@@ -44,6 +44,9 @@ if (csn) {
   await shot('handoff-phone', `/handoff/${csn}`, { width: 390, height: 844 });
   await shot('handoff-tablet', `/handoff/${csn}`, { width: 1024, height: 900 });
 }
+await shot('tasks', '/tasks');
+await shot('tasks-dark', '/tasks', { dark: true });
+await shot('tasks-phone', '/tasks', { width: 390, height: 844 });
 await shot('analytics', '/analytics');
 await shot('analytics-dark', '/analytics', { dark: true });
 await shot('analytics-phone', '/analytics', { width: 390, height: 844 });

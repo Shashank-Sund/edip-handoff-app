@@ -18,8 +18,10 @@ import {
   ChevronsUpDown,
   Circle,
   CircleHelp,
+  CircleSlash,
   Handshake,
   History,
+  ListTodo,
   Lock,
   Menu,
   Moon,
@@ -27,10 +29,12 @@ import {
   Pencil,
   PenLine,
   Play,
+  Plus,
   RotateCcw,
   Sun,
   UserMinus,
   UserPlus,
+  UserRoundPen,
 } from 'lucide-react';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { TAB_HELP } from '@/lib/labels';
@@ -259,7 +263,7 @@ export const GUIDE: GuideSection[] = [
             <Checks
               items={[
                 'Working diagnosis and illness severity.',
-                'The action list: each task has an owner and a time.',
+                'The action list: each item has an owner and a time. When you sign, each item becomes a task for that role (see Tasks).',
                 'The contingency plan: what could go wrong, and what to do.',
                 'Pending results, and who will follow them up.',
               ]}
@@ -287,6 +291,7 @@ export const GUIDE: GuideSection[] = [
               ]}
             />
             <p className="text-muted-foreground">If it shows <StateBadge state="changed" />, wait: the ED has to sign it again before you can accept. If the ED signs again after you accepted, the panel says Acknowledge the update; read what changed and accept again.</p>
+            <p className="text-muted-foreground">Once the patient arrives, the nurse tasks are yours: the action list items of the signed handoffs and any added by hand. Open <Key><ListTodo />Tasks</Key> in the sidebar for yours, across patients. See <GuideLink to="tasks">Tasks</GuideLink>.</p>
           </>
         ),
       },
@@ -298,7 +303,7 @@ export const GUIDE: GuideSection[] = [
             <p>You see every admitted patient, at both hospitals. Your tab is <b>I-PASS</b>. You accept the physician handoff with a read back, the same way as the receiving nurse.</p>
             <Checks
               items={[
-                'Read the action list and the contingency plan first.',
+                'Read the action list and the contingency plan first. Once signed, each action list item is a task; after arrival the physician tasks are yours on the Tasks page.',
                 'Your read back is the "S" of I-PASS: the synthesis by the receiver.',
                 'Write questions for the ED physician in the box under the read back.',
               ]}
@@ -560,7 +565,7 @@ export const GUIDE: GuideSection[] = [
                 ['Reason for visit', <>The chief complaint, with safety flags underneath: <Pill tone="danger">DNR/DNI</Pill> any code status other than full code, <Pill tone="warn">Contact</Pill> isolation, <Pill>2 allergies</Pill> allergies on file.</>],
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
                 ['Boarding', 'Time since the admit decision. The bar fills over 8 hours: blue under 4 hours, amber from 4, red from 6. For patients who already left: how long they waited.'],
-                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed.</>],
+                ['Handoffs', <>The nurse and physician handoff: <StateBadge state="draft" /> <StateBadge state="signed" /> <StateBadge state="acknowledged" />, <StateBadge state="changed" /> if it changed after it was signed, and <StateBadge state="transferred_unsigned" /> if the patient left the ED before anyone signed. Under them, the open tasks, for example <span className="text-xs">3 open · 1 overdue</span>. See <GuideLink to="tasks-board">the task count</GuideLink>.</>],
                 ['Completeness', <><Ring value={0.58} blocking={4} label="58%, 4 open" /> For the template of your role, named in the column title (SBAR for nurses, I-PASS for physicians): 58% of its checks are met or resolved, and 4 required items must be resolved before signing.</>],
                 ['Last update', 'When the latest draft was written, and why: Admit decision, Bed assigned, Note signed, Critical result and so on.'],
               ]}
@@ -721,7 +726,7 @@ export const GUIDE: GuideSection[] = [
             <Checks
               items={[
                 'Before the ED signs, the panel says "Waiting for the ED clinician to sign." You can read the draft, but it may still change. If it changed after signing, it says "Waiting for the ED to sign again."',
-                'Once it is signed, read it, especially severity, pending results, the action list and the contingency plan.',
+                'Once it is signed, read it, especially severity, pending results, the action list and the contingency plan. Each action list item is now a task in the Tasks panel above the tabs.',
                 'Write a short read back in your own words, at least a sentence: who the patient is, the main risk, and what you will do first. Add any questions for the sender.',
                 <>Press <Primary><CheckCheck />Accept handoff</Primary>. If the handoff changes later, the ED signs again and the panel becomes <b>Acknowledge the update</b>; you accept it again.</>,
               ]}
@@ -742,6 +747,120 @@ export const GUIDE: GuideSection[] = [
               ['History', 'Every version and why it was written, and every edit, restore, attestation, signature and acceptance with the name of the item, newest first. An action by someone the patient was not assigned to says "outside the assignment".'],
             ]}
           />
+        ),
+      },
+    ],
+  },
+  {
+    id: 'tasks',
+    title: 'Tasks',
+    summary: 'The action list of a signed handoff, and tasks added by hand, for whoever has the patient.',
+    kind: 'reference',
+    topics: [
+      {
+        id: 'what',
+        title: 'Where tasks come from',
+        body: (
+          <>
+            <p>
+              When an ED clinician signs a handoff, each item of its <b>Action list</b> becomes a task: the text, who it is for and when it is due. Signing again, or signing an addendum, adds only the items that are new; the tasks already there stay as they are. Anyone caring for the patient can also add a task by hand.
+            </p>
+            <p className="text-muted-foreground">The action list says who and when in its own words. The app reads them like this:</p>
+            <Terms
+              items={[
+                ['Who', 'RN, nurse or nursing: the nurse. MD, physician, a team, or a medical service or specialty (Hospital Medicine, Cardiology, GI service, Orthopedics, Psychiatry, Surgery): the physician. Anything else, such as Pharmacy or Respiratory Therapy, goes to the nurse. When both are named, as in "Nursing/MD", the first one wins.'],
+                ['When', 'A time of day such as "16:00", "by 16:00" or "at 16:00" is the next 16:00 at or after signing. "Now", "immediate", "immediately" and "stat" mean due at the moment of signing. Repeating or vague words, such as "q4h", "daily" or "ongoing", give no due time; the task keeps the words, so you still see "ongoing".'],
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: 'panel',
+        title: 'The Tasks panel on the handoff page',
+        body: (
+          <>
+            <p>
+              Above the tabs, <b>Tasks</b> lists the patient's open tasks, with how many are open and overdue. Each task shows its text, who it is for (<Pill>Nurse</Pill>, <Pill>Physician</Pill>, or a colleague's name), when it is due, and where it came from: "From the SBAR action list, signed by" someone, or "Added by" someone. <b>History</b> under a task lists every change with who and when.
+            </p>
+            <p className="text-muted-foreground">Overdue tasks come first, then by due time, then those without one. When more than five are open, <b>Show all</b> lists the rest. Done and not needed tasks fold under <b>Done and not needed</b> at the bottom; click it to see them. <Key><Plus />Add a task</Key> opens a short form: what needs to be done, for whom, and an optional time.</p>
+          </>
+        ),
+      },
+      {
+        id: 'actions',
+        title: 'Done, Not needed, Reassign, Due time, Undo',
+        body: (
+          <Terms
+            items={[
+              [<Key key="k"><Check />Done</Key>, 'The task is done. It moves to Done and not needed.'],
+              [<Key key="k"><CircleSlash />Not needed</Key>, 'The task does not need doing. Write a short reason (up to 200 characters), such as "done in the ED before transfer", then Save. The reason shows on the task.'],
+              [<Key key="k"><UserRoundPen />Reassign</Key>, 'Give the task to the nurse or the physician (whoever has the patient), or to a colleague by name: ED nurses and the receiving unit\'s nurse, ED and admitting physicians.'],
+              [<Key key="k"><CalendarClock />Due time</Key>, 'Pick a time of day: the task is due the next time the hospital clock shows it. No due time removes it.'],
+              [<Key key="k"><RotateCcw />Undo done</Key>, 'Takes back the last change: Undo done and Undo not needed open the task again, Undo reassign gives it back, Undo due time puts the old time back. Only the last change can be undone, once.'],
+              [<Key key="k"><Plus />Add a task</Key>, 'A task by hand: what, for the nurse, the physician or a colleague, and when (optional).'],
+            ]}
+          />
+        ),
+      },
+      {
+        id: 'who',
+        title: 'Who acts on tasks',
+        body: (
+          <>
+            <p>
+              Whoever has the patient: the ED nurse and the ED physician while the patient is in the ED, then the receiving nurse of the unit and the admitting physician after arrival. A task for the nurse is for whichever nurse has the patient at the time, so the action list follows the patient up to the unit.
+            </p>
+            <p className="text-muted-foreground">
+              Anyone else may still act, for example to close a task they did themselves: the panel says "You can still act on a task; it is recorded as outside your role", and History marks the change "outside their role". The read only viewer sees every task but cannot change one. Every change records who did it and when.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'overdue',
+        title: 'Overdue',
+        body: (
+          <p>
+            An open task whose due time has passed, at the time on the clock. It shows in red, "Overdue, was due 15:30", is counted on the board and the panel, and comes first on the Tasks page. Move the clock and overdue follows it. A done or not needed task is never overdue, and a task with no due time never is.
+          </p>
+        ),
+      },
+      {
+        id: 'board',
+        title: 'The task count on the board',
+        body: (
+          <p>
+            Under the handoff states of each patient: how many tasks are open, and how many of those are overdue, for example <span className="text-xs">3 open · 1 overdue</span>, red when any is overdue. Nothing shows when no task is open. Point at it for a reminder; open the patient for the list.
+          </p>
+        ),
+      },
+      {
+        id: 'page',
+        title: 'The Tasks page',
+        body: (
+          <>
+            <p>
+              <Key><ListTodo />Tasks</Key> in the sidebar lists open tasks across patients, each under its patient's name, with the same buttons as the panel.
+            </p>
+            <Terms
+              items={[
+                [<Key key="k">My tasks</Key>, 'Yours: the tasks for your role (nurse or physician) on the patients you have now, and any given to you by name. For ED nurses and physicians, the patients you own; for the receiving nurse, the patients who arrived on your unit; for the admitting physician, the admitted patients who arrived.'],
+                [<Key key="k">Everyone</Key>, 'Every open task of the patients on your board. The viewer opens on it.'],
+                ['The groups', 'Overdue, Due in the next 2 hours, Later, and No time, each ordered by due time.'],
+                ['Recently completed', 'Folded at the bottom: your tasks done or marked not needed in the last 12 hours, and the ones you closed. Undo is there too.'],
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: 'clock',
+        title: 'Tasks and the clock',
+        body: (
+          <p>
+            Tasks follow the time on the clock like everything else: move it back before a handoff was signed and its tasks are not there yet. A change to a task is recorded at the time on the clock, and cannot go before one already recorded on that patient's tasks: the app says "You are viewing an earlier time; move the clock to now to act." While you look at an earlier time in the hospital app, the task buttons are turned off.
+          </p>
         ),
       },
     ],
@@ -929,7 +1048,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Your actions and the clock',
         body: (
           <p>
-            What you do (edit, attest, sign, accept) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners come back too.
+            What you do (edit, attest, sign, accept, and every change to a task) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners and tasks come back too.
           </p>
         ),
       },
@@ -951,7 +1070,7 @@ export const GUIDE: GuideSection[] = [
               In the hospital the clock reads <Key>Live</Key>. To see the board or a handoff as it was earlier, for example what the night shift saw at 03:00, press <Key><History />View an earlier time</Key> next to it, then pick a day and an hour. You can look back up to 3 days, or the limit your hospital set.
             </p>
             <p>
-              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary>, <Primary><CheckCheck />Accept handoff</Primary>, Take, Assign, Release and Take over are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
+              While you look back, a bar under the top of the page says <b>Viewing</b> and the time, <b>read only</b>. Nothing can be changed: Edit, the sign off choices, <Primary><PenLine />Sign</Primary>, <Primary><CheckCheck />Accept handoff</Primary>, Take, Assign, Release, Take over and the task buttons are turned off, and the page does not update by itself. The arrows next to the time move one hour. Press <Primary>Back to live</Primary> to return; then you can act again, and what you do is recorded at the current time, never at the earlier one.
             </p>
             <p>The app records that you looked at an earlier time: who, which page or patient, and which time.</p>
             <Note>
@@ -967,7 +1086,7 @@ export const GUIDE: GuideSection[] = [
         body: __STATIC_DEMO__ ? (
           <>
             <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
-            <Note>In this public web demo everything runs in your browser. What you sign, accept or take is kept only in this tab and is cleared when you reload the page; the demo's starting owners come back.</Note>
+            <Note>In this public web demo everything runs in your browser. What you sign, accept, take or do to a task is kept only in this tab and is cleared when you reload the page; the demo's starting owners and tasks come back.</Note>
           </>
         ) : (
           <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
@@ -1005,6 +1124,7 @@ export const GUIDE: GuideSection[] = [
           <Terms
             items={[
               ['Board', 'Your work list: every patient with a handoff right now. Start here.'],
+              ['Tasks', 'Your open tasks across patients: from signed action lists and added by hand, grouped by when they are due.'],
               ['Take over', 'ED nurses and physicians only: at a shift change, take the patients of the colleague you are relieving.'],
               ['Analytics', 'How the week has gone: how busy the ED was, how long patients waited, what handoffs were missing.'],
               ['Templates', 'What each kind of handoff contains, and which items must be filled before signing.'],
@@ -1048,6 +1168,7 @@ export const GUIDE: GuideSection[] = [
     summary: 'Words used in the app, in plain language.',
     kind: 'glossary',
     topics: [
+      { id: 'action-list', title: 'Action list', body: 'The to do items of a handoff, each with who and when. When the handoff is signed, each item becomes a task.' },
       { id: 'addendum', title: 'Addendum', body: 'A new version written after the patient left the ED, for an ED note signed late or a critical result from a test done in the ED. The ED clinician can still sign it.' },
       { id: 'admit-decision', title: 'Admit decision', body: 'The moment the ED decides the patient needs a bed. The first draft is written then.' },
       { id: 'attest', title: 'Attest', body: 'Choose from a fixed list what you checked, such as "No known allergies confirmed", or enter what you found, such as Droplet isolation. It records that you checked.' },
@@ -1063,7 +1184,9 @@ export const GUIDE: GuideSection[] = [
       { id: 'level-of-care', title: 'Level of care', body: 'ICU, step down, telemetry, med surg or observation.' },
       { id: 'model', title: 'Model', body: 'The AI language model that writes the narrative parts of each draft from the chart. A person always checks and signs.' },
       { id: 'mrn', title: 'MRN', body: 'Medical record number.' },
+      { id: 'not-needed', title: 'Not needed', body: 'A task closed without doing it, with a short reason, for example because it was done before transfer. Undo opens it again.' },
       { id: 'outside', title: 'Outside your assignment', body: 'An action on a patient a colleague in your role owns. It is allowed, and recorded so the team can see it.' },
+      { id: 'overdue', title: 'Overdue', body: 'An open task whose due time has passed at the time on the clock.' },
       { id: 'owner', title: 'Owner', body: 'The ED nurse or ED physician responsible for a patient in the ED. Each patient has at most one of each, set by Take, Assign, Release or Take over.' },
       { id: 'read-back', title: 'Read back', body: 'The receiver repeats the key points in their own words, to show they understood: at least a sentence. Required to accept.' },
       { id: 'rule-floor', title: 'Rule floor', body: 'The lowest severity the chart allows, set by fixed rules. The model can raise severity above it, never lower.' },
@@ -1074,6 +1197,7 @@ export const GUIDE: GuideSection[] = [
       { id: 'stale', title: 'Stale', body: 'Too old. Vital signs go stale after a limit that depends on the severity and the template: SBAR 60, 30 or 15 minutes for a stable, watcher or unstable patient; I-PASS 120, 60 or 30. A bedside recheck counts for the same limit.' },
       { id: 'stale-owner', title: 'Stale owner', body: 'An owner who has not acted on the patient, taken it or been given it for 14 hours, or the limit your hospital set. They no longer count, so the patient shows as Unassigned.' },
       { id: 'take-over', title: 'Take over', body: 'At a shift change, taking the patients of the colleague you relieve in one go, on the Take over page.' },
+      { id: 'task', title: 'Task', body: 'Something to do for a patient, for the nurse, the physician or a colleague, maybe with a due time: an action list item of a signed handoff, or added by hand.' },
       { id: 'unsigned-transfer', title: 'Transferred without sign off', body: 'The patient left the ED before the handoff was signed. The ED can still complete and sign it; the board counts these under To sign as "left without sign off".' },
       { id: 'unassigned', title: 'Unassigned', body: 'No one owns the patient for your role: never taken, released, or its owner went stale.' },
       { id: 'version', title: 'Version', body: 'Each time the chart changes in a way that matters, a new draft is written. The newest is shown, and History lists them all.' },

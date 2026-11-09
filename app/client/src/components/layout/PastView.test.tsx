@@ -12,7 +12,7 @@ import { ClockControl, PastBanner } from './ClockControl';
 vi.mock('@/lib/api', () => ({
   setPersona: vi.fn(),
   ApiError: class extends Error {},
-  api: { case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(async () => []), reset: vi.fn() },
+  api: { case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(async () => []), patientTasks: vi.fn(async () => ({ at: '', csn: '', phase: 'boarding', tasks: [], counts: { open: 0, overdue: 0 }, access: { can_act: true, in_role: true, note: null }, people: [] })), reset: vi.fn() },
 }));
 const { api } = await import('@/lib/api');
 

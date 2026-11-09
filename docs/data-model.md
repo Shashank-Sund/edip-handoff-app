@@ -216,14 +216,39 @@ Who owns each patient in the ED: one nurse owner and one physician owner per pat
 
 Index: `ix_assignment_csn (csn, role, at)`.
 
+### App schema `app`: `app.task_event`
+
+Tasks (`app/server/tasks.py`): the action list (element `E24`) of a signed handoff, and tasks added by hand, for whoever has the patient. The app creates the table, its sequence `app.task_id_seq` and its indexes on start (`DDL` in `app/server/lakebase.py`), so a deployment from before tasks gets them on its next start; on that start the app also turns the action list of every handoff already signed into tasks, at the time of each signature, by its signer (`Views.backfill_tasks`). It writes the table in `LakebaseStore.add_tasks()`. Append only. A task at time T is its events with `at <= T` applied in order (`at`, then `event_id`); a change to a task cannot go before an event already recorded for that patient.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `event_id` | bigint, identity, primary key | Order of insertion; breaks ties between events with the same `at` |
+| `task_id` | bigint | The task: a `create` takes the next value of `app.task_id_seq`, every later event names it |
+| `csn` | text | Encounter |
+| `kind` | text, check | `create`, `done`, `not_needed`, `reopen` (Undo of done or not needed), `reassign`, `due` |
+| `template` | text, nullable | For a task from a handoff: the template whose action list it came from; null for a task added by hand |
+| `item_key` | text, nullable | For a task from a handoff: its text lowercased with single spaces, the duplicate check |
+| `text` | text, nullable | `create`: what needs to be done |
+| `role` | text, nullable, check | `create` and `reassign`: `nurse` or `physician`. From the action list's owner words: RN, nurse or nursing is the nurse; MD, physician, a team, or a medical service or specialty (medicine, service, hospitalist, attending, resident, any word ending in -ology, orthopedics, psychiatry, surgery) the physician; the first such word wins; anything else the nurse |
+| `assignee_id`, `assignee_name` | text, nullable | `create` and `reassign`: a colleague the task was given to (the lowercased sign in email, the persona id with demo personas), or null for the role |
+| `due` | timestamptz, nullable | `create` and `due`: when it is due, or null. From the action list's due words: a time of day ("16:00", "by 16:00", "at 16:00") is the next one at or after signing, facility time; "now", "immediate", "immediately" and "stat" are the signing; anything else has none |
+| `reason` | text, nullable | `not_needed`: the reason, up to 200 characters |
+| `at` | timestamptz | The time the event applies to, as in `app.handoff_action` |
+| `recorded_ts` | timestamptz, default `now()` | When the row was saved |
+| `by_name`, `by_role` | text | Who acted, and their app role |
+| `user_email` | text, nullable | The signed in Databricks user |
+| `detail` | jsonb | `by_id` (who acted); `version` (the signed version), `due_text` and `owner_text` (the action list's own words) on a create from a handoff; `from_role`, `from_assignee_id`, `from_assignee_name` on `reassign` and `from_due` on `due` (what it replaced, for Undo); `undo` (`true`) on an event Undo recorded; `outside_role` (`true`) when the person did not have the patient then (ED roles while boarding, the destination unit's nurse and the admitting physician after arrival). The allowed keys are `TASK_DETAIL` in `app/server/lakebase.py` |
+
+Indexes: `ix_task_event_csn (csn, at)`; `ux_task_event_item`, unique on `(csn, template, item_key)` for creates from a handoff, so an action list item becomes a task once per template even when two app processes save the same sign off (the insert does nothing on a conflict).
+
 ### App schema `app`: `app.view_log`
 
-Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff, analytics or Take over at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
+Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff (and its tasks), analytics, Take over or the Tasks page at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
 
 | Column | Type | Meaning |
 | --- | --- | --- |
 | `view_id` | bigint, identity, primary key | Order of insertion |
-| `page` | text, check `view_log_page_check` | `board`, `handoff`, `analytics` or `takeover`. A table created before Take over is widened in place on the app's next start (a `DO` block in `DDL` that checks `pg_constraint` first, so it runs once) |
+| `page` | text, check `view_log_page_check` | `board`, `handoff` (the handoff and its Tasks panel each write one), `analytics`, `takeover` or `tasks`. A table created before Take over or the Tasks page is widened in place on the app's next start (a `DO` block in `DDL` that checks `pg_constraint` first, so it runs once) |
 | `csn` | text, nullable | The patient, for `handoff` |
 | `at` | timestamptz | The earlier time viewed |
 | `recorded_ts` | timestamptz, default `now()` | When it was viewed |
@@ -235,7 +260,7 @@ Index: `ix_view_recorded (recorded_ts)`.
 
 ### Who can read and write what
 
-| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.assignment`, `app.view_log` |
+| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.assignment`, `app.task_event`, `app.view_log` |
 | --- | --- | --- |
 | The identity that ran setup (a user or a service principal) | Owns the synced tables and schema `gold` | No grant from the repo |
 | The app's service principal | `USAGE` on schema `gold` and `SELECT` on all its tables, granted by `jobs/setup_lakebase.py` | Owns schema `app` and its tables: it creates them on first start, through the app's `postgres` resource with `CAN_CONNECT_AND_CREATE` (`databricks.yml`) |
@@ -387,7 +412,7 @@ In the order the setup runs:
    - `handoffs`: runs the `handoff_generator` job (`jobs/handoff_job.py`, [ai/README.md](../ai/README.md)) with `drafts=reference` by default.
    - `lakebase` (`jobs/setup_lakebase.py`): synced tables and the app's read grant. The job `edip_lakebase_setup` runs this task alone (the same script and parameters), for a catalog fed by real data where `edip_setup`, which loads the synthetic week, must not run.
 4. **Reference drafts** ([ai/reference/README.md](../ai/reference/README.md)): `ai/reference/drafts.jsonl.gz` holds the 1,320 drafts `databricks-gpt-oss-120b` wrote for the reference week. The job loads them only when every generation point and the templates fingerprint (`meta.json`) match; otherwise it calls the model for everything (`--var drafts=model` always does).
-5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`, `app.assignment` and `app.view_log`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
+5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`, `app.assignment`, `app.task_event` and `app.view_log`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
 
 ## 6. Where to look: questions and queries
 
@@ -411,6 +436,7 @@ Every query below was run against the reference deployment and returned rows. Qu
 | 14 | Who signed what and when | Lakebase `app.handoff_action`, `gold.handoff_draft_pg` |
 | 15 | Which patients transferred without sign off | Lakebase `gold.encounter_state_pg`, `gold.handoff_draft_pg`, `app.handoff_action` |
 | 16 | Who owns each boarding patient now | Lakebase `app.assignment` |
+| 17 | Each patient's open tasks now | Lakebase `app.task_event` |
 
 **1. Every event for one encounter, in time order.** ADT events appear once per feed (`source`), because the same event arrives on HL7 and FHIR.
 
@@ -606,6 +632,22 @@ FROM app.assignment
 ORDER BY csn, role, at DESC, assignment_id DESC
 ```
 
+**17. Each patient's open tasks now** (Postgres). Every task with its latest state: the last close or reopen decides whether it is open, the last create or reassign who has it, the last create or due its due time. Overdue: open and due before now. The app reads the events at a time T the same way (`tasks.replay`); `app.task_event` is newer than the reference deployment.
+
+```sql
+WITH t AS (
+  SELECT task_id, csn,
+         (array_agg(text) FILTER (WHERE kind = 'create'))[1] AS text,
+         (array_agg(kind ORDER BY at DESC, event_id DESC) FILTER (WHERE kind IN ('create', 'done', 'not_needed', 'reopen')))[1] AS state,
+         (array_agg(role ORDER BY at DESC, event_id DESC) FILTER (WHERE kind IN ('create', 'reassign')))[1] AS role,
+         (array_agg(assignee_name ORDER BY at DESC, event_id DESC) FILTER (WHERE kind IN ('create', 'reassign')))[1] AS assignee,
+         (array_agg(due ORDER BY at DESC, event_id DESC) FILTER (WHERE kind IN ('create', 'due')))[1] AS due
+  FROM app.task_event GROUP BY task_id, csn)
+SELECT csn, task_id, text, role, assignee, due, due < now() AS overdue
+FROM t WHERE state IN ('create', 'reopen')
+ORDER BY csn, due NULLS LAST, task_id
+```
+
 Two more places worth knowing: `silver.quarantine` (every message the parsers could not apply, with a reason) and `gold.handoff_draft.draft` for any one row, which is the exact document the app shows.
 
 ## 7. Notes
@@ -641,3 +683,4 @@ Land real data in the same bronze tables with the same columns and everything do
 | silver.encounter_state | 702 | Lakebase app.handoff_action | grows with use |
 | silver.adt_history | 2,315 | synthetic_truth.* | see section 2 |
 | silver.handoff_events | 2,531 | Lakebase app.assignment | grows with use |
+| | | Lakebase app.task_event | grows with use |

@@ -14,7 +14,19 @@ const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/
 
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' });
 const csn = await firstCsn(browser, base);
-const pages = ['/', csn && `/handoff/${csn}`, '/takeover', '/analytics', '/templates', '/guide'].filter(Boolean).map((path) => ({ path }));
+/** A patient with open tasks (the demo seeds some): the first one on the ED nurse's Tasks page. */
+async function taskCsn() {
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => localStorage.setItem('edip.persona', 'ed-rn'));
+  const page = await ctx.newPage();
+  await page.goto(base + '/tasks', { waitUntil: 'networkidle' });
+  const link = page.locator('main a[href^="/handoff/"]').first();
+  const href = (await link.count()) ? await link.getAttribute('href') : null;
+  await ctx.close();
+  return href ? href.split('?')[0].split('/').pop() : null;
+}
+const tasked = await taskCsn();
+const pages = ['/', csn && `/handoff/${csn}`, '/tasks', '/takeover', '/analytics', '/templates', '/guide'].filter(Boolean).map((path) => ({ path }));
 // A few extra states: other roles, a phone width and open dialogs. The open persona menu is left out: Radix
 // hides the page behind a modal menu with aria-hidden, which axe reports although focus stays in the menu.
 const extra = [
@@ -27,6 +39,16 @@ const extra = [
   { path: '/takeover', persona: 'ed-rn-2', label: 'colleague picked', pick: /Jordan Reyes/ },
   { path: '/takeover', label: 'help panel', open: /About choosing a colleague/ },
   { path: '/', label: 'Everyone tab', tab: /Everyone/ },
+  // The Tasks page for the physician seeded with tasks, Everyone, the viewer, a phone, and its ? panel; the panel on
+  // the handoff page is on every handoff above.
+  { path: '/tasks', persona: 'ed-md-2', label: 'physician' },
+  { path: '/tasks', label: 'Everyone tab', tab: /Everyone/ },
+  { path: '/tasks', persona: 'viewer', label: 'viewer' },
+  { path: '/tasks', width: 390, label: 'phone' },
+  { path: '/tasks', label: 'help panel', open: /About this page/ },
+  tasked && { path: `/handoff/${tasked}`, label: 'tasks panel' },
+  tasked && { path: `/handoff/${tasked}`, persona: 'viewer', label: 'tasks panel, viewer' },
+  tasked && { path: `/handoff/${tasked}`, label: 'tasks panel, add a task open', open: /^Add a task/ },
 ].filter(Boolean);
 
 const report = [];

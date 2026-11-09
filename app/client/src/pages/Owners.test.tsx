@@ -16,7 +16,7 @@ import Takeover from './Takeover';
 vi.mock('@/lib/api', () => ({
   setPersona: vi.fn(),
   ApiError: class extends Error {},
-  api: { board: vi.fn(), case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(), takeover: vi.fn(), takeOver: vi.fn(), analytics: vi.fn(), reset: vi.fn() },
+  api: { board: vi.fn(), case: vi.fn(), act: vi.fn(), own: vi.fn(), colleagues: vi.fn(), takeover: vi.fn(), takeOver: vi.fn(), analytics: vi.fn(), patientTasks: vi.fn(async () => ({ at: '', csn: '', phase: 'boarding', tasks: [], counts: { open: 0, overdue: 0 }, access: { can_act: true, in_role: true, note: null }, people: [] })), reset: vi.fn() },
 }));
 const { api } = await import('@/lib/api');
 
@@ -288,7 +288,7 @@ describe('Sidebar', () => {
   };
 
   it('shows Take over to the ED roles only', () => {
-    expect(links(config)).toEqual(['Board', 'Take over', 'Analytics', 'Templates', 'How to use']);
-    expect(links({ ...config, personas: [unitNurse] })).toEqual(['Board', 'Analytics', 'Templates', 'How to use']);
+    expect(links(config)).toEqual(['Board', 'Tasks', 'Take over', 'Analytics', 'Templates', 'How to use']);
+    expect(links({ ...config, personas: [unitNurse] })).toEqual(['Board', 'Tasks', 'Analytics', 'Templates', 'How to use']);
   });
 });

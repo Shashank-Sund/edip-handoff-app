@@ -5,7 +5,7 @@ export type Phase = 'boarding' | 'arrived' | 'canceled';
 export interface Persona {
   id: string;
   name: string;
-  role: 'ed_nurse' | 'ed_physician' | 'unit_nurse' | 'admitting_physician';
+  role: 'ed_nurse' | 'ed_physician' | 'unit_nurse' | 'admitting_physician' | 'viewer';
   role_label: string;
   unit: string | null;
   unit_name?: string;

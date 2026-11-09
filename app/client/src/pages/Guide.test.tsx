@@ -72,6 +72,22 @@ describe('Guide page', () => {
     expect(h3.indexOf('Take over')).toBeLessThan(h3.indexOf('Analytics'));
   });
 
+  it('explains tasks: where they come from, the panel, every action, who acts, overdue, the board count, the page and the clock', () => {
+    const ids = (s: string) => GUIDE.find((x) => x.id === s)!.topics.map((t) => t.id);
+    expect(ids('tasks')).toEqual(['what', 'panel', 'actions', 'who', 'overdue', 'board', 'page', 'clock']);
+    expect(ids('glossary')).toEqual(expect.arrayContaining(['task', 'overdue', 'not-needed', 'action-list']));
+    const text = (id: string) => render(<>{findTopic(id)!.topics.map((t) => t.body)}</>).container.textContent!;
+    const actions = text('tasks.actions');
+    for (const label of ['Done', 'Not needed', 'Reassign', 'Due time', 'Undo done', 'Add a task']) expect(actions, label).toContain(label);
+    expect(text('tasks.what')).toMatch(/"immediate", "immediately" and "stat" mean due at the moment of signing/);
+    expect(text('tasks.clock')).toContain('You are viewing an earlier time; move the clock to now to act.');
+    expect(text('glossary.action-list')).toContain('becomes a task');
+    renderGuide();
+    const h3 = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(h3.indexOf('The handoff page')).toBeLessThan(h3.indexOf('Tasks'));
+    expect(h3.indexOf('Tasks')).toBeLessThan(h3.indexOf('Take over'));
+  });
+
   it('has a section for every page in the sidebar, and lists each page under Pages', () => {
     const pages = findTopic('sidebar.pages')!.topics[0];
     const { container } = render(<>{pages.body}</>);

@@ -15,6 +15,7 @@ import { HelpButton } from '@/components/guide/HelpButton';
 import { ElementView } from '@/components/handoff/ElementView';
 import { AckPanel, ChangesCard, HistoryCard, LabsCard, SignPanel, VitalsCard } from '@/components/handoff/Panels';
 import { OwnerLine } from '@/components/handoff/OwnerLine';
+import { TasksPanel } from '@/components/handoff/TasksPanel';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
 import { ApiError, api, type OwnerBody } from '@/lib/api';
@@ -258,6 +259,7 @@ export default function Handoff({ csn }: { csn: string }) {
               {notice.text}
             </div>
           )}
+          <TasksPanel csn={csn} />
           <Tabs value={current} onValueChange={setTab}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <TabsList aria-label="Handoff template" className="relative w-full sm:w-fit">

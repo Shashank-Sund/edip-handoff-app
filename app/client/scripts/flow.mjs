@@ -1,7 +1,9 @@
 // End to end through the UI. Owners first: nurse A (Jordan Reyes) takes an unassigned patient, nurse B (Robin
 // Asante) opens it, sees "Assigned to", acts on it (outside the assignment) and takes it over on the Take over page,
-// whose ? opens the right How to use section. Then the handoff: the ED nurse attests and signs another patient and
-// the receiving nurse acknowledges with a read back.
+// whose ? opens the right How to use section. Then the handoff: the ED nurse attests and signs another patient (one
+// with an action list) and its action list becomes tasks; the receiving nurse acknowledges with a read back, then
+// marks a task done, one not needed and reassigns one to themselves (outside their role, as the patient still boards),
+// finds them on the Tasks page, and its ? lands on the How to use section.
 // Usage: node scripts/flow.mjs [baseUrl] [screenshotDir]
 // The owner steps need two ED nurses, so they run with demo personas (mock mode, the static demo, a synthetic
 // deployment) and are skipped, with a line saying so, when the app maps one signed in user through EDIP_ROLE_MAP
@@ -140,6 +142,13 @@ for (let tries = 0; !name && tries < 24; tries++) {
   const before = errors.length;
   await row.click();
   await panel.waitFor();
+  // Signing turns the action list into tasks: take a handoff whose SBAR action list has items.
+  if (!(await page.locator('#el-E24 li').count())) {
+    refused.add(name);
+    name = null;
+    await page.goBack({ waitUntil: 'networkidle' });
+    continue;
+  }
   for (let i = 0; i < 10; i++) {
     const btn = panel.locator('li button[data-choice]').first();
     if (!(await btn.count())) break;
@@ -155,14 +164,31 @@ for (let tries = 0; !name && tries < 24; tries++) {
     await page.goBack({ waitUntil: 'networkidle' });
   }
 }
-if (!name) throw new Error(`no nurse draft that takes an action (refused: ${[...refused].join('; ') || 'none'})`);
-if (refused.size) console.log(`skipped ${refused.size} handoff(s) with later actions from earlier runs: ${[...refused].join('; ')}`);
+if (!name) throw new Error(`no nurse draft with an action list that takes an action (skipped: ${[...refused].join('; ') || 'none'})`);
+if (refused.size) console.log(`skipped ${refused.size} handoff(s) with no action list, or later actions from earlier runs: ${[...refused].join('; ')}`);
 await panel.getByLabel('Your callback number').fill('x4471');
 await panel.getByRole('button', { name: 'Sign', exact: true }).click();
 // The signer is the ED nurse persona, or with demo personas off the signed in user (named as they signed in).
 const signer = STATIC_DEMO ? 'Jordan Reyes, RN' : (await (await fetch(`${base}/api/me`, { headers: { 'X-Demo-Persona': 'ed-rn', ...headers } })).json()).name;
 await page.waitForSelector(`text=Signed by ${signer}`);
 if (out) await page.screenshot({ path: `${out}/flow-signed.png` });
+
+// ------------------------------------------------------------------------------------------------ tasks
+// The action list became tasks on this patient, the one the flow just signed (so a deployed app's earlier runs,
+// whose records sit at later hours, do not refuse these steps). For the receiving nurse's steps (demo personas), make
+// sure three are open: an action list with fewer gets tasks added by hand.
+const tasksPanel = page.getByRole('region', { name: 'Tasks' });
+const openList = tasksPanel.getByRole('list', { name: 'Open tasks' });
+await tasksPanel.getByText(`signed by ${signer}`).first().waitFor();
+const fromSign = await tasksPanel.getByRole('listitem').filter({ hasText: `signed by ${signer}` }).count();
+for (let i = (await openList.getByRole('listitem').count()); config.demo_personas && i < 3; i++) {
+  await tasksPanel.getByRole('button', { name: 'Add a task' }).click();
+  await tasksPanel.getByLabel('What needs to be done').fill(`Flow check ${i + 1}`);
+  await tasksPanel.getByRole('button', { name: 'Add task' }).click();
+  await tasksPanel.getByRole('status').filter({ hasText: `Task added: Flow check ${i + 1}` }).waitFor();
+}
+if (!fromSign) errors.push(`signing ${name} made no tasks from its action list`);
+let tasks = `${fromSign} task(s) from the action list`;
 const dest = await page.locator('text=Going to').locator('..').locator('dd').textContent();
 // The facility and unit code lead the text: "SGH 4C 4005-02 Observation".
 const unit = dest.trim().split(/\s+/).slice(0, 2).join('-').toLowerCase();
@@ -184,6 +210,49 @@ if (config.demo_personas) {
   await page.getByRole('button', { name: 'Accept handoff', exact: true }).click();
   await page.waitForSelector('text=Handoff accepted');
   if (out) await page.screenshot({ path: `${out}/flow-acked.png`, fullPage: false });
+
+  // The receiving nurse, on the same patient: marks one task done, one not needed and gives one to themselves. The
+  // patient is still in the ED, so the panel says that is outside their role (allowed, and recorded).
+  const receiver = `unit-${unit}`;
+  const names = async () => openList.getByRole('listitem').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  const [t1, t2, t3] = (await names()).slice(0, 3);
+  const item = (t) => openList.getByRole('listitem', { name: t, exact: true }).first();
+  const saved = (text) => tasksPanel.getByRole('status').filter({ hasText: text }).waitFor();
+  if (!(await tasksPanel.getByText(/recorded as outside your role/).count())) errors.push('no outside role note for the receiving nurse while the patient boards');
+  await item(t1).getByRole('button', { name: 'Done', exact: true }).click();
+  await saved(`Done: ${t1}`);
+  await item(t2).getByRole('button', { name: 'Not needed', exact: true }).click();
+  await item(t2).getByLabel('Why is it not needed?').fill('Done in the ED before transfer');
+  await item(t2).getByRole('button', { name: 'Save' }).click();
+  await saved(`Not needed: ${t2}`);
+  await item(t3).getByRole('button', { name: 'Reassign', exact: true }).click();
+  await item(t3).getByLabel('Give it to').selectOption(receiver);
+  await item(t3).getByRole('button', { name: 'Save' }).click();
+  await saved(`: ${t3}`);
+  if (out) await page.screenshot({ path: `${out}/flow-tasks.png` });
+  // The Tasks page lists the task given to them, and the two they closed under Recently completed.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Tasks' }).click();
+  await page.getByRole('listitem', { name: t3, exact: true }).first().waitFor();
+  await page.getByRole('button', { name: /Recently completed/ }).click();
+  for (const t of [t1, t2]) {
+    if (!(await page.getByRole('listitem', { name: t, exact: true }).count())) errors.push(`the Tasks page does not list "${t}" under Recently completed`);
+  }
+  // Its ? opens the How to use topic, and the full guide lands on it without loading the page again.
+  await page.getByRole('button', { name: /^About this page/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'The Tasks page' });
+  await sheet.waitFor();
+  await page.evaluate(() => (window.__flowTasks = true));
+  await sheet.getByRole('link', { name: 'Open the full guide' }).click();
+  await page.waitForURL(/\/guide(\?[^#]*)?#tasks-page$/);
+  const landed = await page.waitForFunction(() => {
+    const r = document.getElementById('tasks-page')?.getBoundingClientRect();
+    return !!r && r.top >= 0 && r.top < window.innerHeight / 2;
+  }, null, { timeout: 5000 }).then(() => true, () => false);
+  if (!landed) errors.push('the Tasks page ? did not land on the How to use section "The Tasks page"');
+  if (!(await page.evaluate(() => window.__flowTasks))) errors.push('opening the full guide from the Tasks page ? loaded the page again');
+  tasks += `; ${receiver}: done "${t1}", not needed "${t2}", reassigned "${t3}" to themselves; the Tasks page lists them; ? lands on the guide`;
+} else {
+  tasks += '; receiving nurse steps skipped: demo personas are off, so there is no receiving nurse to switch to';
 }
 if (STATIC_DEMO) {
   // In the static demo a reload would clear the actions: go back to the board in the app.
@@ -207,5 +276,6 @@ if (STATIC_DEMO) {
 await browser.close();
 const ok = state.includes(config.demo_personas ? 'Acknowledged' : 'Signed') && !errors.length;
 console.log(`owners ${owners}`);
+console.log(`tasks ${tasks}`);
 console.log(ok ? `flow ok: ${name} signed by ${signer}, ${readback}` : `flow failed: ${state} ${errors.join('; ')}`);
 process.exit(ok ? 0 : 1);
