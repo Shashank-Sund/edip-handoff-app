@@ -125,8 +125,10 @@ def _row(c, csn, persona="ed-rn", at=None):
     return next(r for r in rows if r["csn"] == csn)
 
 
-def _resolve_and_sign(c, csn, template, persona, at=None):
+def _resolve_and_sign(c, csn, template, persona, at=None, items=None):
     url, q = f"/api/handoffs/{csn}", {"at": at} if at else None
+    if items is not None:
+        assert c.post(f"{url}/{template}/edit", json={"element": "E24", "items": items}, headers=h(persona), params=q).status_code == 200
     d = c.get(url, headers=h(persona), params=q).json()["templates"][template]["draft"]
     for rule in d["rules"]:
         if rule["rule"] in d["completeness"]["blocking"]:
@@ -168,7 +170,9 @@ def test_changes_by_others_show_and_your_own_do_not(client):
     assert c.post(f"{url}/owner", json={"kind": "claim"}, headers=h("ed-rn")).status_code == 200
     assert c.post(f"{url}/tasks", json={"text": "Mine", "role": "nurse"}, headers=h("ed-rn")).status_code == 200
     assert c.post(f"{url}/owner", json={"kind": "claim"}, headers=h("ed-md-2")).status_code == 200
-    _resolve_and_sign(c, csn, "ipass_physician", "ed-md-2")
+    _resolve_and_sign(c, csn, "ipass_physician", "ed-md-2", items=[{"text": "Repeat lactate", "owner": "MD", "due": "Now"},
+                                                                   {"text": "Call the family", "owner": "team", "due": ""}])
+    assert c.post(f"{url}/tasks", json={"text": "By hand", "role": "physician"}, headers=h("ed-md-2")).status_code == 200
     tid = c.get(f"{url}/tasks", headers=h("ed-rn")).json()["tasks"][0]["id"]
     assert c.post(f"/api/tasks/{tid}", json={"kind": "done"}, headers=h("ed-md-2")).status_code == 200
     rn = _case(c, csn)["since"]
@@ -178,10 +182,15 @@ def test_changes_by_others_show_and_your_own_do_not(client):
     claim = next(x for x in rn["items"] if x["kind"] == "owner")
     assert claim | {"at": None} == {"kind": "owner", "owner": "claim", "role": "ed_physician", "to": "Kai Moreno, MD",
                                     "from": None, "by": "Kai Moreno, MD", "at": None}
+    hand = [x for x in rn["items"] if x.get("task") == "create"]
+    assert [x["text"] for x in hand] == ["By hand"]
     done = next(x for x in rn["items"] if x.get("task") == "done")
     assert done["text"] == "Mine" and done["task_id"] == tid
     sign = next(x for x in rn["items"] if x.get("action") == "sign")
     assert (sign["template"], sign["element"], sign["label"]) == ("ipass_physician", None, None)
+    # The tasks the sign off made from its action list are part of its line, not changes of their own.
+    made = [e for e in main.STORE.task_events(csn) if e["kind"] == "create" and e.get("template") == "ipass_physician"]
+    assert len(made) == 2 and sign["tasks"] == 2
     attests = [x for x in rn["items"] if x.get("action") == "attest"]
     assert all(x["element"] and x["label"] and x["option"] for x in attests)
     # Kai sees only Jordan's changes.
@@ -282,6 +291,8 @@ def test_arrival_and_severity_count_and_every_persona_gets_looks(client):
     items = _case(c, enc["csn"], "ed-md", at=b.isoformat())["since"]["items"]
     s = next(x for x in items if x["kind"] == "severity")
     assert (s["from"], s["to"]) == (sev(ds.latest_at(enc["csn"], a)), sev(ds.latest_at(enc["csn"], b)))
+    # Its own line only: no version lists the illness severity item as well.
+    assert not any(el["id"] == "E07" for x in items if x["kind"] == "version" for el in x["elements"])
     # The viewer and the receiving nurse get looks too; a patient off your board cannot be looked at.
     assert _look_at(c, csn, "viewer").status_code == 200
     assert _row(c, csn, "viewer")["since"]["first_time"] is False

@@ -14,11 +14,12 @@ What changed between your last look and T, by anyone but you (a change from the 
 counts):
   version     a newer draft version of a template: the items that differ from the version current at your look
               (clinician edits applied to both, so only the model's and the chart's changes show)
-  action      a sign off, acknowledgement, edit or attestation (workflow.py)
-  task        a task event (tasks.py)
+  action      a sign off, acknowledgement, edit or attestation (workflow.py); a sign off counts the tasks it made from
+              its action list, which are not changes of their own
+  task        a task event (tasks.py): a task added by hand, and every later change to a task
   owner       a change of owner (assignment.py)
   phase       the patient arrived on the unit, or the admission was canceled
-  severity    the illness severity changed
+  severity    the illness severity changed (its own line: the version then leaves out the illness severity item)
 A clinician's change counts when it applies after the look, or at the same time and was saved after it: the replay
 clock stands still while people act, so a colleague's sign off at the time you looked is still news. A pipeline
 change counts when its version shows after the look.

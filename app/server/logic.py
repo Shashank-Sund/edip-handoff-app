@@ -29,7 +29,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from assignment import HANDOVER_BUCKETS, ROLES, counts, handover_bucket, next_shift, owner_at, person_key
+from assignment import HANDOVER_BUCKETS, ROLES, actor, counts, handover_bucket, next_shift, owner_at, person_key
 import seen
 import tasks
 from data import Dataset, iso, status_at, ts
@@ -591,6 +591,9 @@ class Views:
         items = []
         # The pipeline: a newer version of a template, with its items that differ from the version current at the
         # look (both with today's clinician edits, so an edit is its own change below), the severity and the phase.
+        # A change of severity is its own line, so the versions leave out the illness severity item then.
+        sev_then, sev_now = self._severity(then), self._severity(now)
+        severity = bool(sev_then and sev_now and sev_then != sev_now)
         for tid, row in now.items():
             old = then.get(tid)
             if old is not None and old["version"] == row["version"]:
@@ -599,13 +602,13 @@ class Views:
             if old is not None:
                 rules = self.rules.get(tid)
                 elements = [{"id": c["id"], "label": c["label"]}
-                            for c in diff(effective(old, acts, ref, rules, pat), effective(row, acts, ref, rules, pat))]
+                            for c in diff(effective(old, acts, ref, rules, pat), effective(row, acts, ref, rules, pat))
+                            if not (severity and c["id"] == "E07")]
                 if not elements:
-                    continue                  # rewritten with the same content: nothing to read
+                    continue                  # rewritten with the same content (or only the severity): nothing to read
             items.append((row["shown"], {"kind": "version", "template": tid, "from": old["version"] if old else None,
                                          "to": row["version"], "at": iso(row["at"]), "elements": elements}))
-        sev_then, sev_now = self._severity(then), self._severity(now)
-        if sev_then and sev_now and sev_then != sev_now:
+        if severity:
             row = next(iter(now.values()))
             items.append((row["shown"], {"kind": "severity", "from": sev_then, "to": sev_now, "at": iso(row["at"])}))
         if dep and dep > then_at:
@@ -613,7 +616,10 @@ class Views:
         if self.ds.canceled_at(e, at) and not self.ds.canceled_at(e, then_at):
             when = self.ds.canceled.get(csn) or at
             items.append((when, {"kind": "phase", "phase": "canceled", "at": iso(when)}))
-        # Clinicians: actions, owners and tasks after the look, by someone else.
+        # Clinicians: actions, owners and tasks after the look, by someone else. The tasks a sign off made from its
+        # action list (a create with the template, at the sign's time, by the signer) are part of that sign's line.
+        events = self.store.task_events(csn, at)
+        made = Counter((ev["template"], ev["at"], actor(ev)) for ev in events if ev["kind"] == "create" and ev.get("template"))
         labels = {tid: {eid: x["label"] for eid, x in _elements(row["draft"]).items()} for tid, row in now.items()}
         for a in _ordered(acts):
             if not (seen.after(a, look) and seen.by_other(a, me)):
@@ -626,14 +632,17 @@ class Views:
                 item |= {"option": a.get("entry") or a["option"]} | ({"removed": True} if a.get("remove") else {})
             if a.get("restore"):
                 item["restore"] = True
+            if a["kind"] == "sign" and made[(a["template"], a["at"], actor(a))]:
+                item["tasks"] = made[(a["template"], a["at"], actor(a))]
             items.append((a["at"], item))
         for r in self.store.assignments(csn, at):
             if seen.after(r, look) and seen.by_other(r, me):
                 items.append((r["at"], {"kind": "owner", "owner": r["kind"], "role": r["role"], "to": r["assignee_name"],
                                         "from": r["from_name"], "by": r["by_name"], "at": iso(r["at"])}))
-        events = self.store.task_events(csn, at)
         text = {t["id"]: t["text"] for t in tasks.replay(events, at).values()}
         for ev in tasks.ordered(events):
+            if ev["kind"] == "create" and ev.get("template"):
+                continue                      # counted with its sign off
             if seen.after(ev, look) and seen.by_other(ev, me):
                 items.append((ev["at"], {"kind": "task", "task": ev["kind"], "task_id": ev["task_id"],
                                          "text": text.get(ev["task_id"]), "by": ev["by_name"], "at": iso(ev["at"])}
