@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, Check, CircleAlert, Sparkles } from 'lucide-react';
 import { ProgressRing } from '@/components/common/badges';
+import { SinceMark } from '@/components/common/SinceMark';
 import { linkProps } from '@/lib/router';
 
 // ------------------------------------------------------------------------------------ small visual cues
@@ -183,3 +184,7 @@ export function WhoDoesWhat() {
   );
 }
 
+/** The board's New marker, as it looks on a row: "New · 3 changes". */
+export function NewMark({ n }: { n: number }) {
+  return <SinceMark since={{ count: n, last_look: null, first_time: false }} at="" plain />;
+}

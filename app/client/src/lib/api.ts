@@ -1,4 +1,4 @@
-import type { Analytics, AppConfig, Board, CaseDetail, Colleague, PatientTasks, Persona, TaskRole, TasksPage, Takeover, TemplateDef } from './types';
+import type { Analytics, AppConfig, Board, CaseDetail, Colleague, PatientTasks, Persona, Seen, TaskRole, TasksPage, Takeover, TemplateDef } from './types';
 
 /** An error the server explains in plain words (HTTP 409 for rules, 404 for scope). */
 export class ApiError extends Error {
@@ -73,6 +73,8 @@ interface Api {
   patientTasks(csn: string, at: string): Promise<PatientTasks>;
   addTask(csn: string, body: NewTask, at: string): Promise<PatientTasks>;
   changeTask(id: number, body: TaskChange, at: string): Promise<PatientTasks>;
+  /** A look at the patient: opening the handoff (after the case arrived), or Mark as seen on the board. */
+  seen(csn: string, source: 'handoff' | 'board', at: string): Promise<Seen>;
   reset(): Promise<{ status: string }>;
 }
 
@@ -99,6 +101,7 @@ function staticDemo(): Api {
     patientTasks: (csn, at) => go<PatientTasks>('GET', `/api/handoffs/${csn}/tasks`, at),
     addTask: (csn, body, at) => go<PatientTasks>('POST', `/api/handoffs/${csn}/tasks`, at, body),
     changeTask: (id, body, at) => go<PatientTasks>('POST', `/api/tasks/${id}`, at, body),
+    seen: (csn, source, at) => go<Seen>('POST', `/api/handoffs/${csn}/seen`, at, { source }),
     reset: () => go<{ status: string }>('POST', '/api/demo/reset'),
   };
 }
@@ -124,5 +127,7 @@ export const api: Api = __STATIC_DEMO__ ? staticDemo() : {
     call<PatientTasks>(`/api/handoffs/${csn}/tasks`, { method: 'POST', body: JSON.stringify(body), at }),
   changeTask: (id: number, body: TaskChange, at: string) =>
     call<PatientTasks>(`/api/tasks/${id}`, { method: 'POST', body: JSON.stringify(body), at }),
+  seen: (csn: string, source: 'handoff' | 'board', at: string) =>
+    call<Seen>(`/api/handoffs/${csn}/seen`, { method: 'POST', body: JSON.stringify({ source }), at }),
   reset: () => call<{ status: string }>('/api/demo/reset', { method: 'POST' }),
 };

@@ -268,6 +268,8 @@ export interface CaseSummary {
   owners?: Record<EdRole, Owner | null>;
   /** Open and overdue tasks. */
   tasks?: TaskCounts;
+  /** What changed since your last look (the board, and the case). */
+  since?: SinceCount;
 }
 
 export interface Board {
@@ -420,6 +422,46 @@ export interface CaseTemplate {
   versions: { version: number; as_of: string; trigger: string; status: string; severity: Severity; score: number }[];
 }
 
+/**
+ * What changed since your last look at a patient (app/server/seen.py), by anyone but you: how many changes, when you
+ * last looked (null: never), and first_time when you never opened the patient.
+ */
+export interface SinceCount {
+  count: number;
+  last_look: string | null;
+  first_time: boolean;
+}
+
+/** One change since your last look, newest first. */
+export type SinceItem =
+  /**
+   * A newer version of a template from the pipeline; from null when the template had none at your look. Without the
+   * illness severity item when the severity changed (its own line).
+   */
+  | { kind: 'version'; template: string; from: number | null; to: number; at: string; elements: { id: string; label: string }[] }
+  /**
+   * A clinician action; element (and its label) for an edit or attestation; option: the attestation chosen or entered;
+   * tasks: for a sign off, how many tasks it made from its action list (not counted on their own).
+   */
+  | { kind: 'action'; action: 'edit' | 'attest' | 'sign' | 'ack'; template: string; by: string; at: string; element: string | null; label: string | null; option?: string; removed?: boolean; restore?: boolean; tasks?: number }
+  | { kind: 'task'; task: TaskEventKind; task_id: number; text: string | null; by: string; at: string; undo?: boolean }
+  | { kind: 'owner'; owner: 'claim' | 'assign' | 'release' | 'handover'; role: EdRole; to: string | null; from: string | null; by: string; at: string }
+  | { kind: 'phase'; phase: 'arrived' | 'canceled'; at: string }
+  | { kind: 'severity'; from: Severity; to: Severity; at: string };
+
+/** The case's since: computed against the look before this one, at the time `at` the case is for. */
+export interface Since extends SinceCount {
+  at: string;
+  items: SinceItem[];
+}
+
+/** The answer to recording a look: the board row's since, now empty. */
+export interface Seen {
+  csn: string;
+  at: string;
+  since: SinceCount;
+}
+
 export interface CaseDetail {
   summary: CaseSummary;
   templates: Record<string, CaseTemplate>;
@@ -430,6 +472,8 @@ export interface CaseDetail {
     /** kind "task": the task event, its task, and whether it was outside the role (detail: the task's text). */
     task?: TaskEventKind; task_id?: number; outside_role?: boolean;
   }[];
+  /** What changed since your last look before this one. */
+  since?: Since;
 }
 
 export interface Analytics {

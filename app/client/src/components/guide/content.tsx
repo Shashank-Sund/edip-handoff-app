@@ -19,6 +19,7 @@ import {
   Circle,
   CircleHelp,
   CircleSlash,
+  Eye,
   Handshake,
   History,
   ListTodo,
@@ -31,6 +32,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Sparkles,
   Sun,
   UserMinus,
   UserPlus,
@@ -38,7 +40,7 @@ import {
 } from 'lucide-react';
 import { Pill, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { TAB_HELP } from '@/lib/labels';
-import { Key, Primary, Tag, AmberNote, GreyNote, ModelMark, Chip, Highlight, Ring, GuideLink, PageLink, Terms, Checks, Note, SeeDo, ColorRow, WhoDoesWhat } from './cues';
+import { Key, Primary, Tag, AmberNote, GreyNote, ModelMark, Chip, Highlight, Ring, GuideLink, PageLink, Terms, Checks, Note, SeeDo, ColorRow, WhoDoesWhat, NewMark } from './cues';
 
 export interface Topic {
   id: string;
@@ -430,6 +432,15 @@ export const GUIDE: GuideSection[] = [
         ),
       },
       {
+        id: 'since',
+        title: 'What changed since I last looked?',
+        body: (
+          <p>
+            The board marks a patient <NewMark n={3} /> when someone else changed something since you last opened them, and the handoff page starts with <b>Since you last looked</b>, listing those changes. Your own changes never count. See <GuideLink to="since">What changed since you looked</GuideLink>.
+          </p>
+        ),
+      },
+      {
         id: 'assigned',
         title: 'Why does it say Assigned to someone else?',
         body: (
@@ -560,7 +571,7 @@ export const GUIDE: GuideSection[] = [
             <p>Patients still in the ED come first, the sickest at the top. Click a row to open the handoff. On a phone, each patient is a card with the same information. Point at the small <CircleHelp className="inline size-3.5 align-middle" aria-hidden /> next to a column title for a short reminder of what it shows; on a phone, the one above the cards explains a card.</p>
             <Terms
               items={[
-                ['Patient', 'Name, age, sex and medical record number (MRN), and under it the owners: RN for the ED nurse, MD for the ED physician, or Unassigned.'],
+                ['Patient', <>Name, age, sex and medical record number (MRN), and under it the owners: RN for the ED nurse, MD for the ED physician, or Unassigned. Under the owners, what changed since you last looked: <NewMark n={3} />, or <span className="text-xs text-muted-foreground">Not opened yet</span>. See <GuideLink to="since-board">the New marker</GuideLink>.</>],
                 ['Severity', <><SeverityBadge value="stable" /> <SeverityBadge value="watcher" /> <SeverityBadge value="unstable" /> See <GuideLink to="handoff-severity">illness severity</GuideLink>.</>],
                 ['Reason for visit', <>The chief complaint, with safety flags underneath: <Pill tone="danger">DNR/DNI</Pill> any code status other than full code, <Pill tone="warn">Contact</Pill> isolation, <Pill>2 allergies</Pill> allergies on file.</>],
                 ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
@@ -866,6 +877,83 @@ export const GUIDE: GuideSection[] = [
     ],
   },
   {
+    id: 'since',
+    title: 'What changed since you looked',
+    nav: 'Since you looked',
+    summary: 'What others changed on a patient since you last opened them, on the board and at the top of the handoff.',
+    kind: 'reference',
+    topics: [
+      {
+        id: 'what',
+        title: 'What counts as a change',
+        body: (
+          <>
+            <p>
+              Each time you open a patient's handoff, the app notes that you looked: who you are, which patient, and the time on the clock. The next time, it shows what happened between that look and now. Only changes by someone else count; what you did yourself is never listed.
+            </p>
+            <Terms
+              items={[
+                ['A new draft', 'A newer version of the SBAR, I-PASS or Joint Commission minimum, with the items that differ from the version you saw. New drafts come from the chart and the model, not from a person, so they always count.'],
+                ['Sign off and read back', 'A colleague signed a handoff, or the receiver accepted it. A sign off is one change, with the tasks it made from its action list, for example "Kai Moreno, MD signed the I-PASS (4 tasks added)".'],
+                ['Edits and attestations', 'A colleague edited an item, restored the model\'s text, or confirmed a check such as code status or allergies.'],
+                ['Tasks', 'A task added by hand, or a task done, marked not needed, opened again, reassigned, or given a new due time. Each is one change.'],
+                ['Owners', 'Someone took the patient, assigned them to a colleague, released them, or took them over at a shift change.'],
+                ['The patient', 'The patient arrived on the unit, the admission was canceled, or the illness severity changed, for example from watcher to unstable. A change of severity is its own line, not repeated in the new draft\'s list; the Illness severity item is still marked on the handoff.'],
+              ]}
+            />
+          </>
+        ),
+      },
+      {
+        id: 'board',
+        title: 'The New marker on the board',
+        body: (
+          <>
+            <p>
+              Under the owners of each patient: <NewMark n={3} /> means three changes by others since you last opened the patient. Nothing shows when nothing changed. A patient you have never opened says <span className="text-xs text-muted-foreground">Not opened yet</span> instead: there is no earlier look to compare with, so the app does not count their whole stay.
+            </p>
+            <p className="text-muted-foreground">Point at the marker for a reminder. Opening the patient clears it, and so does <Key><Eye />Mark as seen</Key>. Each person has their own marks, the viewer too: what you have seen is yours, not your team's.</p>
+          </>
+        ),
+      },
+      {
+        id: 'mark',
+        title: 'Mark as seen',
+        body: (
+          <p>
+            Next to the marker, <Key><Eye />Mark as seen</Key> notes that you looked at the patient without opening them, for example after the charge nurse told you about the new draft. The marker goes; the next change by someone else brings it back. It records a look, nothing else: it does not sign, accept or change the handoff.
+          </p>
+        ),
+      },
+      {
+        id: 'banner',
+        title: 'Since you last looked, on the handoff page',
+        body: (
+          <>
+            <p>
+              When you open a patient you looked at before, and someone else changed something since, a box at the top says <b><Sparkles className="inline size-3.5 align-[-2px] text-primary" aria-hidden /> Since you last looked</b> and how long ago that was, for example "2 h 10 min ago". It lists each change in plain words, the newest first, with the time, for example <i>Kai Moreno, MD signed the I-PASS</i>, or <i>A new SBAR draft (version 3): Vital signs, ED course changed</i>.
+            </p>
+            <p>
+              Click a change to go to it: the item on its template tab, the sign off, the Tasks panel, the owners or the patient box. Items that changed are marked <Pill tone="warn">New since you looked</Pill>, with the same thin amber line on the left as <GuideLink to="questions-changes">What changed</GuideLink>. When more than six changes are listed, the rest fold under "more".
+            </p>
+            <p className="text-muted-foreground">
+              The box stays while you work on the patient, also after you sign or change a task, and goes when you leave the patient, move the clock or switch role. There is no box the first time you open a patient, or when nothing changed.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'clock',
+        title: 'Looks and the clock',
+        body: (
+          <p>
+            Like everything else, looks follow the time on the clock. Your last look is the latest one at or before the time on the clock. Looking at an earlier time is recorded at that earlier time, so it never hides changes made after it: going back to 03:00 does not mark the 05:00 sign off as seen. A look is not an action on the handoff, so it is recorded also while you look at an earlier time in the hospital app, when the other buttons are turned off.
+          </p>
+        ),
+      },
+    ],
+  },
+  {
     id: 'takeover',
     title: 'Take over',
     summary: 'At a shift change: take the patients of the colleague you are relieving, in one go.',
@@ -1048,7 +1136,7 @@ export const GUIDE: GuideSection[] = [
         title: 'Your actions and the clock',
         body: (
           <p>
-            What you do (edit, attest, sign, accept, and every change to a task) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners and tasks come back too.
+            What you do (edit, attest, sign, accept, and every change to a task) is recorded at the time on the clock. Move the clock back before that time and it has not happened yet; move forward and it is there again. You cannot act at a time earlier than something already recorded on that handoff: move the clock to now first. Once a patient leaves the ED, their handoff is final, unless it was never signed. Who owns a patient follows the clock the same way. The time is part of the page address, so a reload or a shared link opens at the same moment. To start the demo over, open the date panel and press Clear all demo actions: the demo's starting owners, tasks and looks come back too.
           </p>
         ),
       },
@@ -1086,7 +1174,7 @@ export const GUIDE: GuideSection[] = [
         body: __STATIC_DEMO__ ? (
           <>
             <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
-            <Note>In this public web demo everything runs in your browser. What you sign, accept, take or do to a task is kept only in this tab and is cleared when you reload the page; the demo's starting owners and tasks come back.</Note>
+            <Note>In this public web demo everything runs in your browser. What you sign, accept, take or do to a task is kept only in this tab and is cleared when you reload the page; the demo's starting owners, tasks and looks come back.</Note>
           </>
         ) : (
           <p>The <Key>Synthetic data</Key> label is a reminder: every patient, name and number in this demo is invented. Nothing comes from a real hospital.</p>
@@ -1181,9 +1269,12 @@ export const GUIDE: GuideSection[] = [
       { id: 'esi', title: 'ESI', body: 'Emergency Severity Index: the triage level, from 1 (most urgent) to 5.' },
       { id: 'ipass', title: 'I-PASS', body: 'Illness severity, Patient summary, Action list, Situation awareness and contingency, Synthesis by the receiver. The physician handoff format.' },
       { id: 'minimum', title: 'Joint Commission minimum', body: 'A short handoff with the items the Joint Commission says every handoff needs. Any clinician can use it.' },
+      { id: 'last-look', title: 'Last look', body: 'The last time you opened a patient, or pressed Mark as seen, at or before the time on the clock. The board and the handoff page show what others changed since.' },
       { id: 'level-of-care', title: 'Level of care', body: 'ICU, step down, telemetry, med surg or observation.' },
+      { id: 'mark-as-seen', title: 'Mark as seen', body: 'On the board: notes that you looked at a patient without opening them, so the New marker goes.' },
       { id: 'model', title: 'Model', body: 'The AI language model that writes the narrative parts of each draft from the chart. A person always checks and signs.' },
       { id: 'mrn', title: 'MRN', body: 'Medical record number.' },
+      { id: 'new', title: 'New', body: 'On the board, "New · 3 changes": changes by others since your last look at the patient. "Not opened yet": you never opened them.' },
       { id: 'not-needed', title: 'Not needed', body: 'A task closed without doing it, with a short reason, for example because it was done before transfer. Undo opens it again.' },
       { id: 'outside', title: 'Outside your assignment', body: 'An action on a patient a colleague in your role owns. It is allowed, and recorded so the team can see it.' },
       { id: 'overdue', title: 'Overdue', body: 'An open task whose due time has passed at the time on the clock.' },
