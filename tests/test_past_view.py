@@ -48,13 +48,14 @@ class One:
 
 
 class FakeDB:
-    """The synced tables (read), app.handoff_action, app.assignment, app.task_event and app.view_log (append), as the
-    app's SQL uses them. tests/test_live_postgres.py runs the same SQL on a real Postgres."""
+    """The synced tables (read), app.handoff_action, app.assignment, app.task_event, app.seen_event and app.view_log
+    (append), as the app's SQL uses them. tests/test_live_postgres.py runs the same SQL on a real Postgres."""
 
     def __init__(self, encounters, drafts):
         self.encounters, self.drafts = encounters, drafts
         self.actions, self.views, self.fail_views, self.assigned = [], [], False, []
         self.tasks, self.task_ids = [], 0
+        self.looks = []
         self.old_sync = False             # a synced table from before retracted_ts and prior_status
 
     def connect(self):
@@ -111,6 +112,17 @@ class FakeConn:
             db.tasks.append(row | {"event_id": len(db.tasks) + 1, "recorded_ts": datetime.now(timezone.utc),
                                    "detail": row["detail"].obj})
             return One((len(db.tasks), row["task_id"], db.tasks[-1]["recorded_ts"]))
+        if sql.startswith("SELECT DISTINCT ON (csn) * FROM app.seen_event"):
+            who, at, *csn = params
+            last = {}
+            for r in sorted(db.looks, key=lambda r: (r["at"], r["seen_id"])):
+                if r["by_id"] == who and r["at"] <= at and (not csn or r["csn"] == csn[0]):
+                    last[r["csn"]] = r
+            return Result(list(last.values()))
+        if sql.startswith("INSERT INTO app.seen_event"):
+            row = dict(zip(("by_id", "csn", "at", "source", "by_name", "role", "user_email"), params))
+            db.looks.append(row | {"seen_id": len(db.looks) + 1, "recorded_ts": datetime.now(timezone.utc)})
+            return One((len(db.looks), db.looks[-1]["recorded_ts"]))
         if sql.startswith("SELECT * FROM app.handoff_action"):
             return Result(sorted(db.actions, key=lambda r: (r["at"], r["action_id"])))
         if sql.startswith("INSERT INTO app.handoff_action"):
@@ -270,6 +282,37 @@ def test_actions_use_the_server_time_and_are_refused_while_looking_back(live):
     # Looking back to before the sign off shows it unsigned again: nothing was moved.
     then = c.get(f"/api/handoffs/{csn}", params={"at": ago(minutes=30)}, headers=who(HOSP)).json()
     assert then["templates"]["ipass_physician"]["workflow"]["state"] != "acknowledged"
+
+
+def test_a_look_is_at_the_time_viewed_also_an_earlier_one_and_the_banner_sees_another_persons_change(live):
+    c, main, db = live()
+    csn = boarding(c)["csn"]
+    url = f"/api/handoffs/{csn}"
+    # Opening at now: never looked. The page then records its look at the time the case was for (not refused, not
+    # moved to now, not in the view log: the read was).
+    first = c.get(url, headers=who(RN)).json()["since"]
+    assert first["first_time"] and first["items"] == []
+    r = c.post(f"{url}/seen", params={"at": first["at"]}, json={"source": "handoff"}, headers=who(RN))
+    # The page's time is to the second: the look covers that second (it is not moved to the request's time).
+    assert r.status_code == 200 and r.json()["at"] == first["at"]
+    assert db.looks[0]["at"] - datetime.fromisoformat(first["at"]) < timedelta(seconds=1)
+    assert [(x["by_id"], x["csn"], x["source"]) for x in db.looks] == [(RN, csn, "handoff")]
+    # The physician takes the patient (an action: at the server's time, after the look); the nurse's next open shows it.
+    assert c.post(f"{url}/owner", json={"kind": "claim"}, headers=who(MD)).status_code == 200
+    items = c.get(url, headers=who(RN)).json()["since"]["items"]
+    assert [(x["kind"], x["owner"], x["by"]) for x in items] == [("owner", "claim", "MD")]
+    assert next(x for x in c.get("/api/board", headers=who(RN)).json()["rows"] if x["csn"] == csn)["since"]["count"] == 1
+    # A look at an earlier time (Mark as seen while looking back) is recorded at that time, where an action is refused;
+    # it does not move the look at now.
+    views = len(db.views)
+    r = c.post(f"{url}/seen", params={"at": ago(hours=1)}, json={"source": "board"}, headers=who(RN))
+    assert r.status_code == 200 and datetime.now(timezone.utc) - datetime.fromisoformat(r.json()["at"]) > timedelta(minutes=59)
+    assert len(db.views) == views
+    assert c.post(f"{url}/owner", params={"at": ago(hours=1)}, json={"kind": "claim"}, headers=who(RN)).status_code == 409
+    assert len(c.get(url, headers=who(RN)).json()["since"]["items"]) == 1
+    # Further back than the limit: refused, as a read is.
+    r = c.post(f"{url}/seen", params={"at": ago(hours=80)}, json={"source": "board"}, headers=who(RN))
+    assert r.status_code == 400 and r.json()["detail"].startswith("You can look back up to 72 hours")
 
 
 def test_a_version_shows_from_when_the_job_wrote_it(live):

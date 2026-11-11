@@ -7,6 +7,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Pill, ProgressRing, SeverityBadge, StateBadge } from '@/components/common/badges';
 import { Owners } from '@/components/common/Owners';
 import { TaskCount } from '@/components/common/TaskCount';
+import { MarkSeenButton, SinceMark } from '@/components/common/SinceMark';
 import { Stat } from '@/components/common/Stat';
 import { HelpButton } from '@/components/guide/HelpButton';
 import { Explain } from '@/components/guide/Explain';
@@ -33,7 +34,7 @@ interface Group {
 /** One or two sentences per column, true to how the board computes it; the guide has the rest. */
 function columnHelp(tplName: string): [string, string][] {
   return [
-    ['Patient', 'Name, age, sex and medical record number, then who owns the patient: the ED nurse (RN) and the ED physician (MD), or Unassigned. Click a row to open the handoff.'],
+    ['Patient', 'Name, age, sex and medical record number, then who owns the patient: the ED nurse (RN) and the ED physician (MD), or Unassigned. Under them, what changed since you last looked (New · 3 changes) or Not opened yet. Click a row to open the handoff.'],
     ['Severity', 'How sick the patient is: stable, watcher or unstable. Rules set the lowest level the chart allows, and the model can raise it, never lower it.'],
     ['Reason for visit', 'The chief complaint. Underneath, from the chart: a code status other than full code, isolation, and allergies.'],
     ['Destination', 'The unit and bed the patient is going to, where they are now in the ED, and the level of care.'],
@@ -118,7 +119,7 @@ function Destination({ row }: { row: CaseSummary }) {
   );
 }
 
-function Patient({ row, take }: { row: CaseSummary; take?: React.ReactNode }) {
+function Patient({ row, take, since }: { row: CaseSummary; take?: React.ReactNode; since?: React.ReactNode }) {
   return (
     <div className="min-w-0 leading-tight">
       <a {...linkProps(`/handoff/${row.csn}`)} className="whitespace-nowrap font-medium outline-none hover:underline focus-visible:underline">
@@ -129,6 +130,7 @@ function Patient({ row, take }: { row: CaseSummary; take?: React.ReactNode }) {
       </div>
       <div className="mt-1 space-y-1.5">
         <Owners owners={row.owners} stacked />
+        {since}
         {take}
       </div>
     </div>
@@ -153,6 +155,25 @@ function TakeButton({ row, busy, disabled, onTake }: { row: CaseSummary; busy: b
       <UserPlus className="size-3.5" aria-hidden />
       Take
     </Button>
+  );
+}
+
+/** The row's What changed since you looked: the marker, and Mark as seen when something is new. */
+function SinceLine({ row, at, busy, onMark }: { row: CaseSummary; at: string; busy: boolean; onMark: (csn: string) => void }) {
+  const n = row.since?.count ?? 0;
+  if (!row.since || (!n && !row.since.first_time)) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+      <SinceMark since={row.since} at={at} />
+      {n > 0 && (
+        <>
+          <MarkSeenButton name={row.patient.name} busy={busy} disabled={false} onMark={() => onMark(row.csn)} />
+          <span onClick={(e) => e.stopPropagation()}>
+            <HelpButton topic="since.mark" label="About Mark as seen" className="size-5" />
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -270,6 +291,20 @@ export default function Board() {
       setNotice({ tone: 'error', text: e instanceof ApiError ? e.message : 'Something went wrong.' });
     } finally {
       setTaking(null);
+    }
+  };
+  // Mark as seen: a look at the patient at the board's time (also while looking back: a look is not an action).
+  const [marking, setMarking] = useState<string | null>(null);
+  const markSeen = async (csn: string) => {
+    if (!data) return;
+    setMarking(csn);
+    try {
+      await api.seen(csn, 'board', data.at);
+      bump();
+    } catch (e) {
+      setNotice({ tone: 'error', text: e instanceof ApiError ? e.message : 'Something went wrong.' });
+    } finally {
+      setMarking(null);
     }
   };
   const [view, setView] = useState<View>('all');
@@ -417,7 +452,11 @@ export default function Board() {
                     {g.rows.map((r) => (
                       <tr key={r.csn} className="cursor-pointer align-middle transition-colors hover:bg-muted/40" onClick={() => navigate(`/handoff/${r.csn}`)}>
                         <td className="py-3 pl-4 pr-3 lg:pl-5">
-                          <Patient row={r} take={g.id === 'unassigned' && <TakeButton row={r} busy={taking === r.csn} disabled={past !== null || taking !== null} onTake={take} />} />
+                          <Patient
+                            row={r}
+                            since={<SinceLine row={r} at={data.at} busy={marking === r.csn} onMark={markSeen} />}
+                            take={g.id === 'unassigned' && <TakeButton row={r} busy={taking === r.csn} disabled={past !== null || taking !== null} onTake={take} />}
+                          />
                         </td>
                         <td className="px-3 py-3">
                           <SeverityBadge value={r.severity} />
@@ -473,7 +512,7 @@ export default function Board() {
                   label="What a card shows"
                   topic="board.columns"
                   side="bottom"
-                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, where the nurse and physician handoffs stand, and the tasks not done yet (how many are overdue).`}
+                  text={`Each card: name and reason for visit, severity, who owns the patient (RN and MD), what changed since you last looked, destination and where the patient is now, boarding time, completeness of your role's template (${tplName}) with the items still open, where the nurse and physician handoffs stand, and the tasks not done yet (how many are overdue).`}
                 />
               </div>
               <ul className="divide-y md:hidden">
@@ -493,6 +532,7 @@ export default function Board() {
                         <SeverityBadge value={r.severity} />
                       </div>
                       <Owners owners={r.owners} />
+                      <SinceMark since={r.since} at={data.at} plain />
                       <Destination row={r} />
                       <div className="flex items-center justify-between gap-3">
                         {r.phase === 'arrived' ? <span className="text-sm">Arrived after {duration(r.minutes_boarding)}</span> : <BoardingTime minutes={r.minutes_boarding} />}
@@ -504,9 +544,15 @@ export default function Board() {
                       </div>
                     </a>
                     {/* Outside the card's link: a button cannot sit inside a link. */}
-                    {g.id === 'unassigned' && (
-                      <div className="-mt-1 px-4 pb-3">
-                        <TakeButton row={r} busy={taking === r.csn} disabled={past !== null || taking !== null} onTake={take} />
+                    {(g.id === 'unassigned' || (r.since?.count ?? 0) > 0) && (
+                      <div className="-mt-1 flex flex-wrap items-center gap-2 px-4 pb-3">
+                        {g.id === 'unassigned' && <TakeButton row={r} busy={taking === r.csn} disabled={past !== null || taking !== null} onTake={take} />}
+                        {(r.since?.count ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-0.5">
+                            <MarkSeenButton name={r.patient.name} busy={marking === r.csn} disabled={false} onMark={() => markSeen(r.csn)} />
+                            <HelpButton topic="since.mark" label="About Mark as seen" className="size-6" />
+                          </span>
+                        )}
                       </div>
                     )}
                   </li>

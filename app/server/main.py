@@ -4,7 +4,8 @@
 
 Every read takes `at` (ISO time; default the replay clock) and the caller's persona: the X-Demo-Persona header in
 mock mode, the signed in user in live mode. With the live clock a read is at the current time, or at an earlier time
-within EDIP_PAST_VIEW_HOURS (read only, and logged in the view log), and every action is at the current time.
+within EDIP_PAST_VIEW_HOURS (read only, and logged in the view log), and every action is at the current time. A look
+at a patient (seen.py) is not an action: it is at the time viewed, earlier ones too.
 """
 from __future__ import annotations
 
@@ -98,14 +99,17 @@ def _current():
 
 def _seed() -> None:
     """Mock mode: the demo's starting owners, Jordan Reyes for the nurse role and Kai Moreno for the physician role,
-    before the default clock (logic.Views.seed_owners), and a few tasks on their patients (logic.Views.seed_tasks).
-    Written at start up and again after Reset."""
+    before the default clock (logic.Views.seed_owners), a few tasks on their patients (logic.Views.seed_tasks), and
+    their looks at those patients just before taking them (logic.Views.seed_looks). Written at start up and again
+    after Reset."""
     personas, default_at = _current()
     who = {p["id"]: {"id": p["id"], "name": p["name"]} for p in personas}
     owners = VIEWS.seed_owners(default_at, who["ed-rn"], who["ed-md-2"])
     for row in owners:
         STORE.assign(row)
     STORE.add_tasks(VIEWS.seed_tasks(default_at, owners))
+    for row in VIEWS.seed_looks(default_at, owners):
+        STORE.look(row)
 
 
 def _person(request: Request) -> dict:
@@ -197,13 +201,37 @@ def _read_at(at: Optional[str], request: Request, page: str, csn: Optional[str] 
     t = _parse(at)
     if t >= now - NOW_SLACK:
         return now                            # now, or a later time: there is nothing later than now
+    _past_check(t, now)
+    p = _person(request)
+    STORE.log_view({"page": page, "csn": csn, "at": t, "by": p["name"], "role": p["role"], "user_email": p.get("user_email")})
+    return t
+
+
+def _past_check(t: datetime, now: datetime) -> None:
+    """Live: an earlier time `t` can be looked at only within EDIP_PAST_VIEW_HOURS of now."""
     if not PAST_VIEW:
         raise HTTPException(400, "Looking at an earlier time is turned off in this app.")
     if t < now - PAST_VIEW:
         raise HTTPException(400, f"You can look back up to {_hours(PAST_VIEW)}. Pick a later time, or go back to live.")
-    p = _person(request)
-    STORE.log_view({"page": page, "csn": csn, "at": t, "by": p["name"], "role": p["role"], "user_email": p.get("user_email")})
-    return t
+
+
+def _look_at(at: Optional[str]) -> datetime:
+    """The time a look applies to: the time the page showed. Replay: the replay clock. Live: that time as sent, so the
+    look is the view the page got and not the moment the request arrived (an earlier one too, within
+    EDIP_PAST_VIEW_HOURS: a look is not a clinical action and is not refused like one). The app sends times to the
+    second (data.iso), so the look covers the whole second it names, else a change made in that second would stay
+    news after the page showed it; never later than now. Not logged in the view log: the read was."""
+    if config.CLOCK_MODE != "live":
+        return _at(at)
+    now = datetime.now(timezone.utc)
+    if not at:
+        return now
+    t = _parse(at)
+    if t >= now:
+        return now
+    if t < now - NOW_SLACK:
+        _past_check(t, now)
+    return min(now, t.replace(microsecond=0) + timedelta(seconds=1) - timedelta(microseconds=1))
 
 
 def _act_at(at: Optional[str]) -> datetime:
@@ -264,6 +292,10 @@ class TaskBody(BaseModel):
     due: Optional[StrictStr] = None             # ISO time
 
 
+class SeenBody(BaseModel):
+    source: StrictStr                           # handoff (opening the page) or board (Mark as seen)
+
+
 class TaskChangeBody(BaseModel):
     kind: StrictStr                             # done, not_needed, reassign, due or undo
     reason: Optional[StrictStr] = None          # not_needed
@@ -275,7 +307,7 @@ class TaskChangeBody(BaseModel):
 FIELD = {"element": "item", "text": "text", "items": "action items", "restore": "restore choice", "rule": "rule",
          "option": "attestation", "entry": "entered value", "entry_note": "note", "remove": "remove choice", "callback": "callback number", "readback": "read back", "questions": "questions",
          "kind": "choice of Take, Assign or Release", "to": "colleague", "colleague": "colleague", "csns": "patients",
-         "role": "role", "due": "due time", "reason": "reason"}
+         "role": "role", "due": "due time", "reason": "reason", "source": "page"}
 # A change to a task (/api/tasks/<id>) names its kind differently.
 TASK_FIELD = FIELD | {"kind": "task change"}
 
@@ -438,6 +470,17 @@ def post_task_change(task_id: str, body: TaskChangeBody, request: Request, at: O
     t, p = _act_at(at), _person(request)
     try:
         return VIEWS.task_act(int(task_id) if re.fullmatch(r"[0-9]{1,15}", task_id) else -1, t, p, body.model_dump(), _people())
+    except ActionError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@api.post("/handoffs/{csn}/seen")
+def post_seen(csn: str, body: SeenBody, request: Request, at: Optional[str] = None) -> dict[str, Any]:
+    """A look at the patient: opening the handoff page (after it has the case, whose since is against the look before),
+    or Mark as seen on the board row. Returns the row's since, now empty."""
+    t, p = _look_at(at), _person(request)
+    try:
+        return VIEWS.look(csn, t, p, body.source)
     except ActionError as exc:
         raise HTTPException(409, str(exc))
 

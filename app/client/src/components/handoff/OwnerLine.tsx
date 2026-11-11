@@ -55,7 +55,7 @@ export function OwnerLine({ s, persona, at, locked, busy, onOwn }: {
   const boarding = s.phase === 'boarding';
   const off = locked || busy || !boarding;
   return (
-    <Card role="group" className="gap-2 px-4 py-3 text-sm sm:px-5" aria-label="Who owns this patient">
+    <Card id="owners" tabIndex={-1} role="group" className="scroll-mt-20 gap-2 px-4 py-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:px-5" aria-label="Who owns this patient">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
           <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden />

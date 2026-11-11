@@ -43,8 +43,8 @@ Open http://localhost:8000. Details: [app/README.md](app/README.md).
 Hospital feeds (synthetic): HL7 v2, Redox FHIR (batch or Zerobus), Clarity nightly tables
   -> bronze (Unity Catalog) -> Lakeflow pipeline: parse, reconcile across feeds, encounter state, triggers
   -> handoff job: chart packet, one model call per trigger, validator, completeness rules -> gold drafts
-  -> Lakebase (synced drafts; the app's edits, attestations, sign offs, read backs, owners and tasks)
-  -> app: board, handoff review and sign off, read back, tasks, analytics, a guide for clinicians
+  -> Lakebase (synced drafts; the app's edits, attestations, sign offs, read backs, owners, tasks and looks)
+  -> app: board, handoff review and sign off, read back, tasks, what changed since you looked, analytics, a guide for clinicians
 ```
 
 Every table, the Lakebase schema and ready to run queries: [docs/data-model.md](docs/data-model.md).

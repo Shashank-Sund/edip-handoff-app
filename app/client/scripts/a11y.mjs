@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { chromium } from 'playwright-core';
-import { firstCsn } from './lib/static-demo.mjs';
+import { firstCsn, STATIC_DEMO } from './lib/static-demo.mjs';
 
 const args = process.argv.slice(2);
 const jsonAt = args.indexOf('--json');
@@ -26,6 +26,33 @@ async function taskCsn() {
   return href ? href.split('?')[0].split('/').pop() : null;
 }
 const tasked = await taskCsn();
+/**
+ * Opening a handoff records a look, so its Since you last looked box shows once. A server in mock mode starts the demo
+ * over before each view of the box; the static demo starts over on every load. Live, nothing can be started over, so
+ * those views are left out (with a line saying so).
+ */
+const mock = STATIC_DEMO || (await (await fetch(`${base}/api/config`)).json()).mode === 'mock';
+async function freshLooks() {
+  if (!STATIC_DEMO) await fetch(`${base}/api/demo/reset`, { method: 'POST' });
+}
+/** A patient with changes since the ED nurse last looked (the demo seeds looks): the first board row marked New. */
+async function sinceCsn() {
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => localStorage.setItem('edip.persona', 'ed-rn'));
+  const page = await ctx.newPage();
+  await page.goto(base + '/', { waitUntil: 'networkidle' });
+  const link = page.locator('tbody tr', { hasText: /New · \d+ change/ }).first().locator('a[href^="/handoff/"]').first();
+  const href = (await link.count()) ? await link.getAttribute('href') : null;
+  await ctx.close();
+  return href ? href.split('?')[0].split('/').pop() : null;
+}
+let changed = null;
+if (mock) {
+  await freshLooks();
+  changed = await sinceCsn();
+} else {
+  console.log('Since you last looked views skipped: they need mock mode or the static demo, which can start the demo over');
+}
 const pages = ['/', csn && `/handoff/${csn}`, '/tasks', '/takeover', '/analytics', '/templates', '/guide'].filter(Boolean).map((path) => ({ path }));
 // A few extra states: other roles, a phone width and open dialogs. The open persona menu is left out: Radix
 // hides the page behind a modal menu with aria-hidden, which axe reports although focus stays in the menu.
@@ -49,11 +76,18 @@ const extra = [
   tasked && { path: `/handoff/${tasked}`, label: 'tasks panel' },
   tasked && { path: `/handoff/${tasked}`, persona: 'viewer', label: 'tasks panel, viewer' },
   tasked && { path: `/handoff/${tasked}`, label: 'tasks panel, add a task open', open: /^Add a task/ },
+  // What changed since you looked: the board marker with Mark as seen and its ? panel, the box on the handoff page,
+  // its ? panel, and a phone.
+  changed && { path: '/', label: 'since help panel', fresh: true, open: /^About Mark as seen/ },
+  changed && { path: `/handoff/${changed}`, label: 'since you last looked', fresh: true, wait: /^Since you last looked/ },
+  changed && { path: `/handoff/${changed}`, label: 'since help panel', fresh: true, open: /^About Since you last looked/ },
+  changed && { path: `/handoff/${changed}`, width: 390, label: 'since you last looked, phone', fresh: true, wait: /^Since you last looked/ },
 ].filter(Boolean);
 
 const report = [];
 for (const dark of [false, true]) {
-  for (const { path, persona = 'ed-rn', width = 1440, label, open, pick, tab } of [...pages, ...extra]) {
+  for (const { path, persona = 'ed-rn', width = 1440, label, open, pick, tab, fresh, wait } of [...pages, ...extra]) {
+    if (fresh) await freshLooks();
     // bypassCSP: a strict Content-Security-Policy (the static demo's) would block the injected axe script.
     const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: dark ? 'dark' : 'light', bypassCSP: true });
     await ctx.addInitScript(([p, d]) => {
@@ -62,6 +96,7 @@ for (const dark of [false, true]) {
     }, [persona, dark]);
     const page = await ctx.newPage();
     await page.goto(base + path, { waitUntil: 'networkidle' });
+    if (wait) await page.getByRole('region', { name: wait }).waitFor();
     if (open) await page.getByRole('button', { name: open }).first().click();
     if (pick) await page.getByRole('radio', { name: pick }).first().click();
     if (tab) await page.getByRole('tab', { name: tab }).first().click();

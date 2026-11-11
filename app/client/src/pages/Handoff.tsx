@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BedDouble, ChevronDown, Clock3, Lock, ShieldAlert } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { SectionBadge } from '@/components/common/SectionBadge';
@@ -16,14 +16,16 @@ import { ElementView } from '@/components/handoff/ElementView';
 import { AckPanel, ChangesCard, HistoryCard, LabsCard, SignPanel, VitalsCard } from '@/components/handoff/Panels';
 import { OwnerLine } from '@/components/handoff/OwnerLine';
 import { TasksPanel } from '@/components/handoff/TasksPanel';
+import { SinceBanner } from '@/components/handoff/SinceBanner';
 import { useApp } from '@/hooks/useApp';
 import { useLoad } from '@/hooks/useLoad';
 import { ApiError, api, type OwnerBody } from '@/lib/api';
 import { LEVEL_LABEL, bed, dateTime, duration, triggerLabel } from '@/lib/format';
 import { linkProps } from '@/lib/router';
 import { READ_ONLY, canChange, signOffStatus } from '@/lib/checks';
+import { sinceElements } from '@/lib/since';
 import { cn } from '@/lib/utils';
-import type { CaseDetail, CaseSummary, CaseTemplate, EnteredFlag, NarrativeItem, Persona } from '@/lib/types';
+import type { CaseDetail, CaseSummary, CaseTemplate, EnteredFlag, NarrativeItem, Persona, Since } from '@/lib/types';
 import { TAB_HELP, TEMPLATE_NAME, TEMPLATE_SHORT } from '@/lib/labels';
 import { useMediaQuery } from '@/hooks/useMedia';
 
@@ -93,7 +95,7 @@ function Banner({ s, sender }: { s: CaseSummary; sender: boolean }) {
     ? 'The chart lists no allergies. That is not the same as no known allergies: ask, then confirm it or add the allergy in the sign off.'
     : 'The chart lists no allergies. That is not the same as no known allergies. Ask the ED, or check the chart.';
   return (
-    <Card className="p-4 sm:p-5">
+    <Card id="patient" tabIndex={-1} className="scroll-mt-20 p-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -167,7 +169,22 @@ function Banner({ s, sender }: { s: CaseSummary; sender: boolean }) {
 
 export default function Handoff({ csn }: { csn: string }) {
   const { at, apiAt, past, persona, version, bump, config } = useApp();
-  const { data, error, setData, retry } = useLoad(() => api.case(csn, apiAt), [csn, at, persona.id, version]);
+  // One view of the page: this patient, at this time sent to the server, as this persona. Live, the clock's 20 second
+  // refresh keeps the same view (apiAt stays empty).
+  const view = `${csn}|${apiAt}|${persona.id}`;
+  const { data, error, setData, retry } = useLoad<CaseDetail & { view?: string }>(() => api.case(csn, apiAt).then((c) => ({ ...c, view })), [csn, at, persona.id, version]);
+  // What changed since you last looked: kept from the first answer of this view, against the look before it, which is
+  // recorded right after. Later answers (after a sign off, a task, a refresh) are against this look, so they would
+  // empty it; the banner stays until you leave the patient, move the clock or switch persona.
+  const [since, setSince] = useState<{ view: string; since: Since } | null>(null);
+  const looked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || data.view !== view || !data.since || looked.current === view) return;
+    looked.current = view;
+    setSince({ view, since: data.since });
+    api.seen(csn, 'handoff', data.since.at).catch(() => undefined); // best effort: the page works without it
+  }, [data, view, csn]);
+  const shownSince = since?.view === view ? since.since : null;
   const [tab, setTab] = useState(persona.default_template);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
@@ -235,6 +252,7 @@ export default function Handoff({ csn }: { csn: string }) {
   const tpl = data.templates[current];
   const canEdit = persona.can_sign.includes(current) && canChange(tpl, s.phase);
   const canAck = persona.can_ack.includes(current);
+  const fresh = sinceElements(shownSince, current);
   // Live, at an earlier time: read only. The controls stay in place, turned off, with the reason next to them.
   const locked = past !== null;
   const onAttest: AttestFn = (r, option, entry) =>
@@ -246,6 +264,18 @@ export default function Handoff({ csn }: { csn: string }) {
     <Layout title={s.patient.name} crumbs={back} help="handoff">
       <EvidenceProvider evidence={tpl.draft.evidence ?? {}}>
         <div className="space-y-5">
+          <SinceBanner
+            since={shownSince}
+            onGo={(template, anchor) => {
+              if (template && data.templates[template]) setTab(template);
+              // After the tab renders: scroll to the item, and move focus there for keyboard and screen readers.
+              window.setTimeout(() => {
+                const el = document.getElementById(anchor);
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                el?.focus({ preventScroll: true });
+              }, 0);
+            }}
+          />
           <Banner s={s} sender={persona.can_sign.length > 0} />
           <OwnerLine s={s} persona={persona} at={at} locked={past !== null} busy={busy} onOwn={runOwner} />
           {locked && (persona.can_sign.length > 0 || persona.can_ack.length > 0) && (
@@ -304,7 +334,7 @@ export default function Handoff({ csn }: { csn: string }) {
                           </div>
                           <div className="divide-y">
                             {sec.elements.map((e) => (
-                              <ElementView key={e.id} e={e} tpl={tpl} canEdit={canEdit} locked={locked} busy={busy} onEdit={onEdit} onAttest={onAttest} />
+                              <ElementView key={e.id} e={e} tpl={tpl} canEdit={canEdit} locked={locked} busy={busy} onEdit={onEdit} onAttest={onAttest} fresh={fresh.has(e.id)} />
                             ))}
                           </div>
                         </Card>

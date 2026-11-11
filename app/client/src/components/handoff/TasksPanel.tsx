@@ -156,7 +156,7 @@ export function TasksPanel({ csn }: { csn: string }) {
   );
 
   return (
-    <Card className="gap-0 overflow-hidden py-0" role="region" aria-label="Tasks">
+    <Card id="tasks" tabIndex={-1} className="scroll-mt-20 gap-0 overflow-hidden py-0 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" role="region" aria-label="Tasks">
       {head}
       {(data.access.note || locked) && (
         <div className="space-y-1 border-b px-4 py-2.5 text-sm sm:px-5">

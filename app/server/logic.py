@@ -9,6 +9,8 @@
   takeover(...), take_over(...)   a colleague's patients at a shift change, and taking some or all of them
   patient_tasks(...), add_task(...), task_act(...), my_tasks(...)   tasks (tasks.py): one patient's, a new one, a
                            change to one, and the caller's across patients for the Tasks page
+  look(...)                records a look at a patient (seen.py): the board row and the case show what others changed
+                           since the caller's last look
 
 Every patient has an owner per ED role (assignment.py), shown on the board and the handoff. Acting on a patient
 someone else owns is allowed and recorded as outside the assignment (off_assignment). Signing a handoff turns its
@@ -27,7 +29,8 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from assignment import HANDOVER_BUCKETS, ROLES, counts, handover_bucket, next_shift, owner_at, person_key
+from assignment import HANDOVER_BUCKETS, ROLES, actor, counts, handover_bucket, next_shift, owner_at, person_key
+import seen
 import tasks
 from data import Dataset, iso, status_at, ts
 from personas import ACKS, SIGNS, sees
@@ -79,6 +82,7 @@ TASK_DUE = "The due time must be a date and time."
 TASK_CLOSED = "This task is closed. Press Undo to open it again first."
 TASK_UNDO = "There is nothing to undo on this task."
 TASK_KIND = "Choose Done, Not needed, Reassign, Change due time or Undo."
+SEEN_SOURCE = "A look comes from the handoff page or the board."
 OUTSIDE_ROLE = {
     "boarding": "The ED nurse and physician have this patient while they board. You can still act on a task; it is "
                 "recorded as outside your role.",
@@ -465,6 +469,11 @@ class Views:
 
     def board(self, at: datetime, person: dict) -> dict:
         rows = [s for s in (self._summary(c, at, person) for c in self.ds.enc) if s]
+        # What changed since the caller last looked at each patient (seen.py): one read of their looks for the board.
+        looks = self.store.last_looks(person_key(person), at) if rows else {}
+        for r in rows:
+            look = looks.get(r["csn"])
+            r["since"] = seen.summary(look, self._since(r["csn"], at, person, look))
         rows.sort(key=lambda r: (r["phase"] != "boarding", -SEVERITY_RANK.get(r["severity"] or "", -1),
                                  -r["minutes_boarding"]))
         boarding = [r for r in rows if r["phase"] == "boarding"]
@@ -499,7 +508,8 @@ class Views:
                      "unsigned": sum(1 for r in owned if state(r) in ("draft", "changed"))}
         return {"at": iso(at), "template": tpl, "kpis": kpis, "rows": rows, "scoped": bool(mine), "shift": shift}
 
-    def case(self, csn: str, at: datetime, person: dict) -> dict | None:
+    def case(self, csn: str, at: datetime, person: dict, since: bool = True) -> dict | None:
+        """since: also what changed since the caller's last look (the handoff page; Take over reads without it)."""
         summary = self._summary(csn, at, person)
         if summary is None:
             return None
@@ -550,7 +560,105 @@ class Views:
                          "detail": text.get(e["task_id"]), "task": e["kind"], "task_id": e["task_id"]}
                         | ({"outside_role": True} if e.get("outside_role") else {})
                         for e in tasks.ordered(events)], key=lambda a: a["at"], reverse=True)
-        return {"summary": summary, "templates": templates, "activity": log}
+        out = {"summary": summary, "templates": templates, "activity": log}
+        if since:
+            # Against the last look before this one: the page records its look after it has this answer.
+            look = self.store.last_looks(person_key(person), at, csn).get(csn)
+            items = self._since(csn, at, person, look)
+            summary["since"] = seen.summary(look, items)
+            out["since"] = {"at": iso(at), **summary["since"], "items": items or []}
+        return out
+
+    # ------------------------------------------------------------------------------- since you last looked
+    @staticmethod
+    def _severity(latest: dict) -> str | None:
+        """The illness severity the board shows, from the newest versions (latest_at), as _summary reads it."""
+        row = next(iter(latest.values()), None)
+        return ((_elements(row["draft"]).get("E07") or {}).get("narrative") or {}).get("value") if row else None
+
+    def _since(self, csn: str, at: datetime, person: dict, look: dict | None) -> list[dict] | None:
+        """What changed on the patient between the caller's last look and `at`, by anyone but the caller (seen.py),
+        newest first; None when there is no look (the patient was never opened)."""
+        if look is None:
+            return None
+        me, then_at = person_key(person), look["at"]
+        e = self.ds.enc[csn]
+        acts = self.store.actions(csn, at)
+        now, then = self.ds.latest_at(csn, at), self.ds.latest_at(csn, then_at)
+        dep = self._departure(csn, at)
+        ref = min(at, dep) if dep else at
+        pat = patient_entries(acts, self.rules)
+        items = []
+        # The pipeline: a newer version of a template, with its items that differ from the version current at the
+        # look (both with today's clinician edits, so an edit is its own change below), the severity and the phase.
+        # A change of severity is its own line, so the versions leave out the illness severity item then.
+        sev_then, sev_now = self._severity(then), self._severity(now)
+        severity = bool(sev_then and sev_now and sev_then != sev_now)
+        for tid, row in now.items():
+            old = then.get(tid)
+            if old is not None and old["version"] == row["version"]:
+                continue
+            elements = []
+            if old is not None:
+                rules = self.rules.get(tid)
+                elements = [{"id": c["id"], "label": c["label"]}
+                            for c in diff(effective(old, acts, ref, rules, pat), effective(row, acts, ref, rules, pat))
+                            if not (severity and c["id"] == "E07")]
+                if not elements:
+                    continue                  # rewritten with the same content (or only the severity): nothing to read
+            items.append((row["shown"], {"kind": "version", "template": tid, "from": old["version"] if old else None,
+                                         "to": row["version"], "at": iso(row["at"]), "elements": elements}))
+        if severity:
+            row = next(iter(now.values()))
+            items.append((row["shown"], {"kind": "severity", "from": sev_then, "to": sev_now, "at": iso(row["at"])}))
+        if dep and dep > then_at:
+            items.append((dep, {"kind": "phase", "phase": "arrived", "at": iso(dep)}))
+        if self.ds.canceled_at(e, at) and not self.ds.canceled_at(e, then_at):
+            when = self.ds.canceled.get(csn) or at
+            items.append((when, {"kind": "phase", "phase": "canceled", "at": iso(when)}))
+        # Clinicians: actions, owners and tasks after the look, by someone else. The tasks a sign off made from its
+        # action list (a create with the template, at the sign's time, by the signer) are part of that sign's line.
+        events = self.store.task_events(csn, at)
+        made = Counter((ev["template"], ev["at"], actor(ev)) for ev in events if ev["kind"] == "create" and ev.get("template"))
+        labels = {tid: {eid: x["label"] for eid, x in _elements(row["draft"]).items()} for tid, row in now.items()}
+        for a in _ordered(acts):
+            if not (seen.after(a, look) and seen.by_other(a, me)):
+                continue
+            el = a.get("element") if a["kind"] == "edit" else \
+                ((self.rules.get(a["template"]) or {}).get(a.get("rule")) or {}).get("element") if a["kind"] == "attest" else None
+            item = {"kind": "action", "action": a["kind"], "template": a["template"], "by": a["by"], "at": iso(a["at"]),
+                    "element": el, "label": (labels.get(a["template"]) or {}).get(el) if el else None}
+            if a["kind"] == "attest":
+                item |= {"option": a.get("entry") or a["option"]} | ({"removed": True} if a.get("remove") else {})
+            if a.get("restore"):
+                item["restore"] = True
+            if a["kind"] == "sign" and made[(a["template"], a["at"], actor(a))]:
+                item["tasks"] = made[(a["template"], a["at"], actor(a))]
+            items.append((a["at"], item))
+        for r in self.store.assignments(csn, at):
+            if seen.after(r, look) and seen.by_other(r, me):
+                items.append((r["at"], {"kind": "owner", "owner": r["kind"], "role": r["role"], "to": r["assignee_name"],
+                                        "from": r["from_name"], "by": r["by_name"], "at": iso(r["at"])}))
+        text = {t["id"]: t["text"] for t in tasks.replay(events, at).values()}
+        for ev in tasks.ordered(events):
+            if ev["kind"] == "create" and ev.get("template"):
+                continue                      # counted with its sign off
+            if seen.after(ev, look) and seen.by_other(ev, me):
+                items.append((ev["at"], {"kind": "task", "task": ev["kind"], "task_id": ev["task_id"],
+                                         "text": text.get(ev["task_id"]), "by": ev["by_name"], "at": iso(ev["at"])}
+                              | ({"undo": True} if ev.get("undo") else {})))
+        return seen.newest_first(items)
+
+    def look(self, csn: str, at: datetime, person: dict, source: str) -> dict:
+        """A look at the patient at `at` (opening the handoff, or Mark as seen on the board): not a clinical action, so
+        any role, also at a time earlier than one already recorded. Returns the board row's since, now empty."""
+        if source not in seen.SOURCES:
+            raise ActionError(SEEN_SOURCE)
+        if self._summary(csn, at, person) is None:
+            raise ActionError("This patient is not on your board at this time.")
+        row = self.store.look({"csn": csn, "by_id": person_key(person), "by_name": person["name"], "role": person["role"],
+                               "user_email": person.get("user_email"), "at": at, "source": source})
+        return {"csn": csn, "at": iso(at), "since": seen.summary(row, [])}
 
     def _entry(self, a: dict) -> dict:
         """History keeps a value the clinician entered, also once the chart has one and the item shows the chart."""
@@ -861,6 +969,30 @@ class Views:
                              "by_role": role, "user_email": None, "by_id": who["assignee_id"]})
         return rows
 
+    def seed_looks(self, at: datetime, owners: list[dict]) -> list[dict]:
+        """The demo's starting looks (mock mode, and again after Reset), so the board shows what changed since you looked
+        at once, for the seeded nurse and physician (owners: the rows of seed_owners, which name them): each looked at
+        each patient they take a minute before taking it, so the colleague's Take and tasks after it are news; and both
+        looked two hours before `at` at the first two other patients boarding at `at` who were on the board then (a
+        newer draft since is news; none, and the row shows nothing). Every other patient shows as not opened yet."""
+        rows = [{"csn": r["csn"], "by_id": r["assignee_id"], "by_name": r["assignee_name"], "role": r["role"],
+                 "at": r["at"] - timedelta(minutes=1)} for r in owners]
+        then, taken = at - timedelta(hours=2), {r["csn"] for r in owners}
+        picked = []
+        for e in sorted(self.ds.enc.values(), key=lambda e: (e["admit_decision_ts"] or at, e["csn"])):
+            if e["csn"] in taken or not e["admit_decision_ts"] or e["admit_decision_ts"] > then \
+                    or (e["ed_departure_ts"] is not None and e["ed_departure_ts"] <= at) or self.ds.canceled_at(e, at):
+                continue
+            if self.first_shown(e["csn"], then) is not None:
+                picked.append(e["csn"])
+            if len(picked) == 2:
+                break
+        who = {r["role"]: r for r in owners}
+        for csn in picked:
+            rows += [{"csn": csn, "by_id": r["assignee_id"], "by_name": r["assignee_name"], "role": role, "at": then}
+                     for role, r in who.items()]
+        return [r | {"user_email": None, "source": "handoff"} for r in rows]
+
     def first_shown(self, csn: str, at: datetime) -> datetime | None:
         """When the patient's first draft shows, if it shows by `at`."""
         rows = self.ds.rows_at(csn, at)
@@ -922,7 +1054,7 @@ class Views:
         theirs = sorted(owned.get(colleague, []) if chosen else [],
                         key=lambda r: (-SEVERITY_RANK.get(r["severity"] or "", -1), -r["minutes_boarding"], r["csn"]))
         for s in theirs:
-            t = self.case(s["csn"], at, person)["templates"].get(tpl)
+            t = self.case(s["csn"], at, person, since=False)["templates"].get(tpl)
             wf = t["workflow"] if t else {"state": "drafting"}
             confirm = {r["element"] for r in (t["draft"]["rules"] if t else [])
                        if r["element"] in CONFIRM_LABEL and r["status"] == "attest" and not r.get("resolution")}

@@ -10,6 +10,8 @@
  *   takeover(...), takeOver(...)   a colleague's patients at a shift change, and taking some or all of them
  *   patientTasks(...), addTask(...), taskAct(...), myTasks(...)   tasks (tasks.ts): one patient's, a new one, a
  *                            change to one, and the caller's across patients for the Tasks page
+ *   look(...)                records a look at a patient (seen.ts): the board row and the case show what others changed
+ *                            since the caller's last look
  *
  * Signing a handoff turns its action list into tasks; acting on a task while someone else has the patient is
  * allowed and recorded as outside the role (outside_role).
@@ -22,10 +24,12 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { counts, HANDOVER_BUCKETS, handoverBucket, nextShift, ownerAt, personKey, ROLES } from './assignment';
+import { actor, counts, HANDOVER_BUCKETS, handoverBucket, nextShift, ownerAt, personKey, ROLES } from './assignment';
 import { statusAt, type Dataset, type Row } from './data';
 import { ACKS, SIGNS, sees } from './personas';
 import { cmpStr, get, HOUR, iso, isDict, letters, median, or, pyEq, pyLen, pyRound, pySplit, pyStr, strip, truthy, ts } from './py';
+import * as seen from './seen';
+import type { Look } from './seen';
 import * as tasks from './tasks';
 import type { TaskEvent } from './tasks';
 import type { Action, MemoryStore } from './workflow';
@@ -62,6 +66,7 @@ const TEMPLATE_NAME: Record<string, string> = { sbar_nurse: 'SBAR', ipass_physic
 // The patient level items Take over lists when their attestation is not confirmed yet.
 const CONFIRM_LABEL: Record<string, string> = { E08: 'Code status', E09: 'Allergies', E10: 'Isolation' };
 const NOT_ED = 'Only ED nurses and physicians take patients.';
+const SEEN_SOURCE = 'A look comes from the handoff page or the board.';
 // The demo's starting tasks (seedTasks), per role: [text, due in ms from the default time, null for no due time].
 const SEED_TASKS: [string, [string, number | null][]][] = [
   ['ed_nurse', [['Recheck blood pressure after the fluid bolus', -30 * MINUTE], ['Send the urine sample to the lab', 90 * MINUTE],
@@ -522,6 +527,12 @@ export class Views {
       const s = this.summary(c, at, person);
       if (s) rows.push(s);
     }
+    // What changed since the caller last looked at each patient (seen.ts): one read of their looks for the board.
+    const looks = rows.length ? this.store.lastLooks(personKey(person), at) : new Map<string, Look>();
+    for (const r of rows) {
+      const look = looks.get(r.csn) ?? null;
+      r.since = seen.summary(look, this.since(r.csn, at, person, look));
+    }
     const rank = (r: any) => SEVERITY_RANK[or(r.severity, '') as string] ?? -1;
     rows.sort((a, b) => Number(a.phase !== 'boarding') - Number(b.phase !== 'boarding') || rank(b) - rank(a) || b.minutes_boarding - a.minutes_boarding);
     const boarding = rows.filter((r) => r.phase === 'boarding');
@@ -557,7 +568,8 @@ export class Views {
     return { at: iso(at), template: tpl, kpis, rows, scoped: truthy(mine), shift };
   }
 
-  case(csn: string, at: number, person: any): any {
+  /** since: also what changed since the caller's last look (the handoff page; Take over reads without it). */
+  case(csn: string, at: number, person: any, since = true): any {
     const summary = this.summary(csn, at, person);
     if (summary === null) return null;
     const acts = this.store.actions(csn, at);
@@ -617,7 +629,145 @@ export class Views {
     }
     // sorted(key=at string, reverse=True) keeps equal keys in their original order
     log.sort((a, b) => cmpStr(b.at, a.at));
-    return { summary, templates, activity: log };
+    const out: any = { summary, templates, activity: log };
+    if (since) {
+      // Against the last look before this one: the page records its look after it has this answer.
+      const look = this.store.lastLooks(personKey(person), at, csn).get(csn) ?? null;
+      const items = this.since(csn, at, person, look);
+      summary.since = seen.summary(look, items);
+      out.since = { at: iso(at), ...summary.since, items: items ?? [] };
+    }
+    return out;
+  }
+
+  // -------------------------------------------------------------------------- since you last looked
+  /** The illness severity the board shows, from the newest versions (latestAt), as summary() reads it. */
+  severity(latest: Map<string, Row>): any {
+    const row = latest.values().next().value as Row | undefined;
+    return row ? get(or(get(or(elements(row.draft).get('E07') ?? null, {}), 'narrative'), {}), 'value') : null;
+  }
+
+  /**
+   * What changed on the patient between the caller's last look and `at`, by anyone but the caller (seen.ts), newest
+   * first; null when there is no look (the patient was never opened).
+   */
+  private since(csn: string, at: number, person: any, look: Look | null): any[] | null {
+    if (look === null) return null;
+    const me = personKey(person);
+    const thenAt = look.at;
+    const e = this.ds.enc.get(csn) as any;
+    const acts = this.store.actions(csn, at);
+    const now = this.ds.latestAt(csn, at);
+    const then = this.ds.latestAt(csn, thenAt);
+    const dep = this.departure(csn, at);
+    const ref = dep !== null ? Math.min(at, dep) : at;
+    const pat = patientEntries(acts, this.rules);
+    const items: [number, any][] = [];
+    // The pipeline: newer versions (without the illness severity item when the severity changed: its own line), the
+    // severity and the phase.
+    const sevThen = this.severity(then);
+    const sevNow = this.severity(now);
+    const severity = truthy(sevThen) && truthy(sevNow) && sevThen !== sevNow;
+    for (const [tid, row] of now) {
+      const old = then.get(tid) ?? null;
+      if (old !== null && old.version === row.version) continue;
+      let els: any[] = [];
+      if (old !== null) {
+        const rules = this.rules[tid] ?? null;
+        els = diff(effective(old, acts, ref, rules, pat), effective(row, acts, ref, rules, pat))
+          .filter((c: any) => !(severity && c.id === 'E07'))
+          .map((c: any) => ({ id: c.id, label: c.label }));
+        if (!els.length) continue; // rewritten with the same content (or only the severity): nothing to read
+      }
+      items.push([row.at, { kind: 'version', template: tid, from: old ? old.version : null, to: row.version, at: iso(row.at), elements: els }]);
+    }
+    if (severity) {
+      const row = now.values().next().value as Row;
+      items.push([row.at, { kind: 'severity', from: sevThen, to: sevNow, at: iso(row.at) }]);
+    }
+    if (dep !== null && dep > thenAt) items.push([dep, { kind: 'phase', phase: 'arrived', at: iso(dep) }]);
+    if (this.ds.canceledAt(e, at) && !this.ds.canceledAt(e, thenAt)) {
+      const when = this.ds.canceled.get(csn) ?? at;
+      items.push([when, { kind: 'phase', phase: 'canceled', at: iso(when) }]);
+    }
+    // Clinicians: actions, owners and tasks after the look, by someone else. The tasks a sign off made from its action
+    // list (a create with the template, at the sign's time, by the signer) are part of that sign's line.
+    const events = this.store.taskEvents(csn, at);
+    const made = new Map<string, number>();
+    const key = (template: string, t: number, who: string | null) => `${template}|${t}|${who}`;
+    for (const ev of events) {
+      if (ev.kind !== 'create' || !truthy(ev.template)) continue;
+      const k = key(ev.template, ev.at, actor(ev));
+      made.set(k, (made.get(k) ?? 0) + 1);
+    }
+    const labels = new Map<string, Map<string, string>>();
+    for (const [tid, row] of now) labels.set(tid, new Map([...elements(row.draft)].map(([id, x]) => [id, x.label])));
+    for (const a of ordered(acts)) {
+      if (!(seen.after(a, look) && seen.byOther(a, me))) continue;
+      const el = a.kind === 'edit' ? get(a, 'element')
+        : a.kind === 'attest' ? get(or(get(or(this.rules[a.template] ?? null, {}), get(a, 'rule')), {}), 'element') : null;
+      const item: any = {
+        kind: 'action', action: a.kind, template: a.template, by: a.by, at: iso(a.at), element: el ?? null,
+        label: truthy(el) ? labels.get(a.template)?.get(el) ?? null : null,
+      };
+      if (a.kind === 'attest') {
+        item.option = or(get(a, 'entry'), a.option);
+        if (truthy(get(a, 'remove'))) item.removed = true;
+      }
+      if (truthy(get(a, 'restore'))) item.restore = true;
+      const n = a.kind === 'sign' ? made.get(key(a.template, a.at, actor(a))) ?? 0 : 0;
+      if (n) item.tasks = n;
+      items.push([a.at, item]);
+    }
+    for (const r of this.store.assignments(csn, at)) {
+      if (seen.after(r, look) && seen.byOther(r, me)) {
+        items.push([r.at, { kind: 'owner', owner: r.kind, role: r.role, to: r.assignee_name, from: r.from_name, by: r.by_name, at: iso(r.at) }]);
+      }
+    }
+    const text = new Map<number, string>([...tasks.replay(events, at).values()].map((t) => [t.id, t.text]));
+    for (const ev of tasks.ordered(events)) {
+      if (ev.kind === 'create' && truthy(ev.template)) continue; // counted with its sign off
+      if (seen.after(ev, look) && seen.byOther(ev, me)) {
+        items.push([ev.at, {
+          kind: 'task', task: ev.kind, task_id: ev.task_id, text: text.get(ev.task_id) ?? null, by: ev.by_name, at: iso(ev.at),
+          ...(truthy(ev.undo) ? { undo: true } : {}),
+        }]);
+      }
+    }
+    return seen.newestFirst(items);
+  }
+
+  /** A look at the patient at `at` (logic.py look): not a clinical action, so any role, also at an earlier time. */
+  look(csn: string, at: number, person: any, source: string): any {
+    if (!seen.SOURCES.includes(source)) throw new ActionError(SEEN_SOURCE);
+    if (this.summary(csn, at, person) === null) throw new ActionError('This patient is not on your board at this time.');
+    const row = this.store.look({ csn, by_id: personKey(person), by_name: person.name, role: person.role, user_email: person.user_email ?? null, at, source });
+    return { csn, at: iso(at), since: seen.summary(row, []) };
+  }
+
+  /**
+   * The demo's starting looks (logic.py seed_looks): each seeded owner looked at each patient they take a minute
+   * before taking it, and both looked two hours before `at` at the first two other patients boarding at `at` who were
+   * on the board then.
+   */
+  seedLooks(at: number, owners: any[]): any[] {
+    const rows: any[] = owners.map((r) => ({ csn: r.csn, by_id: r.assignee_id, by_name: r.assignee_name, role: r.role, at: r.at - MINUTE }));
+    const then = at - 2 * HOUR;
+    const taken = new Set(owners.map((r) => r.csn));
+    const picked: string[] = [];
+    const encs = [...this.ds.enc.values()].sort((a, b) => (a.admit_decision_ts ?? at) - (b.admit_decision_ts ?? at) || cmpStr(a.csn, b.csn));
+    for (const e of encs) {
+      if (taken.has(e.csn) || e.admit_decision_ts === null || e.admit_decision_ts > then
+        || (e.ed_departure_ts !== null && e.ed_departure_ts <= at) || this.ds.canceledAt(e, at)) continue;
+      if (this.ds.rowsAt(e.csn, then).length) picked.push(e.csn);
+      if (picked.length === 2) break;
+    }
+    const who = new Map<string, any>();
+    for (const r of owners) who.set(r.role, r);
+    for (const csn of picked) {
+      for (const [role, r] of who) rows.push({ csn, by_id: r.assignee_id, by_name: r.assignee_name, role, at: then });
+    }
+    return rows.map((r) => ({ ...r, user_email: null, source: 'handoff' }));
   }
 
   /** History keeps a value the clinician entered, also once the chart has one and the item shows the chart. */
@@ -962,7 +1112,7 @@ export class Views {
     const theirs = [...(chosen ? owned.get(colleague as string) ?? [] : [])]
       .sort((a, b) => rank(b) - rank(a) || b.minutes_boarding - a.minutes_boarding || cmpStr(a.csn, b.csn));
     const rows = theirs.map((s) => {
-      const t = this.case(s.csn, at, person).templates[tpl] ?? null;
+      const t = this.case(s.csn, at, person, false).templates[tpl] ?? null;
       const wf = t ? t.workflow : { state: 'drafting' };
       const confirm = new Set<string>((t ? t.draft.rules : [])
         .filter((r: any) => r.element in CONFIRM_LABEL && r.status === 'attest' && !truthy(get(r, 'resolution')))

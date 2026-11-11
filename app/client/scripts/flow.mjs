@@ -254,6 +254,99 @@ if (config.demo_personas) {
 } else {
   tasks += '; receiving nurse steps skipped: demo personas are off, so there is no receiving nurse to switch to';
 }
+// -------------------------------------------------------------------------------------- since you looked
+// Person A opens the patient just signed (a look), person B adds a task to it, and A then sees "New" on the board
+// row and the task in Since you last looked, which goes to the Tasks panel; back on the board the marker is gone.
+// B adds one more and A clears it with Mark as seen. Each task text is new to this run and every step acts on the
+// patient this run signed, at the clock the flow is on, so a deployed app's earlier runs do not refuse it (a look
+// never is refused). With demo personas A is Jordan Reyes and B Robin Asante; live (demo personas off) A is
+// EDIP_EMAIL and B EDIP_EMAIL_2, a second user in EDIP_ROLE_MAP, else the steps are skipped: one signed in user is
+// one person, whose own changes never show.
+const mainNav = () => page.getByRole('navigation', { name: 'Main' });
+const toBoard = async () => {
+  await mainNav().getByRole('link', { name: 'Board' }).click();
+  await page.getByRole('tablist', { name: 'Filter by status' }).waitFor();
+  const everyone = page.getByRole('tab', { name: /Everyone/ });
+  if (await everyone.count()) await everyone.click();
+  await page.locator('tbody tr', { hasText: name }).first().waitFor().catch(async (e) => {
+    if (out) await page.screenshot({ path: `${out}/flow-since-fail.png`, fullPage: true });
+    throw e;
+  });
+};
+/** Switch to the person by their persona (demo personas) or their email (live), on the page shown now. */
+async function as(who) {
+  if (who.email) {
+    await ctx.setExtraHTTPHeaders({ ...headers, 'X-Forwarded-Email': who.email });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.getByText(who.email).first().waitFor();
+  } else {
+    await become(who.id, who.name);
+  }
+}
+/** The look a handoff page records after its case: wait for it (in the static demo it is answered in the tab). */
+const looked = () => (STATIC_DEMO ? page.waitForTimeout(300) : page.waitForResponse((r) => r.url().includes('/seen') && r.request().method() === 'POST'));
+const people = config.demo_personas
+  ? [{ id: 'ed-rn', name: 'Jordan Reyes, RN' }, { id: 'ed-rn-2', name: 'Robin Asante, RN' }]
+  : process.env.EDIP_EMAIL && process.env.EDIP_EMAIL_2 ? [{ email: process.env.EDIP_EMAIL }, { email: process.env.EDIP_EMAIL_2 }] : null;
+let since = 'skipped: demo personas are off and EDIP_EMAIL_2 (a second user in EDIP_ROLE_MAP) is not set, so there is one person, whose own changes never show';
+if (people) {
+  const [a, b] = people;
+  const run = Date.now().toString(36);
+  const row = () => page.locator('tbody tr', { hasText: name }).first();
+  const addTask = async (text) => {
+    await tasksPanel.getByRole('button', { name: 'Add a task' }).click();
+    await tasksPanel.getByLabel('What needs to be done').fill(text);
+    await tasksPanel.getByRole('button', { name: 'Add task' }).click();
+    await tasksPanel.getByRole('status').filter({ hasText: `Task added: ${text}` }).waitFor();
+  };
+  const bAdds = async (text) => {
+    await as(b);
+    await toBoard();
+    const look = looked();
+    await row().locator('a').first().click();
+    await look;
+    await addTask(text);
+    await toBoard();
+  };
+  // A opens the patient: the look the next open compares with.
+  await toBoard();
+  await as(a);
+  await toBoard();
+  const first = looked();
+  await row().locator('a').first().click();
+  await first;
+  await toBoard();
+  const t1 = `Since check ${run}`;
+  await bAdds(t1);
+  await as(a);
+  await toBoard();
+  await row().getByText(/^New · \d+ changes?$/).waitFor();
+  if (out) await page.screenshot({ path: `${out}/flow-since-board.png` });
+  const look = looked();
+  await row().locator('a').first().click();
+  const box = page.getByRole('region', { name: /^Since you last looked/ });
+  await box.waitFor();
+  await look;
+  const change = box.getByRole('button', { name: new RegExp(`added the task "${t1}"`) });
+  if (!(await change.count())) errors.push(`Since you last looked does not list the task "${t1}"`);
+  else {
+    if (out) await page.screenshot({ path: `${out}/flow-since-banner.png` });
+    await change.click();
+    await page.waitForFunction(() => document.activeElement?.id === 'tasks', null, { timeout: 5000 }).catch(() => errors.push('the change did not go to the Tasks panel'));
+  }
+  // Opened: the marker is gone. Another change by B, cleared with Mark as seen.
+  await toBoard();
+  if (await row().getByText(/^New · /).count()) errors.push('the board still shows New after opening the patient');
+  const t2 = `Since check ${run} again`;
+  await bAdds(t2);
+  await as(a);
+  await toBoard();
+  await row().getByText(/^New · 1 change$/).waitFor();
+  await row().getByRole('button', { name: /^Mark as seen: / }).click();
+  await row().getByText(/^New · /).waitFor({ state: 'detached' });
+  since = `ok: ${a.name ?? a.email} sees New and the task "${t1}" by ${b.name ?? b.email} in Since you last looked, which goes to the Tasks panel; opening clears it; Mark as seen clears the next one`;
+}
+
 if (STATIC_DEMO) {
   // In the static demo a reload would clear the actions: go back to the board in the app.
   await page.getByRole('link', { name: 'Board' }).first().click();
@@ -262,6 +355,9 @@ if (STATIC_DEMO) {
   const at = new URL(page.url()).searchParams.get('at');   // the hour the flow moved the clock to
   await page.goto(base + '/' + (at ? `?at=${encodeURIComponent(at)}` : ''), { waitUntil: 'networkidle' });
 }
+// The since steps leave the ED nurse, whose board opens on My patients: the patient is under Everyone.
+await page.getByRole('tablist', { name: 'Filter by status' }).waitFor();
+if (await page.getByRole('tab', { name: /Everyone/ }).count()) await page.getByRole('tab', { name: /Everyone/ }).click();
 const state = await page.locator('tbody tr', { hasText: name }).first().textContent();
 if (STATIC_DEMO) {
   const clockLabel = () => page.getByRole('button', { name: /Replay time/ }).textContent();
@@ -277,5 +373,6 @@ await browser.close();
 const ok = state.includes(config.demo_personas ? 'Acknowledged' : 'Signed') && !errors.length;
 console.log(`owners ${owners}`);
 console.log(`tasks ${tasks}`);
+console.log(`since ${since}`);
 console.log(ok ? `flow ok: ${name} signed by ${signer}, ${readback}` : `flow failed: ${state} ${errors.join('; ')}`);
 process.exit(ok ? 0 : 1);

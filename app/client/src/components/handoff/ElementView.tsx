@@ -459,10 +459,12 @@ function Editor({ e, onSave, onCancel, busy }: { e: Element; onSave: (body: { te
   );
 }
 
-export function ElementView({ e, tpl, canEdit, locked, busy, onEdit }: {
+export function ElementView({ e, tpl, canEdit, locked, busy, onEdit, fresh }: {
   e: Element;
   tpl: CaseTemplate;
   canEdit: boolean;
+  /** Changed by others since your last look (the Since you last looked banner): highlighted as What changed is. */
+  fresh?: boolean;
   /** Read only (live, at an earlier time): Edit and Restore show, turned off; #read-only-why says why. */
   locked?: boolean;
   busy?: boolean;
@@ -482,7 +484,7 @@ export function ElementView({ e, tpl, canEdit, locked, busy, onEdit }: {
     );
   }
   return (
-    <div id={`el-${e.id}`} className={cn('group relative scroll-mt-24 px-4 py-4 sm:px-5', changed && 'before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-flag')}>
+    <div id={`el-${e.id}`} tabIndex={-1} className={cn('group relative scroll-mt-24 px-4 py-4 outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50 sm:px-5', (changed || fresh) && 'before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-flag')}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold">{e.label}</h4>
@@ -490,6 +492,11 @@ export function ElementView({ e, tpl, canEdit, locked, busy, onEdit }: {
           {changed && (
             <QuietExplain topic="questions.changes" label="Changed" text={tpl.changes.since === 'signed' ? 'Different from the version that was signed.' : 'Different from the previous version.'} className="no-underline">
               <Pill tone="warn" className="underline decoration-dotted underline-offset-[3px]">Changed</Pill>
+            </QuietExplain>
+          )}
+          {fresh && (
+            <QuietExplain topic="since.banner" label="New since you looked" text="Changed by someone else, or by a newer draft, since you last looked at this patient." className="no-underline">
+              <Pill tone="warn" className="underline decoration-dotted underline-offset-[3px]">New since you looked</Pill>
             </QuietExplain>
           )}
         </div>

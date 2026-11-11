@@ -88,6 +88,26 @@ describe('Guide page', () => {
     expect(h3.indexOf('Tasks')).toBeLessThan(h3.indexOf('Take over'));
   });
 
+  it('explains what changed since you looked: what counts, the marker, Mark as seen, the banner and the clock', () => {
+    const ids = (s: string) => GUIDE.find((x) => x.id === s)!.topics.map((t) => t.id);
+    expect(ids('since')).toEqual(['what', 'board', 'mark', 'banner', 'clock']);
+    expect(ids('glossary')).toEqual(expect.arrayContaining(['last-look', 'mark-as-seen', 'new']));
+    expect(ids('questions')).toContain('since');
+    const text = (id: string) => render(<>{findTopic(id)!.topics.map((t) => t.body)}</>).container.textContent!;
+    expect(text('since.board')).toContain('New · 3 changes');
+    expect(text('since.board')).toContain('Not opened yet');
+    expect(text('since.mark')).toContain('Mark as seen');
+    expect(text('since.banner')).toContain('Since you last looked');
+    expect(text('since.banner')).toContain('New since you looked');
+    expect(text('since.what')).toMatch(/what you did yourself is never listed/);
+    expect(text('since.what')).toContain('signed the I-PASS (4 tasks added)');
+    expect(text('since.what')).toContain('A change of severity is its own line');
+    renderGuide();
+    const h3 = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(h3.indexOf('Tasks')).toBeLessThan(h3.indexOf('What changed since you looked'));
+    expect(h3.indexOf('What changed since you looked')).toBeLessThan(h3.indexOf('Take over'));
+  });
+
   it('has a section for every page in the sidebar, and lists each page under Pages', () => {
     const pages = findTopic('sidebar.pages')!.topics[0];
     const { container } = render(<>{pages.body}</>);
