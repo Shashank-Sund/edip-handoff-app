@@ -241,6 +241,23 @@ Tasks (`app/server/tasks.py`): the action list (element `E24`) of a signed hando
 
 Indexes: `ix_task_event_csn (csn, at)`; `ux_task_event_item`, unique on `(csn, template, item_key)` for creates from a handoff, so an action list item becomes a task once per template even when two app processes save the same sign off (the insert does nothing on a conflict).
 
+### App schema `app`: `app.seen_event`
+
+Looks at a patient, for What changed since you looked (`app/server/seen.py`): one row each time a clinician opens a patient's handoff (`source` `handoff`, recorded right after the page has the case, whose changes are against the look before) or presses Mark as seen on the board (`board`). The app creates the table and its index on start (`DDL` in `app/server/lakebase.py`) and writes it in `LakebaseStore.look()`. Append only. A person's last look at time T is their latest row with `at <= T` (`at`, then `seen_id`), so looking at an earlier time never moves the last look at a later time forward; `LakebaseStore.last_looks()` reads one row per patient for a person and a time. A look is not a clinical action: it is recorded at the time viewed, also an earlier time with the live clock (within `EDIP_PAST_VIEW_HOURS`), and is not written to `app.view_log` (the read was, when it was at an earlier time). The board and the handoff page then count what others changed after it: newer draft versions, rows of `app.handoff_action`, `app.assignment` and `app.task_event` by someone else (a change at the same `at` counts when its `recorded_ts` is later), arrival, cancel and severity.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `seen_id` | bigint, identity, primary key | Order of insertion; breaks ties between looks at the same `at` |
+| `by_id` | text | Who looked: the lowercased sign in email, or the persona id with demo personas (the same id as owners and tasks) |
+| `csn` | text | Encounter |
+| `at` | timestamptz | The time the page showed (the replay clock, now, or an earlier time looked at) |
+| `recorded_ts` | timestamptz, default `now()` | When the row was saved |
+| `source` | text, check | `handoff` (opened the handoff page) or `board` (Mark as seen) |
+| `by_name`, `role` | text | Display name and app role (`viewer` included: every role gets looks) |
+| `user_email` | text, nullable | The signed in Databricks user |
+
+Index: `ix_seen_event_who (by_id, csn, at)`: the last look is read per person.
+
 ### App schema `app`: `app.view_log`
 
 Who looked at an earlier time, with the live clock (`EDIP_PAST_VIEW_HOURS`, `app/README.md`). The app creates it with `app.handoff_action` (`DDL` in `app/server/lakebase.py`) and writes one row in `LakebaseStore.log_view()` before it answers each read of the board, a handoff (and its tasks), analytics, Take over or the Tasks page at an earlier time. If the row cannot be written, the app refuses the view. Reads at the current time, and the replay clock, write nothing. Append only.
@@ -260,7 +277,7 @@ Index: `ix_view_recorded (recorded_ts)`.
 
 ### Who can read and write what
 
-| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.assignment`, `app.task_event`, `app.view_log` |
+| Identity | `gold.encounter_state_pg`, `gold.handoff_draft_pg` | `app.handoff_action`, `app.assignment`, `app.task_event`, `app.seen_event`, `app.view_log` |
 | --- | --- | --- |
 | The identity that ran setup (a user or a service principal) | Owns the synced tables and schema `gold` | No grant from the repo |
 | The app's service principal | `USAGE` on schema `gold` and `SELECT` on all its tables, granted by `jobs/setup_lakebase.py` | Owns schema `app` and its tables: it creates them on first start, through the app's `postgres` resource with `CAN_CONNECT_AND_CREATE` (`databricks.yml`) |
@@ -412,7 +429,7 @@ In the order the setup runs:
    - `handoffs`: runs the `handoff_generator` job (`jobs/handoff_job.py`, [ai/README.md](../ai/README.md)) with `drafts=reference` by default.
    - `lakebase` (`jobs/setup_lakebase.py`): synced tables and the app's read grant. The job `edip_lakebase_setup` runs this task alone (the same script and parameters), for a catalog fed by real data where `edip_setup`, which loads the synthetic week, must not run.
 4. **Reference drafts** ([ai/reference/README.md](../ai/reference/README.md)): `ai/reference/drafts.jsonl.gz` holds the 1,320 drafts `databricks-gpt-oss-120b` wrote for the reference week. The job loads them only when every generation point and the templates fingerprint (`meta.json`) match; otherwise it calls the model for everything (`--var drafts=model` always does).
-5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`, `app.assignment`, `app.task_event` and `app.view_log`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
+5. **App** ([app/README.md](../app/README.md)): FastAPI server (`app/server`) and React client (`app/client`), deployed as a Databricks App by the bundle (`databricks bundle run edip_app`). It reads the synced tables and writes `app.handoff_action`, `app.assignment`, `app.task_event`, `app.seen_event` and `app.view_log`. Mock mode and the static demo use fixtures built by `app/fixtures/build.py` instead of Lakebase.
 
 ## 6. Where to look: questions and queries
 
@@ -437,6 +454,7 @@ Every query below was run against the reference deployment and returned rows. Qu
 | 15 | Which patients transferred without sign off | Lakebase `gold.encounter_state_pg`, `gold.handoff_draft_pg`, `app.handoff_action` |
 | 16 | Who owns each boarding patient now | Lakebase `app.assignment` |
 | 17 | Each patient's open tasks now | Lakebase `app.task_event` |
+| 18 | When each person last looked at a patient, and what others changed since | Lakebase `app.seen_event`, `app.handoff_action`, `app.assignment`, `app.task_event` |
 
 **1. Every event for one encounter, in time order.** ADT events appear once per feed (`source`), because the same event arrives on HL7 and FHIR.
 
@@ -648,6 +666,24 @@ FROM t WHERE state IN ('create', 'reopen')
 ORDER BY csn, due NULLS LAST, task_id
 ```
 
+**18. When each person last looked at a patient, and what others changed since** (Postgres). The latest look per person and patient (the app reads it at a time T the same way, `seen.last_looks`), then how many clinician actions, owner changes and task events others recorded after it. Draft versions, arrival and severity come from the synced tables and are left out here; the app also counts a sign off's tasks with it. `app.seen_event` is newer than the reference deployment.
+
+```sql
+WITH last AS (
+  SELECT DISTINCT ON (by_id, csn) by_id, csn, at, recorded_ts
+  FROM app.seen_event ORDER BY by_id, csn, at DESC, seen_id DESC)
+SELECT l.by_id, l.csn, l.at AS last_look,
+       (SELECT count(*) FROM app.handoff_action a WHERE a.csn = l.csn AND (a.at, a.recorded_ts) > (l.at, l.recorded_ts)
+          AND coalesce(a.detail->>'by_id', lower(a.user_email)) IS DISTINCT FROM l.by_id) AS actions,
+       (SELECT count(*) FROM app.assignment s WHERE s.csn = l.csn AND (s.at, s.recorded_ts) > (l.at, l.recorded_ts)
+          AND coalesce(s.detail->>'by_id', lower(s.user_email)) IS DISTINCT FROM l.by_id) AS owner_changes,
+       (SELECT count(*) FROM app.task_event t WHERE t.csn = l.csn AND (t.at, t.recorded_ts) > (l.at, l.recorded_ts)
+          AND NOT (t.kind = 'create' AND t.template IS NOT NULL)
+          AND coalesce(t.detail->>'by_id', lower(t.user_email)) IS DISTINCT FROM l.by_id) AS task_changes
+FROM last l
+ORDER BY l.by_id, l.at DESC
+```
+
 Two more places worth knowing: `silver.quarantine` (every message the parsers could not apply, with a reason) and `gold.handoff_draft.draft` for any one row, which is the exact document the app shows.
 
 ## 7. Notes
@@ -684,3 +720,4 @@ Land real data in the same bronze tables with the same columns and everything do
 | silver.adt_history | 2,315 | synthetic_truth.* | see section 2 |
 | silver.handoff_events | 2,531 | Lakebase app.assignment | grows with use |
 | | | Lakebase app.task_event | grows with use |
+| | | Lakebase app.seen_event | grows with use |
