@@ -84,7 +84,7 @@ def load_app(fixtures: Path):
     for k in ("EDIP_MODE", "EDIP_CLOCK", "EDIP_CLOCK_MODE", "EDIP_DEMO_PERSONAS", "EDIP_SYNTHETIC_DATA"):
         os.environ.pop(k, None)
     sys.path.insert(0, str(ROOT / "app/server"))
-    for m in ("config", "data", "assignment", "tasks", "logic", "personas", "workflow", "main"):
+    for m in ("config", "data", "assignment", "tasks", "seen", "logic", "personas", "workflow", "main"):
         sys.modules.pop(m, None)
     main = importlib.import_module("main")
     from fastapi.testclient import TestClient
@@ -295,6 +295,7 @@ def scenarios(c, main):
     canceled_scenarios(rec, ds)
     assignment_scenarios(rec, ds, default, boarding, units)
     task_scenarios(rec, ds, default, units)
+    seen_scenarios(rec, ds, default, units)
     return rec.items
 
 
@@ -912,6 +913,98 @@ def task_scenarios(rec, ds, default, units):
         rec("tasks addendum panel", "GET", f"{au}/tasks", at=t, persona="ed-rn")
     rec("tasks reset end", "POST", "/api/demo/reset")
     rec("tasks after reset", "GET", tu, persona="ed-rn")
+
+
+def seen_scenarios(rec, ds, default, units):
+    """What changed since you looked: the demo's seeded looks on the board and the case, a look from the handoff and
+    from the board (Mark as seen), changes by another persona after a look at the same clock time (owner, sign off with
+    the tasks it made, a task by hand, a task done, edits and attestations), own changes left out, a look at an earlier
+    time (allowed, and not moving the later mark), arrival, a cancel, a severity change, the viewer, and every
+    refusal."""
+    iso = lambda t: t.isoformat()  # noqa: E731
+    rec("seen reset", "POST", "/api/demo/reset")
+    for persona in ("ed-rn", "ed-md-2", "ed-md", "viewer"):
+        rec(f"seen board seeded {persona}", "GET", "/api/board", persona=persona)
+    _, b = rec("seen board", "GET", "/api/board", persona="ed-rn")
+    for r in [r for r in b["rows"] if not r["since"]["first_time"]]:
+        rec(f"seen case seeded {r['csn']}", "GET", f"/api/handoffs/{r['csn']}", persona="ed-rn")
+        rec(f"seen case seeded {r['csn']} as Kai", "GET", f"/api/handoffs/{r['csn']}", persona="ed-md-2")
+    # A boarding patient no one owns or looked at yet: the first open, then the look the page records.
+    p = next(r for r in b["rows"] if r["phase"] == "boarding" and r["since"]["first_time"] and not any(r["owners"].values()))
+    csn = p["csn"]
+    url, su = f"/api/handoffs/{csn}", f"/api/handoffs/{csn}/seen"
+    _, first = rec("seen first open", "GET", url, persona="ed-rn")
+    rec("seen look from the handoff", "POST", su, at=first["since"]["at"], persona="ed-rn", body={"source": "handoff"})
+    rec("seen look Kai", "POST", su, persona="ed-md-2", body={"source": "handoff"})
+    rec("seen open again (nothing new)", "GET", url, persona="ed-rn")
+    # Others act at the same clock time; Jordan's own Take and task are left out of Jordan's list.
+    rec("seen Jordan takes", "POST", f"{url}/owner", persona="ed-rn", body={"kind": "claim"})
+    rec("seen Jordan adds a task", "POST", f"{url}/tasks", persona="ed-rn", body={"text": "Mine", "role": "nurse"})
+    rec("seen Kai takes", "POST", f"{url}/owner", persona="ed-md-2", body={"kind": "claim"})
+    resolve(rec, url, "ipass_physician", "ed-md-2", None, "seen")
+    rec("seen Kai action list", "POST", f"{url}/ipass_physician/edit", persona="ed-md-2",
+        body={"element": "E24", "items": [{"text": "Repeat lactate", "owner": "MD", "due": "Now"},
+                                          {"text": "Call the family", "owner": "team", "due": ""}]})
+    rec("seen Kai signs", "POST", f"{url}/ipass_physician/sign", persona="ed-md-2", body={"callback": "x2210"})
+    rec("seen Kai adds a task", "POST", f"{url}/tasks", persona="ed-md-2", body={"text": "By hand", "role": "physician"})
+    _, tl = rec("seen tasks", "GET", f"{url}/tasks", persona="ed-rn")
+    mine = next(t["id"] for t in tl["tasks"] if t["text"] == "Mine")
+    rec("seen Kai marks a task done", "POST", f"/api/tasks/{mine}", persona="ed-md-2", body={"kind": "done"})
+    rec("seen board Jordan after", "GET", "/api/board", persona="ed-rn")
+    rec("seen case Jordan after", "GET", url, persona="ed-rn")
+    rec("seen case Kai after", "GET", url, persona="ed-md-2")
+    rec("seen case Robin (never opened)", "GET", url, persona="ed-rn-2")
+    # A look at an earlier time: allowed, and the mark at the default time stays.
+    for h in (1, 0.5):
+        rec(f"seen look {h} h earlier", "POST", su, at=iso(default - timedelta(hours=h)), persona="ed-rn",
+            body={"source": "board"})
+    rec("seen board Jordan after earlier looks", "GET", "/api/board", persona="ed-rn")
+    rec("seen board Jordan 45 min earlier", "GET", "/api/board", at=iso(default - timedelta(minutes=45)), persona="ed-rn")
+    # Mark as seen at the default time: nothing new.
+    rec("seen mark as seen", "POST", su, persona="ed-rn", body={"source": "board"})
+    rec("seen board after mark as seen", "GET", "/api/board", persona="ed-rn")
+    rec("seen look viewer", "POST", su, persona="viewer", body={"source": "board"})
+    rec("seen board viewer", "GET", "/api/board", persona="viewer")
+    # Arrival on the unit, after a look before it.
+    dep = ds.enc[csn]["ed_departure_ts"]
+    if dep:
+        rec("seen look before arrival", "POST", su, at=iso(dep - timedelta(minutes=5)), persona="ed-md", body={"source": "handoff"})
+        rec("seen case after arrival", "GET", url, at=iso(dep + timedelta(minutes=30)), persona="ed-md")
+        rec("seen board after arrival", "GET", "/api/board", at=iso(dep + timedelta(minutes=30)), persona="ed-md")
+    # A cancel, after a look before it.
+    for c in sorted(c for c, rows in ds.versions.items() if any(r["retracted_ts"] for r in rows))[:2]:
+        t = ds.versions[c][0]["retracted_ts"]
+        rec(f"seen look before cancel {c}", "POST", f"/api/handoffs/{c}/seen", at=iso(t - timedelta(minutes=5)),
+            persona="viewer", body={"source": "handoff"})
+        rec(f"seen case after cancel {c}", "GET", f"/api/handoffs/{c}", at=iso(t + timedelta(minutes=5)), persona="viewer")
+    # A severity change between two versions: its own line, and no version lists the severity item too.
+    def sev(c, t):
+        return ((elements(next(iter(ds.latest_at(c, t).values()))["draft"]).get("E07") or {}).get("narrative") or {}).get("value")
+    for e in sorted(ds.enc.values(), key=lambda e: e["csn"]):
+        pts = sorted({r["at"] for r in ds.versions.get(e["csn"], [])})
+        pair = next(((a, z) for a, z in zip(pts, pts[1:]) if e["admit_decision_ts"] and e["admit_decision_ts"] <= a
+                     and (not e["ed_departure_ts"] or e["ed_departure_ts"] > z) and sev(e["csn"], a) and sev(e["csn"], z)
+                     and sev(e["csn"], a) != sev(e["csn"], z)), None)
+        if pair:
+            a, z = pair
+            rec("seen look before a severity change", "POST", f"/api/handoffs/{e['csn']}/seen",
+                at=iso(a + timedelta(minutes=1)), persona="hosp-md", body={"source": "handoff"})
+            rec("seen case after a severity change", "GET", f"/api/handoffs/{e['csn']}", at=iso(z + timedelta(minutes=1)),
+                persona="hosp-md")
+            break
+    # Refusals.
+    rec("seen unknown source (409)", "POST", su, persona="ed-rn", body={"source": "tasks"})
+    rec("seen missing source (422)", "POST", su, persona="ed-rn", body={})
+    rec("seen source not text (422)", "POST", su, persona="ed-rn", body={"source": 1})
+    rec("seen no body (422)", "POST", su, persona="ed-rn")
+    rec("seen unknown patient (409)", "POST", "/api/handoffs/0000000/seen", persona="ed-rn", body={"source": "board"})
+    rec("seen invalid at (400)", "POST", su, at="nope", persona="ed-rn", body={"source": "board"})
+    rec("seen unknown persona (400)", "POST", su, persona="nobody", body={"source": "board"})
+    rec("seen GET (405)", "GET", su, persona="ed-rn")
+    other = next(u for u in units if (u["facility"], u["unit"]) != (p["facility"], p["destination"]["pending_unit"]))
+    rec("seen other unit (409)", "POST", su, persona=other["id"], body={"source": "board"})
+    rec("seen reset end", "POST", "/api/demo/reset")
+    rec("seen board after reset", "GET", "/api/board", persona="ed-rn")
 
 
 def main():

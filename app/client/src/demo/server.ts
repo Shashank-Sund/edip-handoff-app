@@ -54,6 +54,7 @@ const BODIES: Record<string, [string[], string[]]> = {
   takeover: [['colleague', 'csns'], []],
   task: [['text'], ['role', 'to', 'due']],
   task_change: [['kind'], ['reason', 'role', 'to', 'due']],
+  seen: [['source'], []],
 };
 
 /** main.py FIELD: how the validation sentences name each field. */
@@ -61,7 +62,7 @@ const FIELD: Record<string, string> = {
   element: 'item', text: 'text', items: 'action items', restore: 'restore choice', rule: 'rule', option: 'attestation', entry: 'entered value', entry_note: 'note', remove: 'remove choice',
   callback: 'callback number', readback: 'read back', questions: 'questions',
   kind: 'choice of Take, Assign or Release', to: 'colleague', colleague: 'colleague', csns: 'patients',
-  role: 'role', due: 'due time', reason: 'reason',
+  role: 'role', due: 'due time', reason: 'reason', source: 'page',
 };
 /** main.py TASK_FIELD: a change to a task (/api/tasks/<id>) names its kind differently. */
 const TASK_FIELD: Record<string, string> = { ...FIELD, kind: 'task change' };
@@ -86,12 +87,13 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
   const views = new Views(ds, store, fixtures.templates, null, STALE_OWNER_HOURS * HOUR, SHIFT_CHANGES, SHIFT_WARNING_MINUTES * 60000);
   const personas = demoPersonas(ds.meta.units ?? []);
   const defaultAt = opts.clock ? parseTs(opts.clock) : ds.busiest();
-  /** main._seed: the demo's starting owners and tasks, at start and after Reset. */
+  /** main._seed: the demo's starting owners, tasks and looks, at start and after Reset. */
   const seed = () => {
     const who = (id: string) => { const p = personas.find((x) => x.id === id); return { id: p.id, name: p.name }; };
     const owners = views.seedOwners(defaultAt, who('ed-rn'), who('ed-md-2'));
     for (const row of owners) store.assign(row);
     store.addTasks(views.seedTasks(defaultAt, owners));
+    for (const row of views.seedLooks(defaultAt, owners)) store.look(row);
   };
   seed();
 
@@ -212,6 +214,18 @@ export function createServer(fixtures: Fixtures & { templates: any[] }, opts: { 
       const me = person(req.persona);
       try {
         return views.own(body.kind, decodeURIComponent(p[1]), t, me, body.to, colleagues(me));
+      } catch (e) {
+        if (e instanceof ActionError) throw new HttpError(409, e.message);
+        throw e;
+      }
+    }
+    if (p[0] === 'handoffs' && p.length === 3 && p[1] && p[2] === 'seen') {
+      if (!post) throw new HttpError(405, 'Method Not Allowed');
+      const body = dump('seen', req.body);
+      const t = at(req.at);
+      const me = person(req.persona);
+      try {
+        return views.look(decodeURIComponent(p[1]), t, me, body.source);
       } catch (e) {
         if (e instanceof ActionError) throw new HttpError(409, e.message);
         throw e;
