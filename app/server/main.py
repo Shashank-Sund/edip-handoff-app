@@ -217,8 +217,10 @@ def _past_check(t: datetime, now: datetime) -> None:
 
 def _look_at(at: Optional[str]) -> datetime:
     """The time a look applies to: the time the page showed. Replay: the replay clock. Live: that time as sent, so the
-    look is exactly the view the page got (an earlier one too, within EDIP_PAST_VIEW_HOURS: a look is not a clinical
-    action and is not refused like one), never later than now. Not logged in the view log: the read was."""
+    look is the view the page got and not the moment the request arrived (an earlier one too, within
+    EDIP_PAST_VIEW_HOURS: a look is not a clinical action and is not refused like one). The app sends times to the
+    second (data.iso), so the look covers the whole second it names, else a change made in that second would stay
+    news after the page showed it; never later than now. Not logged in the view log: the read was."""
     if config.CLOCK_MODE != "live":
         return _at(at)
     now = datetime.now(timezone.utc)
@@ -229,7 +231,7 @@ def _look_at(at: Optional[str]) -> datetime:
         return now
     if t < now - NOW_SLACK:
         _past_check(t, now)
-    return t
+    return min(now, t.replace(microsecond=0) + timedelta(seconds=1) - timedelta(microseconds=1))
 
 
 def _act_at(at: Optional[str]) -> datetime:

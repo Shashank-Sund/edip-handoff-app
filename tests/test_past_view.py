@@ -293,7 +293,9 @@ def test_a_look_is_at_the_time_viewed_also_an_earlier_one_and_the_banner_sees_an
     first = c.get(url, headers=who(RN)).json()["since"]
     assert first["first_time"] and first["items"] == []
     r = c.post(f"{url}/seen", params={"at": first["at"]}, json={"source": "handoff"}, headers=who(RN))
+    # The page's time is to the second: the look covers that second (it is not moved to the request's time).
     assert r.status_code == 200 and r.json()["at"] == first["at"]
+    assert db.looks[0]["at"] - datetime.fromisoformat(first["at"]) < timedelta(seconds=1)
     assert [(x["by_id"], x["csn"], x["source"]) for x in db.looks] == [(RN, csn, "handoff")]
     # The physician takes the patient (an action: at the server's time, after the look); the nurse's next open shows it.
     assert c.post(f"{url}/owner", json={"kind": "claim"}, headers=who(MD)).status_code == 200
