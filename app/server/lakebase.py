@@ -7,8 +7,8 @@ endpoints/<e>). Tokens last an hour; a new one is generated every 45 minutes.
 Reads: gold.encounter_state_pg and gold.handoff_draft_pg (synced from Unity Catalog by jobs/setup_lakebase.py and
 refreshed by the handoff job; retracted_ts and prior_status once the sync has them). Writes: app.handoff_action, app.assignment
 (who owns each patient: claim, assign, release, handover), app.task_event (tasks: create, done, not_needed, reopen,
-reassign, due) and app.view_log (with the live clock, every view of an earlier time), created here on first start,
-append only. Every statement is safe to run again on a deployed database.
+reassign, due), app.seen_event (each clinician's looks at a patient, for What changed since you looked) and
+app.view_log (with the live clock, every view of an earlier time), created here on first start, append only. Every statement is safe to run again on a deployed database.
 """
 from __future__ import annotations
 
@@ -104,6 +104,20 @@ DDL = [
     # An action list item becomes a task once per template, also when two app processes save the same sign off.
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_task_event_item ON app.task_event (csn, template, item_key) "
     "WHERE kind = 'create' AND template IS NOT NULL",
+    # Looks (seen.py): one row per open of a handoff or Mark as seen; by_id is the person (persona id, or the sign in
+    # email live). The last look at a time is read per person, so the index leads with them.
+    """CREATE TABLE IF NOT EXISTS app.seen_event (
+        seen_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        by_id         TEXT        NOT NULL,
+        csn           TEXT        NOT NULL,
+        at            TIMESTAMPTZ NOT NULL,
+        recorded_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        source        TEXT        NOT NULL CHECK (source IN ('handoff', 'board')),
+        by_name       TEXT        NOT NULL,
+        role          TEXT        NOT NULL,
+        user_email    TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_seen_event_who ON app.seen_event (by_id, csn, at)",
 ]
 # app.task_event columns written from a task event; who acted (by_id) and what a change replaced go in detail.
 TASK = ("csn", "kind", "template", "item_key", "text", "role", "assignee_id", "assignee_name", "due", "reason", "at",
@@ -367,6 +381,35 @@ class LakebaseStore:
         with self._lock:
             self._tasks = None
         return out
+
+    def look(self, row: dict) -> dict:
+        """One look at a patient, a row in app.seen_event."""
+        try:
+            self._ensure()
+            with PG.connect() as conn:
+                sid, recorded = conn.execute(
+                    "INSERT INTO app.seen_event (by_id, csn, at, source, by_name, role, user_email) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING seen_id, recorded_ts",
+                    (row["by_id"], row["csn"], row["at"], row["source"], row["by_name"], row["role"],
+                     row.get("user_email"))).fetchone()
+        except Exception as exc:
+            raise StoreUnavailable(UNREACHABLE) from exc
+        return {**row, "seen_id": sid, "recorded_ts": recorded}
+
+    def last_looks(self, who: str, at: datetime, csn: str | None = None, fresh: bool = False) -> dict[str, dict]:
+        """{csn: the latest look by `who` with at <= `at`}, at one patient (csn) or all: read on every call, one
+        row per patient (seen.last_looks in SQL), as the table grows with every open."""
+        try:
+            self._ensure()
+            from psycopg.rows import dict_row
+            with PG.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+                rows = cur.execute(
+                    "SELECT DISTINCT ON (csn) * FROM app.seen_event WHERE by_id = %s AND at <= %s"
+                    + (" AND csn = %s" if csn is not None else "") + " ORDER BY csn, at DESC, seen_id DESC",
+                    (who, at) + ((csn,) if csn is not None else ())).fetchall()
+        except Exception as exc:
+            raise StoreUnavailable(UNREACHABLE) from exc
+        return {r["csn"]: r for r in rows}
 
     def reset(self):
         raise PermissionError("actions are a permanent record in live mode")

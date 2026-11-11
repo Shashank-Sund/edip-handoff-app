@@ -159,6 +159,39 @@ def test_task_events_round_trip_and_an_item_becomes_a_task_once_across_processes
             "by_id": "rn@example.org", "from_due": (t + timedelta(hours=1)).isoformat()}
 
 
+def test_looks_are_kept_in_app_seen_event_and_the_last_one_at_a_time_is_read_per_person(db, monkeypatch):
+    mod = _lakebase(monkeypatch)
+    a, b = mod.LakebaseStore(ttl=60), mod.LakebaseStore(ttl=60)
+    t = datetime(2026, 10, 28, 20, tzinfo=timezone.utc)
+    rn, md = "rn@example.org", "md@example.org"
+    look = lambda csn, who, at, source="handoff": {"csn": csn, "by_id": who, "by_name": who[:2].upper(),  # noqa: E731
+                                                   "role": "ed_nurse", "user_email": who, "at": at, "source": source}
+    first = a.look(look("1", rn, t))
+    assert first["seen_id"] and first["recorded_ts"]
+    a.look(look("1", rn, t + timedelta(hours=2)))
+    a.look(look("1", rn, t + timedelta(hours=1), "board"))          # an earlier time, saved later
+    a.look(look("1", rn, t + timedelta(hours=1)))                   # the same time again: the later one wins
+    a.look(look("2", rn, t))
+    a.look(look("1", md, t + timedelta(hours=3)))
+    # Read on every call (no cache): another process sees them at once. One row per patient, as seen.last_looks.
+    assert b.last_looks(rn, t - timedelta(minutes=1)) == {}
+    got = b.last_looks(rn, t + timedelta(hours=1))
+    assert set(got) == {"1", "2"} and got["1"]["source"] == "handoff" and got["1"]["at"] == t + timedelta(hours=1)
+    assert got["1"]["seen_id"] == 4
+    assert b.last_looks(rn, t + timedelta(hours=9), "1")["1"]["at"] == t + timedelta(hours=2)
+    assert set(b.last_looks(rn, t + timedelta(hours=9), "2")) == {"2"}
+    assert b.last_looks(md, t + timedelta(hours=9))["1"]["by_id"] == md
+    with psycopg.connect(db, autocommit=True) as conn:
+        cols = [r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' "
+                                           "AND table_name = 'seen_event' ORDER BY ordinal_position")]
+        assert cols == ["seen_id", "by_id", "csn", "at", "recorded_ts", "source", "by_name", "role", "user_email"]
+        idx = conn.execute("SELECT indexdef FROM pg_indexes WHERE schemaname = 'app' AND indexname = 'ix_seen_event_who'").fetchone()
+        assert "(by_id, csn, at)" in idx[0]
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO app.seen_event (by_id, csn, at, source, by_name, role) "
+                         "VALUES ('x', '1', now(), 'tasks', 'RN', 'ed_nurse')")
+
+
 def test_assignments_are_kept_in_order_and_every_process_sees_them(db, monkeypatch):
     mod = _lakebase(monkeypatch)
     import assignment
